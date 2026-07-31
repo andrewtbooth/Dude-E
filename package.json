@@ -2,7 +2,6 @@
   "name": "dude-e",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,7 +12,9 @@
     "test:watch": "vitest",
     "sync:htsus": "tsx scripts/sync-htsus.ts",
     "db:push": "prisma db push",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "dev:seed": "tsx scripts/dev/seed-fixture-htsus.ts",
+    "dev:pdf": "tsx scripts/dev/render-sample-pdf.tsx"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

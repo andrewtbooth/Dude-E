@@ -502,8 +502,11 @@ async function main(): Promise<void> {
 }
 
 // Only run when invoked directly, so the parsers above stay unit-testable.
-const invokedDirectly =
-  process.argv[1] && import.meta.url.endsWith(path.basename(process.argv[1]));
+// Checked via argv rather than import.meta so the module loads under both
+// CommonJS and ESM — vitest imports it, the CLI executes it.
+const invokedDirectly = /sync-htsus(\.[cm]?tsx?|\.[cm]?js)?$/.test(
+  process.argv[1] ?? "",
+);
 
 if (invokedDirectly) {
   main().catch((error: unknown) => {

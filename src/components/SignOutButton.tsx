@@ -1,30 +1,25 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useFormStatus } from "react-dom";
+import { signOutAction } from "@/app/actions/session";
 
 export function SignOutButton() {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [busy, setBusy] = useState(false);
+  return (
+    <form action={signOutAction}>
+      <SubmitButton />
+    </form>
+  );
+}
 
-  async function signOut() {
-    setBusy(true);
-    await fetch("/api/session", { method: "DELETE" });
-    startTransition(() => {
-      router.replace("/");
-      router.refresh();
-    });
-  }
-
+function SubmitButton() {
+  const { pending } = useFormStatus();
   return (
     <button
-      type="button"
-      onClick={signOut}
-      disabled={busy || isPending}
+      type="submit"
+      disabled={pending}
       className="text-xs text-[var(--text-muted)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline disabled:opacity-50"
     >
-      {busy || isPending ? "Signing out…" : "Sign out"}
+      {pending ? "Signing out…" : "Sign out"}
     </button>
   );
 }
