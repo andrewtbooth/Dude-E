@@ -48,6 +48,14 @@ seriously considering, and for the section it sits in. Exclusionary notes are
 as decisive as inclusive ones: a note that pushes a good out of Chapter 84 is
 often the whole analysis. Cite the notes you relied on by number.
 
+If hts_notes reports that notes could not be retrieved, that means this
+deployment's tariff snapshot does not carry them — it does **not** mean the
+chapter has none. Try web_fetch against hts.usitc.gov for the chapter or
+section text before proceeding. If you still cannot obtain them, say so
+explicitly in your justification and lower your confidence accordingly: a GRI 1
+analysis that could not consult the binding notes is materially weaker, and the
+analyst needs to know that.
+
 Only if GRI 1 does not resolve it:
 - **GRI 2(a)** for incomplete, unfinished, unassembled or disassembled articles
   having the essential character of the complete article.

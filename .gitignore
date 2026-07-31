@@ -17,6 +17,11 @@ prisma/*.db-shm
 # regenerable via `npm run sync:htsus` — see README).
 /data/htsus/
 
+# Tariff exports you downloaded by hand for `npm run import:htsus`.
+# A full-schedule export is tens of MB and is public data — no reason to
+# carry it in git.
+/data/raw/
+
 # Generated determination PDFs
 /data/pdf/
 

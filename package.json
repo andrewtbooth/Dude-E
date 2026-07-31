@@ -14,7 +14,8 @@
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "dev:seed": "tsx scripts/dev/seed-fixture-htsus.ts",
-    "dev:pdf": "tsx scripts/dev/render-sample-pdf.tsx"
+    "dev:pdf": "tsx scripts/dev/render-sample-pdf.tsx",
+    "import:htsus": "tsx scripts/import-htsus.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

@@ -111,12 +111,39 @@ whenever a sync misbehaves.
 The sync reads `.env.local`, so `CENSUS_CONCORDANCE_URL`, `HTSUS_DATA_DIR` and
 `USITC_BASE_URL` overrides apply to it as well as to the app.
 
-### Working without network access
+### If you cannot reach hts.usitc.gov
+
+Plenty of corporate networks and sandboxed environments block it. Import a
+file you downloaded yourself instead — the data is identical, so code
+verification, duty rates and the version stamp all work exactly as they do
+after a network sync.
+
+1. Open **https://hts.usitc.gov/export** in a browser.
+2. Set the range **0101** to **9999**, format **JSON** (CSV also works).
+3. Save the file into `data/raw/`, then:
+
+```bash
+npm run import:htsus -- --file ./data/raw/hts.json --revision "2026 HTS Revision 13"
+```
+
+`--revision` is required and must match what USITC calls the edition — it is
+stamped onto every determination, so the import will not guess it.
+
+**One real gap:** a file export carries tariff lines only. Section and Chapter
+Notes and the GRIs are published as PDF and are not included. The manifest
+records this, the UI surfaces it, and `hts_notes` reports the notes as *not
+retrieved* rather than *nonexistent* — the agent is told to try `web_fetch`
+against hts.usitc.gov and, failing that, to say in its justification that it
+could not consult the binding notes and lower its confidence. Since GRI 1 makes
+those notes binding, prefer a full `sync:htsus` for production work.
+
+### Working with no network at all
 
 `npm run dev:seed` builds a four-chapter fixture index so the UI can be
 exercised offline. It is labelled `FIXTURE — not a real HTSUS revision` in the
 manifest, and that label appears in the masthead and on any determination
-produced against it, so it cannot be mistaken for real data.
+produced against it, so it cannot be mistaken for real data. Use it to click
+through the interface, never to produce a determination anyone will read.
 
 ---
 
@@ -181,6 +208,7 @@ goods. It is one config value; nothing else changes.
 | `npm run lint` | ESLint |
 | `npm run sync:htsus` | Download the active HTSUS revision |
 | `npm run db:push` | Apply the Prisma schema |
+| `npm run import:htsus` | Build the index from a downloaded HTS export |
 | `npm run dev:seed` | Build the offline fixture tariff index |
 | `npm run dev:pdf` | Render the sample determination to `data/pdf/` |
 
