@@ -1,0 +1,493 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
+import type { BetaMessage } from "@anthropic-ai/sdk/resources/beta";
+import {
+  MAX_OUTPUT_TOKENS,
+  MAX_PAUSE_RESUMES,
+  MAX_TOOL_ITERATIONS,
+  config,
+} from "../config";
+import { getActiveRevision, lookupExact } from "../hts/store";
+import { buildSystemPrompt, buildUserTurn } from "./prompt";
+import {
+  type AnalysisMode,
+  type Candidate,
+  type ClassificationResult,
+  type Refinement,
+  classificationResultSchema,
+} from "./schema";
+import { classificationTools } from "./tools";
+
+// ---------------------------------------------------------------------------
+// Progress events (consumed by the SSE route)
+// ---------------------------------------------------------------------------
+
+export type ProgressEvent =
+  | { type: "status"; message: string }
+  | { type: "thinking"; text: string }
+  | { type: "tool_use"; name: string; summary: string }
+  | { type: "tool_result"; name: string; summary: string }
+  | { type: "warning"; message: string }
+  | { type: "done"; run: ClassificationRun }
+  | { type: "error"; message: string };
+
+export interface CodeCorrection {
+  htsCode: string;
+  field: string;
+  modelValue: string;
+  indexValue: string;
+}
+
+export interface ClassificationRun {
+  result: ClassificationResult;
+  verification: {
+    verifiedCodes: string[];
+    /** Codes the model returned that do not exist in this revision. */
+    rejectedCodes: { code: string; reason: string }[];
+    /** Data fields where the model's transcription differed from the index. */
+    corrections: CodeCorrection[];
+  };
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+  model: string;
+  effort: string;
+  htsusRevision: string;
+  durationMs: number;
+}
+
+export class ClassificationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ClassificationError";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Run
+// ---------------------------------------------------------------------------
+
+export interface ClassifyInput {
+  mode: AnalysisMode;
+  input: string;
+  refinements: Refinement[];
+  signal?: AbortSignal;
+}
+
+/**
+ * Run one classification, emitting progress as it goes.
+ *
+ * At `effort: max` with tool use, a single run legitimately takes minutes, so
+ * the caller gets thinking summaries and tool activity rather than a silent
+ * wait. The final structured answer arrives on the `done` event.
+ */
+export async function* classify(
+  input: ClassifyInput,
+): AsyncGenerator<ProgressEvent, void, undefined> {
+  const startedAt = Date.now();
+
+  let revision;
+  try {
+    revision = getActiveRevision();
+  } catch (error) {
+    yield {
+      type: "error",
+      message:
+        error instanceof Error
+          ? error.message
+          : "No HTSUS snapshot is available.",
+    };
+    return;
+  }
+
+  const client = new Anthropic({ apiKey: config.anthropicApiKey });
+  const effort = config.effort;
+
+  yield {
+    type: "status",
+    message: `Classifying against ${revision.revision} at ${effort} effort.`,
+  };
+
+  const runner = client.beta.messages.toolRunner({
+    model: config.model,
+    max_tokens: MAX_OUTPUT_TOKENS,
+    // Thinking is on by default on Opus 5; `summarized` is requested
+    // explicitly because the default omits the text and the analyst is
+    // watching a multi-minute run.
+    thinking: { type: "adaptive", display: "summarized" },
+    output_config: {
+      effort,
+      format: betaZodOutputFormat(classificationResultSchema),
+    },
+    system: [
+      {
+        type: "text",
+        text: buildSystemPrompt(input.mode),
+        // Stable prefix: prompt + tool definitions are identical across runs
+        // and across the clarifying-question round trip, so a refinement
+        // re-run is cheap.
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    tools: [
+      ...classificationTools,
+      { type: "web_search_20260209", name: "web_search", max_uses: 12 },
+      { type: "web_fetch_20260209", name: "web_fetch", max_uses: 8 },
+    ],
+    messages: [
+      {
+        role: "user",
+        content: buildUserTurn({
+          mode: input.mode,
+          input: input.input,
+          htsusRevision: revision.revision,
+          revisionPublished: revision.publishedDate,
+          refinements: input.refinements,
+        }),
+      },
+    ],
+    max_iterations: MAX_TOOL_ITERATIONS,
+    stream: true,
+  });
+
+  if (input.signal) {
+    runner.setRequestOptions({ signal: input.signal });
+  }
+
+  let finalMessage: BetaMessage | null = null;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let pauseResumes = 0;
+
+  try {
+    for await (const stream of runner) {
+      // Buffer thinking deltas into sentence-ish chunks; per-token events
+      // would flood the SSE channel for no readability gain.
+      let thinkingBuffer = "";
+
+      for await (const event of stream) {
+        if (event.type === "content_block_delta") {
+          if (event.delta.type === "thinking_delta") {
+            thinkingBuffer += event.delta.thinking;
+            if (/[.!?]\s$|\n/.test(thinkingBuffer) && thinkingBuffer.length > 40) {
+              yield { type: "thinking", text: thinkingBuffer.trim() };
+              thinkingBuffer = "";
+            }
+          }
+          // Text deltas are suppressed: with a structured output format the
+          // assistant's visible text is the JSON payload, which is not
+          // something an analyst wants streamed at them.
+        } else if (event.type === "content_block_start") {
+          const block = event.content_block;
+          if (block.type === "tool_use") {
+            yield {
+              type: "tool_use",
+              name: block.name,
+              summary: describeToolInput(block.name, block.input),
+            };
+          } else if (block.type === "server_tool_use") {
+            yield {
+              type: "tool_use",
+              name: block.name,
+              summary: describeToolInput(block.name, block.input),
+            };
+          }
+        }
+      }
+
+      if (thinkingBuffer.trim()) {
+        yield { type: "thinking", text: thinkingBuffer.trim() };
+      }
+
+      const message = await stream.finalMessage();
+      finalMessage = message;
+      inputTokens += message.usage?.input_tokens ?? 0;
+      outputTokens += message.usage?.output_tokens ?? 0;
+
+      // Server-side tools can pause a long turn. The runner only continues
+      // after a *client* tool produces a result, so a paused turn would
+      // otherwise end the loop silently with a truncated answer.
+      if (message.stop_reason === "pause_turn") {
+        pauseResumes += 1;
+        if (pauseResumes > MAX_PAUSE_RESUMES) {
+          yield {
+            type: "warning",
+            message: `Run paused ${pauseResumes} times and was stopped. The answer may be incomplete.`,
+          };
+          break;
+        }
+        yield {
+          type: "status",
+          message: "Resuming after a paused research step…",
+        };
+        runner.pushMessages({ role: "assistant", content: message.content });
+      }
+
+      if (message.stop_reason === "refusal") {
+        yield {
+          type: "error",
+          message:
+            "The model declined this request. If the product is dual-use or " +
+            "security-related, rephrase around its physical characteristics.",
+        };
+        return;
+      }
+
+      if (message.stop_reason === "max_tokens") {
+        yield {
+          type: "warning",
+          message:
+            "The response hit the output token limit and may be truncated.",
+        };
+      }
+    }
+  } catch (error) {
+    yield {
+      type: "error",
+      message:
+        error instanceof Error
+          ? error.message
+          : "The classification run failed.",
+    };
+    return;
+  }
+
+  if (!finalMessage) {
+    yield { type: "error", message: "The model returned no response." };
+    return;
+  }
+
+  yield { type: "status", message: "Verifying codes against the tariff…" };
+
+  let parsed: ClassificationResult;
+  try {
+    parsed = parseResult(finalMessage);
+  } catch (error) {
+    yield {
+      type: "error",
+      message:
+        error instanceof Error
+          ? error.message
+          : "The model's response could not be read.",
+    };
+    return;
+  }
+
+  const { result, verification } = verifyAgainstTariff(parsed);
+
+  for (const rejected of verification.rejectedCodes) {
+    yield {
+      type: "warning",
+      message: `Dropped ${rejected.code}: ${rejected.reason}`,
+    };
+  }
+
+  if (result.candidates.length === 0 && result.status === "complete") {
+    yield {
+      type: "error",
+      message:
+        "Every code returned failed verification against the active tariff " +
+        "revision. Nothing was saved. This usually means the run went wrong — " +
+        "re-run, and if it recurs, check that the HTSUS snapshot is complete.",
+    };
+    return;
+  }
+
+  yield {
+    type: "done",
+    run: {
+      result,
+      verification,
+      usage: { inputTokens, outputTokens },
+      model: config.model,
+      effort,
+      htsusRevision: revision.revision,
+      durationMs: Date.now() - startedAt,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Parsing
+// ---------------------------------------------------------------------------
+
+function parseResult(message: BetaMessage): ClassificationResult {
+  const text = message.content
+    .filter((block): block is { type: "text"; text: string } & typeof block =>
+      block.type === "text",
+    )
+    .map((block) => block.text)
+    .join("");
+
+  if (!text.trim()) {
+    throw new ClassificationError(
+      "The model produced no final answer. This can happen if the tool loop " +
+        "hit its iteration cap — try a narrower product description.",
+    );
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new ClassificationError(
+      "The model's final answer was not valid JSON.",
+    );
+  }
+
+  const validated = classificationResultSchema.safeParse(json);
+  if (!validated.success) {
+    throw new ClassificationError(
+      `The model's answer did not match the expected shape: ${validated.error.issues
+        .slice(0, 3)
+        .map((issue) => `${issue.path.join(".")} ${issue.message}`)
+        .join("; ")}`,
+    );
+  }
+  return validated.data;
+}
+
+// ---------------------------------------------------------------------------
+// Verification
+// ---------------------------------------------------------------------------
+
+/**
+ * Check every code the model returned against the tariff, and replace the
+ * purely factual fields with the index's values.
+ *
+ * A fabricated but well-formed 10-digit number is the highest-consequence
+ * failure mode in this domain, and it is exactly the kind of thing a language
+ * model produces fluently. Duty rates and description paths are lookups, not
+ * judgements, so where the model's transcription disagrees with the tariff the
+ * tariff wins and the disagreement is recorded.
+ */
+export function verifyAgainstTariff(result: ClassificationResult): {
+  result: ClassificationResult;
+  verification: ClassificationRun["verification"];
+} {
+  const verifiedCodes: string[] = [];
+  const rejectedCodes: { code: string; reason: string }[] = [];
+  const corrections: CodeCorrection[] = [];
+
+  const kept: Candidate[] = [];
+
+  for (const candidate of result.candidates) {
+    const line = lookupExact(candidate.hts_code);
+
+    if (!line) {
+      rejectedCodes.push({
+        code: candidate.hts_code,
+        reason: "not present in this HTSUS revision",
+      });
+      continue;
+    }
+
+    if (!line.isReportable) {
+      rejectedCodes.push({
+        code: candidate.hts_code,
+        reason: `resolves to a ${line.digits.length}-digit line, which cannot be declared on an entry`,
+      });
+      continue;
+    }
+
+    verifiedCodes.push(line.htsNo);
+
+    const authoritativePath = line.descriptionPath.filter(Boolean);
+    if (
+      authoritativePath.join(" > ") !== candidate.description_path.join(" > ")
+    ) {
+      corrections.push({
+        htsCode: line.htsNo,
+        field: "description_path",
+        modelValue: candidate.description_path.join(" > "),
+        indexValue: authoritativePath.join(" > "),
+      });
+    }
+    if (candidate.duty.general !== line.general) {
+      corrections.push({
+        htsCode: line.htsNo,
+        field: "duty.general",
+        modelValue: candidate.duty.general,
+        indexValue: line.general,
+      });
+    }
+
+    kept.push({
+      ...candidate,
+      hts_code: line.htsNo,
+      description_path: authoritativePath,
+      duty: {
+        general: line.general,
+        special: line.special,
+        column_2: line.other,
+        rates_published_on: line.ratesInheritedFrom,
+      },
+      unit_of_quantity: line.units,
+    });
+  }
+
+  // Re-rank so ranks stay contiguous after any drops.
+  kept.sort((a, b) => a.rank - b.rank);
+  const reRanked = kept.map((candidate, index) => ({
+    ...candidate,
+    rank: index + 1,
+    why_not_selected: index === 0 ? null : candidate.why_not_selected,
+  }));
+
+  const recommendedStillValid =
+    result.recommended_hts_code !== null &&
+    verifiedCodes.some(
+      (code) =>
+        code.replace(/\D/g, "") ===
+        (result.recommended_hts_code ?? "").replace(/\D/g, ""),
+    );
+
+  return {
+    result: {
+      ...result,
+      candidates: reRanked,
+      recommended_hts_code: recommendedStillValid
+        ? (reRanked.find(
+            (candidate) =>
+              candidate.hts_code.replace(/\D/g, "") ===
+              (result.recommended_hts_code ?? "").replace(/\D/g, ""),
+          )?.hts_code ?? null)
+        : (reRanked[0]?.hts_code ?? null),
+    },
+    verification: { verifiedCodes, rejectedCodes, corrections },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
+
+function describeToolInput(name: string, rawInput: unknown): string {
+  const input = (rawInput ?? {}) as Record<string, unknown>;
+  const str = (key: string): string =>
+    typeof input[key] === "string" ? (input[key] as string) : "";
+
+  switch (name) {
+    case "hts_search":
+      return `searching the tariff for "${str("query")}"`;
+    case "hts_lookup":
+      return `verifying ${str("hts_code")}`;
+    case "hts_subtree":
+      return `reading the breakouts under ${str("hts_code")}`;
+    case "hts_notes":
+      return `reading ${str("kind")} ${str("reference")} notes`;
+    case "hts_gri":
+      return "reading the General Rules of Interpretation";
+    case "chapter99_lookup":
+      return `checking Chapter 99 duties for ${str("hts_code")}`;
+    case "schedule_b_lookup":
+      return `looking up the Schedule B code for ${str("hts_code")}`;
+    case "web_search":
+      return `searching the web for "${str("query")}"`;
+    case "web_fetch":
+      return `reading ${str("url")}`;
+    default:
+      return name;
+  }
+}
