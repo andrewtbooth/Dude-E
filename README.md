@@ -97,7 +97,19 @@ reasonable — and again whenever USITC publishes.
 
 ```bash
 npm run sync:htsus -- --chapters 84,85,96   # partial pull
+npm run sync:htsus -- --probe               # diagnose sources, write nothing
 ```
+
+### Diagnosing a sync
+
+`--probe` hits every source once and reports what actually came back — status,
+content type, size, row count, and the first 300 bytes — without writing
+anything. A failed sync tells you a source "could not be retrieved"; the probe
+tells you what the server sent, which is what you need to fix it. Run it first
+whenever a sync misbehaves.
+
+The sync reads `.env.local`, so `CENSUS_CONCORDANCE_URL`, `HTSUS_DATA_DIR` and
+`USITC_BASE_URL` overrides apply to it as well as to the app.
 
 ### Working without network access
 

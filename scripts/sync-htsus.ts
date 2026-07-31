@@ -4,6 +4,7 @@
  *   npm run sync:htsus
  *   npm run sync:htsus -- --revision "2026 HTS Revision 13"
  *   npm run sync:htsus -- --chapters 84,85,96      # partial pull, for dev
+ *   npm run sync:htsus -- --probe                  # diagnose sources, write nothing
  *
  * Design notes
  * ------------
@@ -36,6 +37,16 @@ import type {
   UsitcRawRow,
 } from "../src/lib/hts/types";
 
+// This runs as a standalone script rather than inside Next, so nothing has
+// loaded .env.local for us. Without this, an overridden HTSUS_DATA_DIR or
+// CENSUS_CONCORDANCE_URL would be silently ignored here while the app honoured
+// it — the sync would write where the app is not looking.
+try {
+  process.loadEnvFile(".env.local");
+} catch {
+  // No .env.local is fine; every value below has a working default.
+}
+
 const BASE_URL = (
   process.env.USITC_BASE_URL ?? "https://hts.usitc.gov/reststop"
 ).replace(/\/+$/, "");
@@ -65,13 +76,16 @@ function log(message: string): void {
 interface Args {
   revision?: string;
   chapters?: number[];
+  probe?: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {};
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
-    if (flag === "--revision") {
+    if (flag === "--probe") {
+      args.probe = true;
+    } else if (flag === "--revision") {
       args.revision = argv[++i];
     } else if (flag === "--chapters") {
       args.chapters = (argv[++i] ?? "")
@@ -407,6 +421,106 @@ async function fetchScheduleB(): Promise<ScheduleBEntry[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Probe
+// ---------------------------------------------------------------------------
+
+/**
+ * Hit every source once and report exactly what came back, without writing
+ * anything.
+ *
+ * This exists because the three things most likely to be wrong — the release
+ * listing endpoint, the notes filename convention, and the Census concordance
+ * URL — cannot be diagnosed from a normal sync run's output. A failed sync
+ * says "could not retrieve"; this says what the server actually sent, which is
+ * what you need in order to fix it.
+ */
+async function probeSources(): Promise<void> {
+  log("Probing sources. Nothing will be written.\n");
+
+  const targets: { label: string; url: string; expect: string }[] = [
+    {
+      label: "Release listing",
+      url: `${BASE_URL}/releases`,
+      expect: 'JSON or HTML naming the current "<year> HTS Revision <n>"',
+    },
+    {
+      label: "Current release",
+      url: `${BASE_URL}/currentRelease`,
+      expect: "same, alternate endpoint",
+    },
+    {
+      label: "Tariff lines (ch 84)",
+      url: `${BASE_URL}/exportList?from=8400&to=8499&format=JSON&styles=false`,
+      expect: "JSON array of rows with htsno / indent / description",
+    },
+    {
+      label: "Chapter notes (ch 84)",
+      url: `${BASE_URL}/file?release=currentRelease&filename=${encodeURIComponent("Chapter 84")}`,
+      expect: "text or HTML; a PDF content-type means notes cannot be parsed",
+    },
+    {
+      label: "General Notes (GRIs)",
+      url: `${BASE_URL}/file?release=currentRelease&filename=${encodeURIComponent("General Notes")}`,
+      expect: "text or HTML containing the rules of interpretation",
+    },
+    {
+      label: "Schedule B concordance",
+      url: CENSUS_CONCORDANCE_URL,
+      expect: "delimited text with two 10-digit code columns per row",
+    },
+  ];
+
+  for (const target of targets) {
+    log(`--- ${target.label} ---`);
+    log(`  url:      ${target.url}`);
+    log(`  expected: ${target.expect}`);
+
+    try {
+      const response = await fetchWithRetry(target.url, 1);
+      const body = await response.text();
+      const contentType = response.headers.get("content-type") ?? "unknown";
+
+      log(`  status:   ${response.status} ${response.statusText}`);
+      log(`  type:     ${contentType}`);
+      log(`  bytes:    ${body.length}`);
+
+      const found = extractRevision(body);
+      if (found) log(`  revision: ${found.revision} (${found.publishedDate ?? "no date"})`);
+
+      if (target.label.startsWith("Tariff lines")) {
+        try {
+          const parsed: unknown = JSON.parse(body);
+          if (Array.isArray(parsed)) {
+            log(`  rows:     ${parsed.length}`);
+            log(`  keys:     ${Object.keys((parsed[0] ?? {}) as object).join(", ") || "(none)"}`);
+          } else {
+            log(`  rows:     NOT AN ARRAY (got ${typeof parsed})`);
+          }
+        } catch {
+          log("  rows:     body is not valid JSON");
+        }
+      }
+
+      if (target.label.startsWith("Schedule B")) {
+        log(`  parsed:   ${parseConcordance(body).length} entries`);
+      }
+
+      log(`  head:     ${JSON.stringify(body.slice(0, 300))}`);
+    } catch (error) {
+      log(
+        `  FAILED:   ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    log("");
+  }
+
+  log(
+    "Send this output back if anything above looks wrong — it contains every\n" +
+      "detail needed to correct the fetchers.",
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -429,6 +543,11 @@ async function main(): Promise<void> {
   log(`  target:   ${DATA_DIR}`);
   log(`  chapters: ${chapters.length}`);
   log("");
+
+  if (args.probe) {
+    await probeSources();
+    return;
+  }
 
   const { revision, publishedDate } = await resolveRevision(args.revision);
 
