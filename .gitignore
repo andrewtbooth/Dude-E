@@ -1,0 +1,39 @@
+# === SECRETS =================================================================
+# This repository is PUBLIC. Nothing below may ever be committed.
+.env
+.env.*
+!.env.example
+
+# === LOCAL DATA ==============================================================
+# Audit database contains analyst identities and customer part numbers.
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
+*.sqlite
+*.sqlite3
+
+# Synced HTSUS snapshots and the derived FTS index (hundreds of MB, and
+# regenerable via `npm run sync:htsus` — see README).
+/data/htsus/
+
+# Generated determination PDFs
+/data/pdf/
+
+# === BUILD ===================================================================
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# === TOOLING =================================================================
+.DS_Store
+*.log
+npm-debug.log*
+coverage/
+.vitest/
+.eslintcache
+prisma/generated/

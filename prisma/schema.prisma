@@ -1,0 +1,123 @@
+// Audit log for tariff classification work.
+//
+// Customs recordkeeping expects you to be able to answer "who classified this,
+// when, against which edition of the tariff, and on what reasoning" long after
+// the entry was filed. That shapes the schema: analyses and determinations are
+// append-only in practice, and every row that represents a conclusion carries
+// its own copy of the provenance rather than pointing at mutable state.
+//
+// SQLite by default; the schema avoids Postgres-incompatible constructs so it
+// can move when a single file stops being enough.
+
+generator client {
+  provider = "prisma-client"
+  output   = "./generated"
+}
+
+// Prisma 7 takes the connection URL from prisma.config.ts (for the CLI) and
+// from a driver adapter passed to the PrismaClient constructor (at runtime).
+datasource db {
+  provider = "sqlite"
+}
+
+/// A person who runs analyses. Identity comes from the splash sign-in.
+model Analyst {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  analyses       Analysis[]
+  determinations Determination[]
+
+  @@index([email])
+}
+
+/// One classification run, including any clarifying-question rounds.
+model Analysis {
+  id        String @id @default(cuid())
+  analystId String
+  analyst   Analyst @relation(fields: [analystId], references: [id])
+
+  /// "PART_NUMBER" or "DESCRIPTION".
+  mode  String
+  /// The part number or product description as the analyst typed it.
+  input String
+
+  /// Answers supplied to the model's clarifying questions, as JSON.
+  refinementsJson String @default("[]")
+
+  /// "RUNNING" | "NEEDS_MORE_INFO" | "COMPLETE" | "FAILED"
+  status String @default("RUNNING")
+
+  /// Full structured result from the agent, as returned. Stored verbatim so a
+  /// determination can be reconstructed even if the schema evolves.
+  resultJson String?
+
+  /// Failure detail when status is FAILED.
+  error String?
+
+  // --- provenance, captured at run time ---
+  model          String
+  effort         String
+  htsusRevision  String
+  appVersion     String
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationMs  Int?
+
+  inputTokens  Int?
+  outputTokens Int?
+
+  determinations Determination[]
+
+  @@index([analystId, createdAt])
+  @@index([status])
+}
+
+/// The analyst's final call on an analysis. This is what the PDF renders.
+model Determination {
+  id         String   @id @default(cuid())
+  analysisId String
+  analysis   Analysis @relation(fields: [analysisId], references: [id])
+  analystId  String
+  analyst    Analyst  @relation(fields: [analystId], references: [id])
+
+  /// The 10-digit HTSUS number the analyst selected. Not necessarily the
+  /// model's top-ranked candidate — the analyst decides.
+  selectedHtsCode String
+
+  /// The selected candidate object, copied out of the analysis result so the
+  /// determination stays readable on its own.
+  selectedCandidateJson String
+
+  /// The rejected alternates that appear in the PDF, with rejection rationale.
+  alternatesJson String @default("[]")
+
+  /// Free-text note from the analyst, e.g. why they overrode the top rank.
+  analystNote String?
+
+  // --- provenance, frozen at decision time ---
+  htsusRevision String
+  model         String
+  effort        String
+  appVersion    String
+  decidedAt     DateTime @default(now())
+
+  /// SHA-256 of the generated PDF bytes, so a circulated file can be tied back.
+  pdfSha256 String?
+
+  @@index([analystId, decidedAt])
+  @@index([selectedHtsCode])
+}
+
+/// Which HTSUS snapshots this deployment has ingested.
+model HtsusRevision {
+  revision      String   @id
+  publishedDate String?
+  syncedAt      DateTime @default(now())
+  lineCount     Int
+  warningCount  Int      @default(0)
+}
