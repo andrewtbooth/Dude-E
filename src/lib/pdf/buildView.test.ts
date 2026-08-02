@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ClassificationRun } from "../agent/classify";
 import type { Candidate } from "../agent/schema";
+import { sampleDeterminationView } from "../../test/determination-fixture";
 import {
   MAX_ALTERNATES,
   buildDeterminationView,
@@ -147,6 +148,7 @@ describe("buildDeterminationView", () => {
       decidedAt: new Date("2026-07-31T14:00:00Z"),
       htsusRevision: "2026 HTS Revision 13",
       scheduleBEdition: "2026",
+      tariffRetrievedAt: new Date("2026-07-30T09:00:00Z"),
       model: "claude-opus-5",
       effort: "max",
       appVersion: "0.1.0",
@@ -185,5 +187,33 @@ describe("buildDeterminationView", () => {
     expect(build("8507.60.00.20", "8507.60.00.20").assumptions).toEqual([
       "Assumed stainless steel.",
     ]);
+  });
+});
+
+describe("provenance is frozen, not joined", () => {
+  // Two reviewers independently found the same defect: the PDF read the
+  // analyst's name through a Prisma relation to a row that is rewritten on
+  // every sign-in, so renaming an analyst silently re-authored determinations
+  // they had already exported. These assert the shape that prevents it.
+  it("renders the analyst identity it is given, not one looked up later", () => {
+    const view = sampleDeterminationView({
+      analyst: { name: "Dana Okafor", email: "dana.okafor@example.com" },
+    });
+    expect(view.analyst).toEqual({
+      name: "Dana Okafor",
+      email: "dana.okafor@example.com",
+    });
+  });
+
+  it("carries the tariff retrieval date so Chapter 99 duties can be dated", () => {
+    const view = sampleDeterminationView();
+    expect(view.tariffRetrievedAt).toBeInstanceOf(Date);
+  });
+
+  it("tolerates a determination with no recorded retrieval date", () => {
+    // Rows decided before the column existed. The document must still render;
+    // it simply omits the date rather than inventing one.
+    const view = sampleDeterminationView({ tariffRetrievedAt: null });
+    expect(view.tariffRetrievedAt).toBeNull();
   });
 });

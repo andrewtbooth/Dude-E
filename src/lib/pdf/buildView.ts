@@ -56,6 +56,8 @@ export interface BuildViewInput {
   htsusRevision: string;
   /** Schedule B edition year, or null when none was synced. */
   scheduleBEdition: string | null;
+  /** When the tariff snapshot was pulled, for dating Chapter 99 duties. */
+  tariffRetrievedAt: Date | null;
   model: string;
   effort: string;
   appVersion: string;
@@ -83,6 +85,7 @@ export function buildDeterminationView(
     decidedAt: input.decidedAt,
     htsusRevision: input.htsusRevision,
     scheduleBEdition: input.scheduleBEdition,
+    tariffRetrievedAt: input.tariffRetrievedAt,
     model: input.model,
     effort: input.effort,
     appVersion: input.appVersion,

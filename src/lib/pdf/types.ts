@@ -24,6 +24,12 @@ export interface DeterminationView {
    * and independently of the HTSUS revision cycle.
    */
   scheduleBEdition: string | null;
+  /**
+   * When the tariff snapshot was pulled. Chapter 99 duties are captured as
+   * published at sync time and change faster than the HTSUS is revised, so
+   * they have to be dated on the artifact rather than left to read as live.
+   */
+  tariffRetrievedAt: Date | null;
   model: string;
   effort: string;
   appVersion: string;

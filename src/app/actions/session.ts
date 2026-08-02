@@ -43,7 +43,9 @@ export async function signInAction(
     const analyst = await prisma.analyst.upsert({
       where: { email },
       // Name is refreshed on each sign-in so a correction propagates forward.
-      // Determinations already exported keep the name they were stamped with.
+      // Determinations already decided keep the name they were stamped with,
+      // because each one copies it at decision time rather than joining to
+      // this row — see `analystName` on the Determination model.
       update: { name, lastSeenAt: new Date() },
       create: { name, email },
     });

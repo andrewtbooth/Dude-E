@@ -7,10 +7,13 @@ export function CandidateCard({
   candidate,
   selected,
   onSelect,
+  tariffRetrievedAt,
 }: {
   candidate: Candidate;
   selected: boolean;
   onSelect: () => void;
+  /** When the snapshot was pulled, for dating Chapter 99 duties. */
+  tariffRetrievedAt: string | null;
 }) {
   const [showReasoning, setShowReasoning] = useState(false);
   const inputId = useId();
@@ -83,6 +86,13 @@ export function CandidateCard({
                   </li>
                 ))}
               </ul>
+              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                {tariffRetrievedAt
+                  ? `As published in the snapshot retrieved ${tariffRetrievedAt}. `
+                  : ""}
+                Chapter 99 actions change more often than the tariff is
+                revised — confirm against the live schedule before filing.
+              </p>
             </div>
           )}
 

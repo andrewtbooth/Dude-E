@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/format";
 import { redirect } from "next/navigation";
 import { AnalyzeClient } from "@/components/AnalyzeClient";
 import { Masthead } from "@/components/Masthead";
@@ -32,7 +33,12 @@ export default async function AnalyzePage() {
           />
         ) : null}
 
-        <AnalyzeClient disabled={!revision} />
+        <AnalyzeClient
+          disabled={!revision}
+          tariffRetrievedAt={
+            revision ? formatDate(revision.retrievedAt) : null
+          }
+        />
       </main>
     </div>
   );

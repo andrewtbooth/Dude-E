@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { UnauthenticatedError, requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
-import { lookupExact } from "@/lib/hts/store";
+import { lookupExact, tryGetActiveRevision } from "@/lib/hts/store";
 import {
   findCandidate,
   parseRun,
@@ -83,6 +83,7 @@ export async function POST(request: Request) {
   // snapshot could have been re-synced between analysis and decision, and a
   // determination must name a code that exists in the edition it is stamped
   // with.
+  const activeRevision = tryGetActiveRevision();
   const line = lookupExact(selected.hts_code);
   if (!line || !line.isReportable) {
     return NextResponse.json(
@@ -104,8 +105,15 @@ export async function POST(request: Request) {
       alternatesJson: JSON.stringify(
         selectAlternates(run.result.candidates, selected.hts_code),
       ),
+      // Frozen copies — the analysis row they came from can still be re-run.
+      runJson: analysis.resultJson,
+      refinementsJson: analysis.refinementsJson,
       analystNote,
+      // Frozen, not joined. The Analyst row keeps changing; this must not.
+      analystName: session.name,
+      analystEmail: session.email,
       htsusRevision: analysis.htsusRevision,
+      tariffRetrievedAt: activeRevision?.retrievedAt ?? null,
       scheduleBEdition: analysis.scheduleBEdition,
       model: analysis.model,
       effort: analysis.effort,

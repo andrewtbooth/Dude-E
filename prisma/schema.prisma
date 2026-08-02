@@ -99,11 +99,34 @@ model Determination {
   /// The rejected alternates that appear in the PDF, with rejection rationale.
   alternatesJson String @default("[]")
 
+  /// The full classification run, copied at decision time.
+  ///
+  /// The Analysis row it came from is *not* immutable: answering another
+  /// clarifying question re-runs the same analysis and overwrites its
+  /// refinements and result. Reading the PDF's assumptions, researched
+  /// product, verification results and clarifying answers back through that
+  /// relation would let a later re-run silently rewrite the reasoning behind
+  /// an already-issued determination, under its original id and timestamp.
+  runJson String @default("")
+  /// Clarifying questions and the answers given, frozen for the same reason.
+  refinementsJson String @default("[]")
+
   /// Free-text note from the analyst, e.g. why they overrode the top rank.
   analystNote String?
 
   // --- provenance, frozen at decision time ---
+  /// The analyst's name and email *as they were when the decision was made*.
+  /// Copied rather than read through the `analyst` relation: that row is
+  /// mutable (a name is refreshed on every sign-in), and re-rendering an
+  /// already-circulated determination with a different name than it was
+  /// signed with would break the one guarantee this record exists to make.
+  analystName  String
+  analystEmail String
   htsusRevision String
+  /// When that tariff snapshot was pulled from USITC. Chapter 99 duties are
+  /// captured as published at sync time and move faster than HTSUS revisions,
+  /// so the artifact has to date them rather than imply they are live.
+  tariffRetrievedAt DateTime?
   /// Schedule B edition year, or null when no export schedule was synced.
   scheduleBEdition String?
   model         String
@@ -111,7 +134,8 @@ model Determination {
   appVersion    String
   decidedAt     DateTime @default(now())
 
-  /// SHA-256 of the generated PDF bytes, so a circulated file can be tied back.
+  /// SHA-256 of the PDF bytes, recorded on first issue so a circulated file
+  /// can be tied back to this row. Write-once by design — see the PDF route.
   pdfSha256 String?
 
   @@index([analystId, decidedAt])

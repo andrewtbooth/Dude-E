@@ -29,8 +29,9 @@ An exported determination carries, in this order:
 3. **Determination** — the 10-digit code, its full description path, General /
    Special / Column 2 rates, unit of quantity, Chapter 99 exposure, and the
    Schedule B export code with its own reasoning and rejected siblings.
-4. **Basis of classification** — the GRI 1 through 6 walk and the Section and
-   Chapter Notes relied on.
+4. **Basis of classification** — the GRI 1 through 6 walk and the Chapter Notes
+   relied on. (Section Notes are not currently ingested — see Known
+   limitations.)
 5. **Assumptions** — everything taken as given that the analyst did not state.
 6. **Alternates considered and rejected** — up to five, each with the specific
    reason it loses.
@@ -69,8 +70,8 @@ classification outright, because a code that cannot be verified against a
 published edition is worse than no answer at all.
 
 The sync pulls tariff lines chapter by chapter from the USITC REST API, the
-General Notes and every Section and Chapter Note, and the complete Schedule B
-export schedule from Census. It writes a snapshot directory and a manifest:
+General Notes and the Chapter Notes, and the complete Schedule B export
+schedule from Census. It writes a snapshot directory and a manifest:
 
 ```
 data/htsus/2026-hts-revision-14/
@@ -335,6 +336,35 @@ scripts/
   HTSUS is revised. The snapshot captures Chapter 99 as published at sync time;
   the UI shows the sync date alongside those duties rather than implying they
   are live.
+- **Section Notes are not ingested, and that is a real analytical gap.** The
+  sync fetches "General Notes" and "Chapter N" documents only; the live
+  snapshot holds 98 chapter notes and 1 general note and **zero** section
+  notes. Section XVI Note 2 (the parts rule) and Section XV Note 2 (parts of
+  general use) decide a large share of machinery, electrical and metal-article
+  classifications, so their absence is substantive. `hts_notes` still advertises
+  `kind: "section"` and reports honestly that they could not be retrieved
+  rather than that none exist — but every such call fails, and the prompt's
+  fallback sends the model to the live web for text the snapshot was supposed
+  to pin. Fix the ingestion before trusting a parts classification.
+- **The General Notes are truncated at General Note 2.** The stored body is
+  ~8,955 characters: the GRIs, the Additional U.S. Rules, and General Notes 1
+  and 2. `notesSectionOf` cuts at the first "Rates of Duty" marker, which falls
+  inside General Note 3's rate-column table. Everything after — GN 3 (rate
+  columns), GN 4 (GSP), GN 11 (USMCA) and GN 12–35 (every FTA's rules of
+  origin) — is absent. The GRIs, which are what the analysis actually turns on,
+  are complete. FTA preference eligibility is not analysed and must not be
+  inferred from the Special column the determination prints.
+- **Chapter 99 linkage is footnote-based and therefore mostly blind.**
+  `chapter99_lookup` finds provisions by matching `99xx.` references in a
+  line's footnotes and its ancestors'. Only 771 of 35,789 lines carry such a
+  footnote, and the Section 301 coverage lists live in the Chapter 99
+  subchapter U.S. Notes, which are not ingested. Staple 301-exposed goods —
+  `9403.20.00.50`, `7318.15.20.95`, `6109.10.00.12`, `8471.30.01.00` — all
+  return no footnotes and therefore no Chapter 99 finding. Treat "none found"
+  as "not detected", never as "none apply".
+- **Chapter Notes are truncated at 12,000 characters when handed to the model.**
+  That is under half the notes for the chapters where they matter most —
+  Chapter 84 is 31,749 characters, Chapter 72 is 29,968, Chapter 85 is 29,428.
 - **Schedule B needs an analyst's eye, not just a lookup.** The export code is
   reached through the shared HS-6 subheading and then chosen by description —
   see "The export side" above. Roughly 0.6% of tariff numbers sit under a

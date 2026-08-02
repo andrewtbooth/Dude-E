@@ -36,7 +36,14 @@ const MODES: { value: AnalysisMode; label: string; placeholder: string; hint: st
     },
   ];
 
-export function AnalyzeClient({ disabled }: { disabled: boolean }) {
+export function AnalyzeClient({
+  disabled,
+  tariffRetrievedAt,
+}: {
+  disabled: boolean;
+  /** Snapshot retrieval date, already formatted, for dating Chapter 99 duties. */
+  tariffRetrievedAt: string | null;
+}) {
   const [mode, setMode] = useState<AnalysisMode>("DESCRIPTION");
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
@@ -275,6 +282,7 @@ export function AnalyzeClient({ disabled }: { disabled: boolean }) {
                     candidate={candidate}
                     selected={selectedCode === candidate.hts_code}
                     onSelect={() => setSelectedCode(candidate.hts_code)}
+                    tariffRetrievedAt={tariffRetrievedAt}
                   />
                 ))}
               </ul>

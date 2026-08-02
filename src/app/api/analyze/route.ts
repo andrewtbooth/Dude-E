@@ -90,7 +90,24 @@ export async function POST(request: Request) {
   }
 
   // A refinement continues the same analysis record so the audit trail shows
-  // one piece of work, not a series of disconnected runs.
+  // one piece of work, not a series of disconnected runs. Scoping the update
+  // to the signed-in analyst is what keeps that from also meaning "anyone
+  // holding an id can rewrite someone else's run": this row's result is the
+  // reasoning behind a determination, and an unscoped update would let one
+  // analyst overwrite another's record of what was considered.
+  if (priorAnalysisId) {
+    const prior = await prisma.analysis.findUnique({
+      where: { id: priorAnalysisId },
+      select: { analystId: true },
+    });
+    if (!prior || prior.analystId !== session.id) {
+      return NextResponse.json(
+        { error: "That analysis belongs to another analyst." },
+        { status: 403 },
+      );
+    }
+  }
+
   const analysis = priorAnalysisId
     ? await prisma.analysis.update({
         where: { id: priorAnalysisId },

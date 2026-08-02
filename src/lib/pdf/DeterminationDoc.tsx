@@ -381,8 +381,13 @@ function FinalDetermination({ view }: { view: DeterminationView }) {
             </Text>
           ))}
           <Text style={{ fontSize: 7.5, marginTop: 2 }}>
-            Chapter 99 provisions change more often than the HTSUS is revised.
-            Confirm against the current schedule before filing.
+            These provisions are as published in {view.htsusRevision}
+            {view.tariffRetrievedAt
+              ? `, retrieved ${formatTimestamp(view.tariffRetrievedAt)}`
+              : ""}
+            . Chapter 99 actions change more often than the HTSUS is revised,
+            so treat them as current only as of that date and confirm against
+            the live schedule before filing.
           </Text>
         </View>
       )}

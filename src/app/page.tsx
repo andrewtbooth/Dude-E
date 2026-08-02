@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/format";
 import { redirect } from "next/navigation";
 import { SignInForm } from "@/components/SignInForm";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -99,14 +100,3 @@ function Provenance({ term, detail }: { term: string; detail: string }) {
   );
 }
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
-}
