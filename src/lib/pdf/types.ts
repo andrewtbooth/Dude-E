@@ -18,6 +18,12 @@ export interface DeterminationView {
 
   decidedAt: Date;
   htsusRevision: string;
+  /**
+   * Schedule B edition year, or null when no export schedule was synced.
+   * Stamped separately because Census versions the export schedule annually
+   * and independently of the HTSUS revision cycle.
+   */
+  scheduleBEdition: string | null;
   model: string;
   effort: string;
   appVersion: string;

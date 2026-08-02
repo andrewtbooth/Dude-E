@@ -111,6 +111,7 @@ export async function POST(request: Request) {
           model: config.model,
           effort: config.effort,
           htsusRevision: revision.revision,
+          scheduleBEdition: revision.scheduleBEdition,
           appVersion: APP_VERSION,
         },
       });

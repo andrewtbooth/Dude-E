@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   extractRevision,
   notesSectionOf,
-  parseConcordance,
+  scheduleBCoverage,
+  scheduleBEditionCandidates,
+  scheduleBUrl,
   stripMarkup,
 } from "./sync-htsus";
 
@@ -35,66 +37,6 @@ describe("extractRevision", () => {
     // Callers must fail loudly rather than stamp a guessed version.
     expect(extractRevision("<html><body>Service unavailable</body></html>")).toBeNull();
     expect(extractRevision("")).toBeNull();
-  });
-});
-
-describe("parseConcordance", () => {
-  it("reads a tab-delimited Census concordance", () => {
-    const text = [
-      "HTS\tSCHEDULE_B\tDESCRIPTION",
-      "8507600020\t8507600000\tLithium-ion storage batteries",
-      "9617001000\t9617000000\tVacuum flasks and other vacuum vessels",
-    ].join("\n");
-
-    expect(parseConcordance(text)).toEqual([
-      {
-        hts10: "8507600020",
-        scheduleB: "8507.60.0000",
-        description: "Lithium-ion storage batteries",
-      },
-      {
-        hts10: "9617001000",
-        scheduleB: "9617.00.0000",
-        description: "Vacuum flasks and other vacuum vessels",
-      },
-    ]);
-  });
-
-  it("reads comma-delimited and dotted codes", () => {
-    const text = '"8507.60.00.20","8507.60.0000","Lithium-ion batteries"';
-    expect(parseConcordance(text)).toEqual([
-      {
-        hts10: "8507600020",
-        scheduleB: "8507.60.0000",
-        description: "Lithium-ion batteries",
-      },
-    ]);
-  });
-
-  it("skips header rows and lines without two code columns", () => {
-    const text = [
-      "HTS Number,Schedule B Number,Commodity Description",
-      "8507600020,8507600000,Batteries",
-      "not a data row at all",
-      "8507600010,,missing schedule b",
-    ].join("\n");
-
-    const entries = parseConcordance(text);
-    expect(entries).toHaveLength(1);
-    expect(entries[0].hts10).toBe("8507600020");
-  });
-
-  it("de-duplicates repeated pairs", () => {
-    const text = [
-      "8507600020\t8507600000\tBatteries",
-      "8507600020\t8507600000\tBatteries",
-    ].join("\n");
-    expect(parseConcordance(text)).toHaveLength(1);
-  });
-
-  it("returns an empty list rather than throwing on junk", () => {
-    expect(parseConcordance("")).toEqual([]);
-    expect(parseConcordance("<html>404</html>")).toEqual([]);
   });
 });
 
@@ -153,5 +95,52 @@ describe("notesSectionOf", () => {
     expect(notesSectionOf("Notes   1.\n\n  This\tchapter")).toBe(
       "Notes 1. This chapter",
     );
+  });
+});
+
+describe("Schedule B edition discovery", () => {
+  it("builds the published URL for an edition", () => {
+    expect(scheduleBUrl("2026")).toBe(
+      "https://www.census.gov/foreign-trade/schedules/b/2026/exp-code.txt",
+    );
+  });
+
+  it("probes next year first, because Census publishes ahead of the year", () => {
+    // In December 2026 the 2027 edition is already up; in January it is the
+    // one in force. Trying it first costs one request and avoids stamping a
+    // superseded edition on determinations.
+    expect(scheduleBEditionCandidates(new Date("2026-12-15T00:00:00Z"))).toEqual([
+      "2027",
+      "2026",
+      "2025",
+    ]);
+  });
+});
+
+describe("scheduleBCoverage", () => {
+  const htsLine = (digits: string, isReportable = true) =>
+    ({ digits, isReportable }) as never;
+  const sbLine = (hs6: string) => ({ hs6 }) as never;
+
+  it("counts reportable lines that reach an export code at HS-6", () => {
+    const coverage = scheduleBCoverage(
+      [
+        htsLine("8507600010"),
+        htsLine("8507600020"),
+        htsLine("9801001000"),
+        // Non-reportable lines are not classifiable and must not dilute the ratio.
+        htsLine("850760", false),
+      ],
+      [sbLine("850760")],
+    );
+
+    expect(coverage.reportable).toBe(3);
+    expect(coverage.covered).toBe(2);
+    expect(coverage.orphanHs6).toEqual(["980100"]);
+  });
+
+  it("reports no orphans when every subheading is covered", () => {
+    const coverage = scheduleBCoverage([htsLine("8507600010")], [sbLine("850760")]);
+    expect(coverage.orphanHs6).toEqual([]);
   });
 });

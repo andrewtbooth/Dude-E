@@ -279,19 +279,60 @@ function CrossRulings({ candidate }: { candidate: Candidate }) {
 }
 
 function ScheduleB({ candidate }: { candidate: Candidate }) {
-  if (candidate.schedule_b.length === 0) return null;
+  const scheduleB = candidate.schedule_b;
+
+  // Absence is reported, not hidden. An analyst who sees nothing here cannot
+  // tell "no export code was established" from "we forgot to look".
+  if (!scheduleB) {
+    return (
+      <div>
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          Schedule B (export)
+        </h4>
+        <p className="mt-2 text-xs text-[var(--text-muted)]">
+          No export code was established for this candidate.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
         Schedule B (export)
       </h4>
-      <ul className="mt-2 space-y-1">
-        {candidate.schedule_b.map((entry, index) => (
-          <li key={index} className="text-xs text-[var(--text-secondary)]">
-            <span className="hts-code">{entry.code}</span> — {entry.description}
-          </li>
-        ))}
-      </ul>
+      <p className="mt-2 text-sm text-[var(--text-primary)]">
+        <span className="hts-code">{scheduleB.code}</span> —{" "}
+        {scheduleB.description}
+      </p>
+      {scheduleB.unit_of_quantity.length > 0 && (
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
+          Export units: {scheduleB.unit_of_quantity.join(", ")}
+        </p>
+      )}
+      <p className="mt-2 text-xs text-[var(--text-secondary)]">
+        {scheduleB.justification}
+      </p>
+      {scheduleB.considered.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs text-[var(--text-muted)]">
+            {scheduleB.considered.length} other export code
+            {scheduleB.considered.length === 1 ? "" : "s"} under this subheading
+          </summary>
+          <ul className="mt-2 space-y-1">
+            {scheduleB.considered.map((entry) => (
+              <li key={entry.code} className="text-xs text-[var(--text-secondary)]">
+                <span className="hts-code">{entry.code}</span> —{" "}
+                {entry.description}
+                <span className="text-[var(--text-muted)]">
+                  {" "}
+                  · {entry.why_not_selected}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }

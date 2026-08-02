@@ -26,6 +26,7 @@ import path from "node:path";
 import { ProxyAgent, setGlobalDispatcher } from "undici";
 import { extractText, getDocumentProxy } from "unpdf";
 import { parseUsitcRows } from "../src/lib/hts/parse";
+import { parseScheduleB } from "../src/lib/hts/scheduleB";
 import {
   INDEX_FILENAME,
   MANIFEST_FILENAME,
@@ -35,13 +36,13 @@ import type {
   HtsLine,
   HtsNote,
   HtsusManifest,
-  ScheduleBEntry,
+  ScheduleBLine,
   UsitcRawRow,
 } from "../src/lib/hts/types";
 
 // This runs as a standalone script rather than inside Next, so nothing has
 // loaded .env.local for us. Without this, an overridden HTSUS_DATA_DIR or
-// CENSUS_CONCORDANCE_URL would be silently ignored here while the app honoured
+// CENSUS_SCHEDULE_B_BASE would be silently ignored here while the app honoured
 // it — the sync would write where the app is not looking.
 try {
   process.loadEnvFile(".env.local");
@@ -71,22 +72,14 @@ const BASE_URL = (
 ).replace(/\/+$/, "");
 const DATA_DIR = path.resolve(process.env.HTSUS_DATA_DIR ?? "./data/htsus");
 /**
- * Empty by default, deliberately.
- *
- * Census does not publish a direct HTS-to-Schedule B crosswalk at a stable
- * URL. What it does publish under /reference/codes/concordance/ is
- * `expconcordNN.xlsx` — a Schedule B commodity list concorded to SITC,
- * end-use and NAICS — and a matching import concordance for HTS. Neither maps
- * one schedule onto the other.
- *
- * The two numbers coincide for many simple goods and diverge for others, so
- * deriving one from the other by string equality would produce confident,
- * wrong export codes. For a tool whose whole point is verified classification
- * that is the wrong trade, so Schedule B stays off until a real source is
- * chosen. Set this to a delimited file with HTS and Schedule B columns to
- * switch it on.
+ * Where Census publishes the Schedule B editions. Each year lives at
+ * `<base>/<year>/exp-code.txt`, a fixed-width file of every export code, with
+ * its record layout alongside at `exp-stru.txt`.
  */
-const CENSUS_CONCORDANCE_URL = process.env.CENSUS_CONCORDANCE_URL ?? "";
+const CENSUS_SCHEDULE_B_BASE = (
+  process.env.CENSUS_SCHEDULE_B_BASE ??
+  "https://www.census.gov/foreign-trade/schedules/b"
+).replace(/\/+$/, "");
 
 const USER_AGENT =
   "Dude-E-TariffClassifier/0.1 (internal compliance tool; +https://github.com/andrewtbooth/Dude-E)";
@@ -110,6 +103,8 @@ interface Args {
   revision?: string;
   chapters?: number[];
   probe?: boolean;
+  scheduleBYear?: string;
+  skipScheduleB?: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -120,6 +115,10 @@ function parseArgs(argv: string[]): Args {
       args.probe = true;
     } else if (flag === "--revision") {
       args.revision = argv[++i];
+    } else if (flag === "--schedule-b-year") {
+      args.scheduleBYear = (argv[++i] ?? "").trim();
+    } else if (flag === "--no-schedule-b") {
+      args.skipScheduleB = true;
     } else if (flag === "--chapters") {
       args.chapters = (argv[++i] ?? "")
         .split(",")
@@ -423,85 +422,91 @@ export function stripMarkup(input: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Step 4 — Schedule B concordance
+// Step 4 — Schedule B (the export schedule)
 // ---------------------------------------------------------------------------
 
-/**
- * Census publishes an HTS-to-Schedule B concordance as a delimited text file.
- * The column layout has changed across years, so we detect the two code
- * columns by shape (10 digits each) rather than by fixed position.
- */
-export function parseConcordance(text: string): ScheduleBEntry[] {
-  const entries: ScheduleBEntry[] = [];
-  const seen = new Set<string>();
-
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-
-    const fields = line.includes("\t")
-      ? line.split("\t")
-      : line.includes("|")
-        ? line.split("|")
-        : line.split(",");
-
-    const codes: string[] = [];
-    let description = "";
-    for (const field of fields) {
-      const value = field.trim().replace(/^"|"$/g, "");
-      const digits = value.replace(/\D/g, "");
-      if (digits.length === 10 && /^[\d.\s-]+$/.test(value)) {
-        codes.push(digits);
-      } else if (value.length > description.length && /[a-z]/i.test(value)) {
-        description = value;
-      }
-    }
-
-    if (codes.length >= 2) {
-      const key = `${codes[0]}:${codes[1]}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      entries.push({
-        hts10: codes[0],
-        scheduleB: `${codes[1].slice(0, 4)}.${codes[1].slice(4, 6)}.${codes[1].slice(6)}`,
-        description,
-      });
-    }
-  }
-
-  return entries;
+/** Where Census publishes an edition's fixed-width commodity file. */
+export function scheduleBUrl(year: string): string {
+  return `${CENSUS_SCHEDULE_B_BASE}/${year}/exp-code.txt`;
 }
 
-async function fetchScheduleB(): Promise<ScheduleBEntry[]> {
-  if (!CENSUS_CONCORDANCE_URL) {
-    warn(
-      "Schedule B export codes are unavailable: no HTS-to-Schedule B crosswalk " +
-        "is configured. Census publishes the two schedules' concordances " +
-        "separately (each mapping to SITC/NAICS), not to each other, and " +
-        "inferring one from the other by code equality would produce confident " +
-        "but sometimes wrong export codes. Set CENSUS_CONCORDANCE_URL to a " +
-        "delimited file with HTS and Schedule B columns to enable this.",
-    );
-    return [];
+/**
+ * Candidate edition years, newest first.
+ *
+ * Census publishes the next edition late in the preceding year, so "the
+ * current year" is not reliably the newest available, and early in a year the
+ * newest may still be last year's. Probing a short window and taking the first
+ * that answers is both correct and cheap — and unlike the HTSUS revision, the
+ * edition year is discoverable from the URL itself, so there is nothing to
+ * guess once a file is found.
+ */
+export function scheduleBEditionCandidates(now = new Date()): string[] {
+  const year = now.getUTCFullYear();
+  return [year + 1, year, year - 1].map(String);
+}
+
+interface ScheduleBFetch {
+  lines: ScheduleBLine[];
+  edition: string | null;
+}
+
+async function fetchScheduleB(
+  explicitYear?: string,
+): Promise<ScheduleBFetch> {
+  const years = explicitYear ? [explicitYear] : scheduleBEditionCandidates();
+
+  for (const year of years) {
+    const url = scheduleBUrl(year);
+    try {
+      const response = await fetchWithRetry(url, 1);
+      const { lines, warnings: parseWarnings } = parseScheduleB(
+        await response.text(),
+      );
+      if (lines.length === 0) {
+        // A 200 that parses to nothing means the layout moved, not that the
+        // edition is missing; say so rather than silently trying last year.
+        warn(`Schedule B ${year} downloaded but parsed to zero records (${url}).`);
+        continue;
+      }
+      for (const message of parseWarnings) warn(message);
+      log(`  Schedule B ${year}: ${lines.length} export codes`);
+      return { lines, edition: year };
+    } catch {
+      // A missing edition year is expected while probing; keep looking.
+    }
   }
 
-  try {
-    const response = await fetchWithRetry(CENSUS_CONCORDANCE_URL, 2);
-    const entries = parseConcordance(await response.text());
-    if (entries.length === 0) {
-      warn(
-        `Schedule B concordance at ${CENSUS_CONCORDANCE_URL} parsed to zero entries. ` +
-          `Export codes will be unavailable; set CENSUS_CONCORDANCE_URL to the current file.`,
-      );
-    }
-    return entries;
-  } catch (error) {
-    warn(
-      `Schedule B concordance unavailable (${error instanceof Error ? error.message : String(error)}). ` +
-        `Export codes will not be offered.`,
-    );
-    return [];
-  }
+  warn(
+    `Schedule B could not be retrieved from ${CENSUS_SCHEDULE_B_BASE} ` +
+      `(tried editions ${years.join(", ")}). Export codes will be unavailable ` +
+      `for this snapshot; the app will say so rather than guess them.`,
+  );
+  return { lines: [], edition: null };
+}
+
+/**
+ * How well the export schedule covers the tariff, measured rather than assumed.
+ *
+ * The two schedules share the 6-digit HS subheading by construction, but
+ * "by construction" is a claim about intent. This checks it against the two
+ * files actually downloaded, so a drift between editions shows up as a warning
+ * on the snapshot instead of as a missing export code months later.
+ */
+export function scheduleBCoverage(
+  htsLines: readonly HtsLine[],
+  scheduleB: readonly ScheduleBLine[],
+): { reportable: number; covered: number; orphanHs6: string[] } {
+  const hs6 = new Set(scheduleB.map((entry) => entry.hs6));
+  const reportable = htsLines.filter((line) => line.isReportable);
+  const covered = reportable.filter((line) => hs6.has(line.digits.slice(0, 6)));
+  const orphanHs6 = [
+    ...new Set(
+      reportable
+        .filter((line) => !hs6.has(line.digits.slice(0, 6)))
+        .map((line) => line.digits.slice(0, 6)),
+    ),
+  ].sort();
+  return { reportable: reportable.length, covered: covered.length, orphanHs6 };
 }
 
 // ---------------------------------------------------------------------------
@@ -548,9 +553,14 @@ async function probeSources(): Promise<void> {
       expect: "text or HTML containing the rules of interpretation",
     },
     {
-      label: "Schedule B concordance",
-      url: CENSUS_CONCORDANCE_URL,
-      expect: "delimited text with two 10-digit code columns per row",
+      label: "Schedule B record layout",
+      url: `${CENSUS_SCHEDULE_B_BASE}/${scheduleBEditionCandidates()[1]}/exp-stru.txt`,
+      expect: "the published field positions; diff against LAYOUT in scheduleB.ts",
+    },
+    {
+      label: "Schedule B codes",
+      url: scheduleBUrl(scheduleBEditionCandidates()[1]),
+      expect: "fixed-width records, 278 chars each, starting with a 10-digit code",
     },
 
     // The three below are unverified leads rather than endpoints this script
@@ -606,8 +616,11 @@ async function probeSources(): Promise<void> {
         }
       }
 
-      if (target.label.startsWith("Schedule B")) {
-        log(`  parsed:   ${parseConcordance(body).length} entries`);
+      if (target.label === "Schedule B codes") {
+        const { lines, warnings: parseWarnings } = parseScheduleB(body);
+        log(`  parsed:   ${lines.length} export codes`);
+        log(`  hs6:      ${new Set(lines.map((l) => l.hs6)).size} distinct subheadings`);
+        for (const message of parseWarnings.slice(0, 3)) log(`  warn:     ${message}`);
       }
 
       log(`  head:     ${JSON.stringify(body.slice(0, 300))}`);
@@ -669,8 +682,29 @@ async function main(): Promise<void> {
   log("\nFetching notes...");
   const notes = await fetchNotes(chapters);
 
-  log("\nFetching Schedule B concordance...");
-  const scheduleB = await fetchScheduleB();
+  log("\nFetching Schedule B...");
+  const { lines: scheduleB, edition: scheduleBEdition } = args.skipScheduleB
+    ? { lines: [] as ScheduleBLine[], edition: null }
+    : await fetchScheduleB(args.scheduleBYear);
+
+  if (scheduleB.length > 0) {
+    const coverage = scheduleBCoverage(lines, scheduleB);
+    const pct = ((coverage.covered / coverage.reportable) * 100).toFixed(1);
+    log(
+      `  coverage: ${coverage.covered}/${coverage.reportable} reportable HTS lines ` +
+        `(${pct}%) reach at least one export code at HS-6`,
+    );
+    // The schedules are meant to share HS-6, so a large gap means the editions
+    // have drifted apart and analysts should know before they rely on it.
+    if (coverage.covered / coverage.reportable < 0.95) {
+      warn(
+        `Only ${pct}% of reportable HTS lines map to a Schedule B subheading ` +
+          `(expected ~99%). The HTSUS revision and Schedule B ${scheduleBEdition} ` +
+          `edition may be out of step. Uncovered subheadings: ` +
+          `${coverage.orphanHs6.slice(0, 10).join(", ")}${coverage.orphanHs6.length > 10 ? ", …" : ""}.`,
+      );
+    }
+  }
 
   const sha256 = crypto
     .createHash("sha256")
@@ -690,6 +724,7 @@ async function main(): Promise<void> {
     reportableLineCount,
     noteCount: notes.length,
     scheduleBCount: scheduleB.length,
+    scheduleBEdition,
     warnings,
   };
 
@@ -713,7 +748,10 @@ async function main(): Promise<void> {
   log(`  chapters:   ${fetched}/${chapters.length}`);
   log(`  lines:      ${lines.length} (${reportableLineCount} reportable)`);
   log(`  notes:      ${notes.length}`);
-  log(`  schedule B: ${scheduleB.length}`);
+  log(
+    `  schedule B: ${scheduleB.length}` +
+      (scheduleBEdition ? ` (${scheduleBEdition} edition)` : " (unavailable)"),
+  );
   log(`  warnings:   ${warnings.length}`);
   log(`  written to: ${revisionDir}`);
 

@@ -43,6 +43,7 @@ export function Masthead({
         <div className="ml-auto flex items-center gap-4">
           <RevisionBadge
             revision={revision?.revision ?? null}
+            scheduleBEdition={revision?.scheduleBEdition ?? null}
             warningCount={revision?.warnings.length ?? 0}
           />
 
@@ -89,9 +90,11 @@ function NavLink({
 
 function RevisionBadge({
   revision,
+  scheduleBEdition,
   warningCount,
 }: {
   revision: string | null;
+  scheduleBEdition: string | null;
   warningCount: number;
 }) {
   if (!revision) {
@@ -105,6 +108,12 @@ function RevisionBadge({
     );
   }
 
+  // Both editions are named: the tariff and the export schedule version
+  // independently of one another, and a determination stamps both.
+  const editions = scheduleBEdition
+    ? `${revision} · Schedule B ${scheduleBEdition}`
+    : `${revision} · no Schedule B`;
+
   return (
     <span
       className={
@@ -114,11 +123,13 @@ function RevisionBadge({
       }
       title={
         warningCount > 0
-          ? `${revision} — synced with ${warningCount} warning(s). Parts of the tariff may be incomplete; see the manifest.`
-          : `${revision} — the edition every determination from this session is stamped with.`
+          ? `${editions} — synced with ${warningCount} warning(s). Parts of the tariff may be incomplete; see the manifest.`
+          : scheduleBEdition
+            ? `${editions} — the editions every determination from this session is stamped with.`
+            : `${revision} — the edition every determination is stamped with. No export schedule was synced, so no Schedule B codes will be offered.`
       }
     >
-      {revision}
+      {editions}
       {warningCount > 0 ? ` · ${warningCount} warning${warningCount === 1 ? "" : "s"}` : ""}
     </span>
   );

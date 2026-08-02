@@ -99,9 +99,44 @@ export const chapter99Schema = z.object({
     ),
 });
 
+/**
+ * The export-side determination.
+ *
+ * Modelled as a decision with a reason rather than a lookup result, because
+ * that is what it is: the two schedules share only the 6-digit HS subheading,
+ * so choosing among the export breakouts is a classification judgement in its
+ * own right and has to be defensible on the same terms as the import side.
+ */
 export const scheduleBSchema = z.object({
-  code: z.string(),
-  description: z.string(),
+  code: z
+    .string()
+    .describe(
+      "The 10-digit Schedule B number, dotted. Must be one you saw in schedule_b_lookup or schedule_b_search — never composed, and never assumed equal to the HTS number.",
+    ),
+  description: z
+    .string()
+    .describe("The description as Census publishes it, verbatim."),
+  unit_of_quantity: z
+    .array(z.string())
+    .describe(
+      "Units required on the export declaration. These differ from the import units often enough to matter.",
+    ),
+  justification: z
+    .string()
+    .describe(
+      "Why this export breakout and not its siblings under the same subheading. If only one candidate existed, say that, and confirm its description covers the good.",
+    ),
+  considered: z
+    .array(
+      z.object({
+        code: z.string(),
+        description: z.string(),
+        why_not_selected: z.string(),
+      }),
+    )
+    .describe(
+      "The other export codes under the subheading that were rejected. Empty when the subheading holds only one.",
+    ),
 });
 
 export const crossRulingSchema = z.object({
@@ -136,7 +171,11 @@ export const candidateSchema = z.object({
   duty: dutySchema,
   unit_of_quantity: z.array(z.string()),
   chapter_99: z.array(chapter99Schema),
-  schedule_b: z.array(scheduleBSchema),
+  schedule_b: scheduleBSchema
+    .nullable()
+    .describe(
+      "The export determination, or null when no export code could be established. Null is an acceptable answer; a guessed code is not.",
+    ),
   cross_rulings: z.array(crossRulingSchema),
   why_not_selected: z
     .string()

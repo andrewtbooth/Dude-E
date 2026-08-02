@@ -17,7 +17,10 @@ import {
   buildIndex,
 } from "../../src/lib/hts/store";
 import type { HtsusManifest } from "../../src/lib/hts/types";
-import { FIXTURE_ROWS } from "../../src/test/htsus-fixture";
+import {
+  FIXTURE_ROWS,
+  FIXTURE_SCHEDULE_B,
+} from "../../src/test/htsus-fixture";
 
 const root = path.resolve(process.env.HTSUS_DATA_DIR ?? "./data/htsus");
 const dir = path.join(root, "fixture");
@@ -35,7 +38,8 @@ const manifest: HtsusManifest = {
   lineCount: lines.length,
   reportableLineCount: lines.filter((line) => line.isReportable).length,
   noteCount: 3,
-  scheduleBCount: 2,
+  scheduleBCount: FIXTURE_SCHEDULE_B.length,
+  scheduleBEdition: null,
   warnings: [
     "This is a four-chapter development fixture, not a synced tariff edition. Any determination produced against it is meaningless. Run `npm run sync:htsus` for real data.",
   ],
@@ -63,18 +67,7 @@ buildIndex(path.join(dir, INDEX_FILENAME), {
       body: "This chapter does not cover parts of general use of base metal (Section XV).",
     },
   ],
-  scheduleB: [
-    {
-      hts10: "8507600020",
-      scheduleB: "8507.60.0000",
-      description: "Lithium-ion storage batteries",
-    },
-    {
-      hts10: "9617001000",
-      scheduleB: "9617.00.0000",
-      description: "Vacuum flasks and other vacuum vessels",
-    },
-  ],
+  scheduleB: FIXTURE_SCHEDULE_B,
   manifest,
 });
 

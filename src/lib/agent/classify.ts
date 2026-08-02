@@ -7,7 +7,11 @@ import {
   MAX_TOOL_ITERATIONS,
   config,
 } from "../config";
-import { getActiveRevision, lookupExact } from "../hts/store";
+import {
+  getActiveRevision,
+  lookupExact,
+  lookupScheduleB,
+} from "../hts/store";
 import { buildSystemPrompt, buildUserTurn } from "./prompt";
 import {
   type AnalysisMode,
@@ -362,6 +366,66 @@ function parseResult(message: BetaMessage): ClassificationResult {
  * judgements, so where the model's transcription disagrees with the tariff the
  * tariff wins and the disagreement is recorded.
  */
+/**
+ * The export-side half of the anti-fabrication check.
+ *
+ * A wrong Schedule B number is filed on the EEI and carries its own penalty
+ * exposure, so it gets the same treatment as the HTS code: confirm the code
+ * exists in the snapshot, and let the schedule — not the model's transcription
+ * — supply the description and units.
+ *
+ * A code from a different HS subheading than the HTS number is *not* rejected.
+ * Roughly 0.6% of tariff subheadings have no export counterpart, and for those
+ * the only route is `schedule_b_search`, which legitimately crosses
+ * subheadings. It is recorded instead, so a reviewer sees the divergence.
+ */
+function verifyScheduleB(
+  candidate: Candidate,
+  htsNo: string,
+  sink: {
+    rejectedCodes: { code: string; reason: string }[];
+    corrections: CodeCorrection[];
+  },
+): Candidate["schedule_b"] {
+  const claimed = candidate.schedule_b;
+  if (!claimed) return null;
+
+  const entry = lookupScheduleB(claimed.code);
+  if (!entry) {
+    sink.rejectedCodes.push({
+      code: claimed.code,
+      reason: "Schedule B code not present in this edition of the export schedule",
+    });
+    return null;
+  }
+
+  if (claimed.description.trim() !== entry.description) {
+    sink.corrections.push({
+      htsCode: htsNo,
+      field: "schedule_b.description",
+      modelValue: claimed.description,
+      indexValue: entry.description,
+    });
+  }
+
+  const htsHs6 = htsNo.replace(/\D/g, "").slice(0, 6);
+  if (htsHs6.length === 6 && entry.hs6 !== htsHs6) {
+    sink.corrections.push({
+      htsCode: htsNo,
+      field: "schedule_b.hs_subheading",
+      modelValue: `export code sits under ${entry.hs6}`,
+      indexValue: `HTS number sits under ${htsHs6}`,
+    });
+  }
+
+  return {
+    ...claimed,
+    code: entry.htsNo,
+    description: entry.description,
+    unit_of_quantity: entry.units,
+  };
+}
+
 export function verifyAgainstTariff(result: ClassificationResult): {
   result: ClassificationResult;
   verification: ClassificationRun["verification"];
@@ -424,6 +488,10 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         rates_published_on: line.ratesInheritedFrom,
       },
       unit_of_quantity: line.units,
+      schedule_b: verifyScheduleB(candidate, line.htsNo, {
+        rejectedCodes,
+        corrections,
+      }),
     });
   }
 
@@ -482,7 +550,9 @@ function describeToolInput(name: string, rawInput: unknown): string {
     case "chapter99_lookup":
       return `checking Chapter 99 duties for ${str("hts_code")}`;
     case "schedule_b_lookup":
-      return `looking up the Schedule B code for ${str("hts_code")}`;
+      return `listing Schedule B export codes for ${str("hts_code")}`;
+    case "schedule_b_search":
+      return `searching the export schedule for "${str("query")}"`;
     case "web_search":
       return `searching the web for "${str("query")}"`;
     case "web_fetch":

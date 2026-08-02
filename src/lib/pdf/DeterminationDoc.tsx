@@ -183,6 +183,14 @@ function Header({ view }: { view: DeterminationView }) {
         <ProvenanceRow label="Decided" value={formatTimestamp(view.decidedAt)} />
         <ProvenanceRow label="Tariff edition" value={view.htsusRevision} />
         <ProvenanceRow
+          label="Export schedule"
+          value={
+            view.scheduleBEdition
+              ? `Schedule B ${view.scheduleBEdition}`
+              : "not synced — no export code determined"
+          }
+        />
+        <ProvenanceRow
           label="Analysis"
           value={`${view.model}, ${view.effort} effort · Dude-E ${view.appVersion}`}
         />
@@ -326,14 +334,40 @@ function FinalDetermination({ view }: { view: DeterminationView }) {
         </Text>
       )}
 
-      {candidate.schedule_b.length > 0 && (
-        <Text style={{ marginTop: 6, fontSize: 8.5 }}>
+      {candidate.schedule_b ? (
+        <View style={{ marginTop: 6 }}>
+          <Text style={{ fontSize: 8.5 }}>
+            <Text style={{ fontFamily: "Helvetica-Bold" }}>
+              Schedule B (export):{" "}
+            </Text>
+            <Text style={styles.codeInline}>{candidate.schedule_b.code}</Text> —{" "}
+            {candidate.schedule_b.description}
+            {candidate.schedule_b.unit_of_quantity.length > 0
+              ? ` (${candidate.schedule_b.unit_of_quantity.join(", ")})`
+              : ""}
+          </Text>
+          <Text style={{ fontSize: 7.5, color: COLORS.muted, marginTop: 2 }}>
+            {candidate.schedule_b.justification}
+          </Text>
+          {candidate.schedule_b.considered.length > 0 && (
+            <Text style={{ fontSize: 7.5, color: COLORS.muted, marginTop: 2 }}>
+              Also under this subheading:{" "}
+              {candidate.schedule_b.considered
+                .map(
+                  (entry) =>
+                    `${entry.code} (${entry.why_not_selected.replace(/\.$/, "")})`,
+                )
+                .join("; ")}
+              .
+            </Text>
+          )}
+        </View>
+      ) : (
+        <Text style={{ marginTop: 6, fontSize: 8.5, color: COLORS.muted }}>
           <Text style={{ fontFamily: "Helvetica-Bold" }}>
             Schedule B (export):{" "}
           </Text>
-          {candidate.schedule_b
-            .map((entry) => `${entry.code} — ${entry.description}`)
-            .join("; ")}
+          no export code was established.
         </Text>
       )}
 

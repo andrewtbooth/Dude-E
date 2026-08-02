@@ -21,7 +21,8 @@ import type {
   HtsNote,
   HtsSearchHit,
   HtsusManifest,
-  ScheduleBEntry,
+  ScheduleBLine,
+  ScheduleBMatch,
 } from "./types";
 
 export const INDEX_FILENAME = "htsus.db";
@@ -77,12 +78,31 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 CREATE INDEX IF NOT EXISTS idx_notes_ref ON notes(kind, ref);
 
+-- The export schedule in full, keyed on its own code. The link to HTSUS is
+-- derived at query time from the shared 6-digit HS subheading rather than
+-- stored, because no authoritative 10-digit crosswalk exists — see
+-- scheduleB.ts.
 CREATE TABLE IF NOT EXISTS schedule_b (
-  hts10       TEXT NOT NULL,
-  schedule_b  TEXT NOT NULL,
-  description TEXT NOT NULL
+  code              TEXT PRIMARY KEY,
+  hts_no            TEXT NOT NULL,
+  hs6               TEXT NOT NULL,
+  chapter           TEXT NOT NULL,
+  description       TEXT NOT NULL,
+  short_description TEXT NOT NULL,
+  units             TEXT NOT NULL,
+  sitc              TEXT,
+  end_use           TEXT,
+  naics             TEXT,
+  is_agricultural   INTEGER NOT NULL,
+  hi_tech           TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_scheduleb_hts ON schedule_b(hts10);
+CREATE INDEX IF NOT EXISTS idx_scheduleb_hs6 ON schedule_b(hs6);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS schedule_b_fts USING fts5(
+  description,
+  code UNINDEXED,
+  tokenize = 'porter unicode61'
+);
 
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
@@ -97,7 +117,7 @@ CREATE TABLE IF NOT EXISTS meta (
 export interface BuildIndexInput {
   lines: HtsLine[];
   notes: HtsNote[];
-  scheduleB: ScheduleBEntry[];
+  scheduleB: ScheduleBLine[];
   manifest: HtsusManifest;
 }
 
@@ -126,8 +146,17 @@ export function buildIndex(dbPath: string, input: BuildIndexInput): void {
     const insertNote = db.prepare(
       `INSERT INTO notes (kind, ref, title, body) VALUES (?, ?, ?, ?)`,
     );
-    const insertScheduleB = db.prepare(
-      `INSERT INTO schedule_b (hts10, schedule_b, description) VALUES (?, ?, ?)`,
+    const insertScheduleB = db.prepare(`
+      INSERT INTO schedule_b (
+        code, hts_no, hs6, chapter, description, short_description, units,
+        sitc, end_use, naics, is_agricultural, hi_tech
+      ) VALUES (
+        @code, @hts_no, @hs6, @chapter, @description, @short_description, @units,
+        @sitc, @end_use, @naics, @is_agricultural, @hi_tech
+      )
+    `);
+    const insertScheduleBFts = db.prepare(
+      `INSERT INTO schedule_b_fts (rowid, description, code) VALUES (?, ?, ?)`,
     );
     const insertMeta = db.prepare(
       `INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`,
@@ -161,13 +190,29 @@ export function buildIndex(dbPath: string, input: BuildIndexInput): void {
       for (const note of input.notes) {
         insertNote.run(note.kind, note.ref, note.title, note.body);
       }
-      for (const entry of input.scheduleB) {
-        insertScheduleB.run(entry.hts10, entry.scheduleB, entry.description);
-      }
+      input.scheduleB.forEach((entry, index) => {
+        insertScheduleB.run({
+          code: entry.code,
+          hts_no: entry.htsNo,
+          hs6: entry.hs6,
+          chapter: entry.chapter,
+          description: entry.description,
+          short_description: entry.shortDescription,
+          units: JSON.stringify(entry.units),
+          sitc: entry.sitc,
+          end_use: entry.endUse,
+          naics: entry.naics,
+          is_agricultural: entry.isAgricultural ? 1 : 0,
+          hi_tech: entry.hiTech,
+        });
+        // FTS rowids are positional; nothing joins on them, so the index is fine.
+        insertScheduleBFts.run(index + 1, entry.description, entry.code);
+      });
       insertMeta.run("manifest", JSON.stringify(input.manifest));
     })();
 
     db.exec("INSERT INTO lines_fts(lines_fts) VALUES('optimize')");
+    db.exec("INSERT INTO schedule_b_fts(schedule_b_fts) VALUES('optimize')");
   } finally {
     db.close();
   }
@@ -484,16 +529,99 @@ export function getGeneralRules(): HtsNote[] {
   return getNotes("general");
 }
 
-export function getScheduleB(hts10: string): ScheduleBEntry[] {
+interface ScheduleBRow {
+  code: string;
+  hts_no: string;
+  hs6: string;
+  chapter: string;
+  description: string;
+  short_description: string;
+  units: string;
+  sitc: string | null;
+  end_use: string | null;
+  naics: string | null;
+  is_agricultural: number;
+  hi_tech: string | null;
+}
+
+function hydrateScheduleB(row: ScheduleBRow): ScheduleBLine {
+  return {
+    code: row.code,
+    htsNo: row.hts_no,
+    hs6: row.hs6,
+    chapter: row.chapter,
+    description: row.description,
+    shortDescription: row.short_description,
+    units: JSON.parse(row.units) as string[],
+    sitc: row.sitc,
+    endUse: row.end_use,
+    naics: row.naics,
+    isAgricultural: row.is_agricultural === 1,
+    hiTech: row.hi_tech,
+  };
+}
+
+/**
+ * Schedule B candidates for an HTSUS number, joined at the shared HS-6
+ * subheading.
+ *
+ * Deliberately returns every candidate under the subheading rather than
+ * guessing between them. The two schedules break out differently below HS-6,
+ * so narrowing further is a classification judgement about the goods — read
+ * the descriptions and decide — not something a query can do.
+ */
+export function getScheduleB(htsNo: string): ScheduleBMatch {
   const { db } = open();
-  const digits = toDigits(hts10);
-  if (digits.length !== 10) return [];
-  return db
+  const digits = toDigits(htsNo);
+  const hs6 = digits.slice(0, 6);
+  if (hs6.length < 6) {
+    return { hs6, candidates: [], hasIdenticalCode: false };
+  }
+
+  const rows = db
+    .prepare(`SELECT * FROM schedule_b WHERE hs6 = ? ORDER BY code`)
+    .all(hs6) as ScheduleBRow[];
+
+  return {
+    hs6,
+    candidates: rows.map(hydrateScheduleB),
+    hasIdenticalCode:
+      digits.length === 10 && rows.some((row) => row.code === digits),
+  };
+}
+
+/** Look up one Schedule B code exactly — the export-side anti-fabrication check. */
+export function lookupScheduleB(code: string): ScheduleBLine | null {
+  const { db } = open();
+  const digits = toDigits(code);
+  if (digits.length !== 10) return null;
+  const row = db
+    .prepare(`SELECT * FROM schedule_b WHERE code = ?`)
+    .get(digits) as ScheduleBRow | undefined;
+  return row ? hydrateScheduleB(row) : null;
+}
+
+/**
+ * Full-text search over the export schedule.
+ *
+ * Needed because the HS-6 join has a floor: about 0.6% of HTSUS numbers sit
+ * under a subheading Schedule B does not use, and for those the only route to
+ * an export code is to search the schedule on its own terms.
+ */
+export function searchScheduleB(query: string, limit = 20): ScheduleBLine[] {
+  const { db } = open();
+  const match = toFtsQuery(query);
+  if (!match) return [];
+  const rows = db
     .prepare(
-      `SELECT hts10, schedule_b AS scheduleB, description
-         FROM schedule_b WHERE hts10 = ? LIMIT 20`,
+      `SELECT b.* FROM schedule_b_fts f
+         JOIN schedule_b b ON b.code = f.code
+        WHERE schedule_b_fts MATCH ?
+        ORDER BY bm25(schedule_b_fts)
+        LIMIT ?`,
     )
-    .all(digits) as ScheduleBEntry[];
+    .all(match, limit) as ScheduleBRow[];
+  return rows.map(hydrateScheduleB);
 }
 
 /**
@@ -556,6 +684,8 @@ export interface IndexStats {
   reportableLineCount: number;
   noteCount: number;
   scheduleBCount: number;
+  /** Distinct HS-6 subheadings the export schedule covers. */
+  scheduleBHs6Count: number;
 }
 
 export function getIndexStats(): IndexStats {
@@ -569,5 +699,6 @@ export function getIndexStats(): IndexStats {
     ),
     noteCount: one("SELECT COUNT(*) AS n FROM notes"),
     scheduleBCount: one("SELECT COUNT(*) AS n FROM schedule_b"),
+    scheduleBHs6Count: one("SELECT COUNT(DISTINCT hs6) AS n FROM schedule_b"),
   };
 }

@@ -31,7 +31,7 @@ function candidate(overrides: Partial<Candidate> = {}): Candidate {
     },
     unit_of_quantity: ["No."],
     chapter_99: [],
-    schedule_b: [],
+    schedule_b: null,
     cross_rulings: [],
     why_not_selected: null,
     ...overrides,
@@ -217,5 +217,88 @@ describe("verifyAgainstTariff", () => {
     );
     expect(verified.candidates).toEqual([]);
     expect(verified.recommended_hts_code).toBeNull();
+  });
+});
+
+describe("verifyAgainstTariff — Schedule B", () => {
+  const scheduleB = (overrides: Partial<NonNullable<Candidate["schedule_b"]>> = {}) => ({
+    code: "9617.00.20.00",
+    description: "FLASK AND OTHER VESSELS, COMPLETE WITH CASES",
+    unit_of_quantity: ["NO"],
+    justification: "Complete vessel, not a part.",
+    considered: [],
+    ...overrides,
+  });
+
+  it("drops an export code that does not exist in the schedule", () => {
+    // The same failure mode as a fabricated HTS number, and it lands on the
+    // EEI rather than the entry — so it gets the same treatment.
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([
+        candidate({
+          hts_code: "9617.00.10.00",
+          schedule_b: scheduleB({ code: "9617.00.99.00" }),
+        }),
+      ]),
+    );
+
+    expect(verified.candidates[0].schedule_b).toBeNull();
+    expect(verification.rejectedCodes).toContainEqual({
+      code: "9617.00.99.00",
+      reason:
+        "Schedule B code not present in this edition of the export schedule",
+    });
+    // The candidate itself survives — only its export code was unverifiable.
+    expect(verified.candidates).toHaveLength(1);
+  });
+
+  it("lets the schedule overwrite the description and units", () => {
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([
+        candidate({
+          hts_code: "9617.00.10.00",
+          schedule_b: scheduleB({
+            description: "Vacuum flasks, complete",
+            unit_of_quantity: ["No.", "kg"],
+          }),
+        }),
+      ]),
+    );
+
+    expect(verified.candidates[0].schedule_b).toMatchObject({
+      description: "FLASK AND OTHER VESSELS, COMPLETE WITH CASES",
+      unit_of_quantity: ["NO"],
+      justification: "Complete vessel, not a part.",
+    });
+    expect(verification.corrections).toContainEqual({
+      htsCode: "9617.00.10.00",
+      field: "schedule_b.description",
+      modelValue: "Vacuum flasks, complete",
+      indexValue: "FLASK AND OTHER VESSELS, COMPLETE WITH CASES",
+    });
+  });
+
+  it("records a cross-subheading export code without rejecting it", () => {
+    // Legitimate when the tariff subheading has no export counterpart, so it
+    // is surfaced for review rather than dropped.
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([candidate({ hts_code: "8507.60.00.20", schedule_b: scheduleB() })]),
+    );
+
+    expect(verified.candidates[0].schedule_b?.code).toBe("9617.00.20.00");
+    expect(verification.corrections).toContainEqual({
+      htsCode: "8507.60.00.20",
+      field: "schedule_b.hs_subheading",
+      modelValue: "export code sits under 961700",
+      indexValue: "HTS number sits under 850760",
+    });
+  });
+
+  it("leaves a null export determination alone", () => {
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([candidate({ schedule_b: null })]),
+    );
+    expect(verified.candidates[0].schedule_b).toBeNull();
+    expect(verification.rejectedCodes).toEqual([]);
   });
 });

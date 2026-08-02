@@ -9,8 +9,9 @@ import {
   getSubtree,
   lookupExact,
   searchHts,
+  searchScheduleB,
 } from "../hts/store";
-import type { HtsLine } from "../hts/types";
+import type { HtsLine, ScheduleBLine } from "../hts/types";
 
 /**
  * Tools the classification agent runs against the local HTSUS snapshot.
@@ -241,21 +242,87 @@ export const chapter99LookupTool = betaZodTool({
   },
 });
 
+function formatScheduleBLine(line: ScheduleBLine): string {
+  const facts = [
+    line.units.length > 0 ? `units: ${line.units.join(", ")}` : null,
+    line.isAgricultural ? "agricultural commodity" : null,
+  ].filter(Boolean);
+  return (
+    `${line.htsNo}  ${line.description}` +
+    (facts.length > 0 ? `\n  (${facts.join("; ")})` : "")
+  );
+}
+
 export const scheduleBLookupTool = betaZodTool({
   name: "schedule_b_lookup",
   description:
-    "Map a 10-digit HTSUS number to its Schedule B export code via the Census concordance. Import and export codes are not interchangeable, and the mapping is not always one to one.",
+    "List the Schedule B export codes available under the same 6-digit HS subheading as an HTSUS number. Returns candidates, not an answer: the import and export schedules share the first 6 digits but break out differently below them, so you must read the descriptions and choose, exactly as you would for a statistical suffix under GRI 6.",
   inputSchema: z.object({
-    hts_code: z.string().describe("A 10-digit HTSUS number."),
+    hts_code: z
+      .string()
+      .describe("An HTSUS number. 10 digits is usual; 6 or 8 also work."),
   }),
   run: ({ hts_code }) => {
-    const entries = getScheduleB(hts_code);
-    if (entries.length === 0) {
-      return `No Schedule B mapping for ${hts_code} in this snapshot. This may mean the concordance was unavailable at sync time rather than that no mapping exists — do not assert that the good has no export code.`;
+    const { hs6, candidates, hasIdenticalCode } = getScheduleB(hts_code);
+
+    if (hs6.length < 6) {
+      return `${hts_code} does not contain a 6-digit HS subheading, so there is nothing to match against the export schedule.`;
     }
-    return entries
-      .map((entry) => `${entry.scheduleB}  ${entry.description}`)
-      .join("\n");
+
+    if (candidates.length === 0) {
+      return (
+        `No Schedule B codes exist under HS subheading ${hs6}. This happens: the export ` +
+        `schedule does not use every subheading the tariff does (Chapter 98 provisions ` +
+        `especially). Use schedule_b_search to find the export code by description ` +
+        `instead, and say in your justification that it was not reachable from the HTS number.`
+      );
+    }
+
+    const header =
+      `Schedule B codes under HS subheading ${hs6} (${candidates.length} candidate` +
+      `${candidates.length === 1 ? "" : "s"}):`;
+
+    const body = candidates.map(formatScheduleBLine).join("\n");
+
+    // Both notes can apply at once — a subheading with a single candidate whose
+    // digits also match is exactly the case most likely to be rubber-stamped —
+    // so they are additive rather than a chain of alternatives.
+    const guidance: string[] = [];
+    if (candidates.length === 1) {
+      guidance.push(
+        "Only one export code sits under this subheading. Confirm its description actually covers the good before adopting it — a single candidate is not automatically the right one.",
+      );
+    } else {
+      guidance.push("Choose on the description, not on the number.");
+    }
+    guidance.push(
+      hasIdenticalCode
+        ? "One candidate shares all ten digits with the HTS number. That is a coincidence of the two schedules' numbering, not evidence — if you adopt it, say why its description fits."
+        : "No candidate shares all ten digits with the HTS number, which is normal and not a problem.",
+    );
+
+    return `${header}\n${body}\n\n${guidance.join(" ")}`;
+  },
+});
+
+export const scheduleBSearchTool = betaZodTool({
+  name: "schedule_b_search",
+  description:
+    "Full-text search the Schedule B export schedule by description. Use when schedule_b_lookup returns no candidates for the HS subheading, or to confirm that a chosen export code is the best fit among similarly worded ones.",
+  inputSchema: z.object({
+    query: z
+      .string()
+      .describe(
+        "Words describing the good. Census descriptions are terse and abbreviated, so prefer plain nouns over long phrases.",
+      ),
+    limit: z.number().int().min(1).max(40).default(15),
+  }),
+  run: ({ query, limit }) => {
+    const hits = searchScheduleB(query, limit);
+    if (hits.length === 0) {
+      return `No Schedule B codes match "${query}". Census descriptions are heavily abbreviated ("FLASK AND OTHER VESSELS, COMPLETE WITH CASES"), so try a shorter or more literal term.`;
+    }
+    return hits.map(formatScheduleBLine).join("\n");
   },
 });
 
@@ -268,6 +335,7 @@ export const classificationTools = [
   htsGriTool,
   chapter99LookupTool,
   scheduleBLookupTool,
+  scheduleBSearchTool,
 ];
 
 export const LOCAL_TOOL_NAMES = classificationTools.map((tool) => tool.name);

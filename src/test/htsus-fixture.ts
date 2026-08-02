@@ -2,13 +2,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseUsitcRows } from "../lib/hts/parse";
+import { formatScheduleB } from "../lib/hts/scheduleB";
 import {
   INDEX_FILENAME,
   MANIFEST_FILENAME,
   buildIndex,
   resetStore,
 } from "../lib/hts/store";
-import type { HtsusManifest, UsitcRawRow } from "../lib/hts/types";
+import type {
+  HtsusManifest,
+  ScheduleBLine,
+  UsitcRawRow,
+} from "../lib/hts/types";
 
 /**
  * A small but genuinely awkward slice of the tariff, used across the data-layer
@@ -112,6 +117,41 @@ export const FIXTURE_ROWS: UsitcRawRow[] = [
 
 export const FIXTURE_REVISION = "2026 HTS Revision 13";
 
+function scheduleBLine(
+  code: string,
+  description: string,
+  units: string[] = ["NO"],
+): ScheduleBLine {
+  return {
+    code,
+    htsNo: formatScheduleB(code),
+    hs6: code.slice(0, 6),
+    chapter: code.slice(0, 2),
+    description,
+    shortDescription: description.slice(0, 51),
+    units,
+    sitc: null,
+    endUse: null,
+    naics: null,
+    isAgricultural: false,
+    hiTech: null,
+  };
+}
+
+/**
+ * Shaped after the real divergence between the schedules at heading 9617.
+ * HTSUS breaks 9617.00 out by capacity (over or under one litre); Schedule B
+ * breaks the same subheading out by whether the article is complete or a part.
+ * The result is that no Schedule B code shares all ten digits with
+ * 9617.00.10.00 — which is the case the HS-6 join exists to handle, so the
+ * fixture has to contain it.
+ */
+export const FIXTURE_SCHEDULE_B: ScheduleBLine[] = [
+  scheduleBLine("8507600000", "LITHIUM ION BATTERIES"),
+  scheduleBLine("9617002000", "FLASK AND OTHER VESSELS, COMPLETE WITH CASES"),
+  scheduleBLine("9617006000", "PARTS OF VACUUM FLASKS ETC,EXCEPT GLASS INNERS"),
+];
+
 let fixtureRoot: string | null = null;
 let previousDataDir: string | undefined;
 
@@ -133,7 +173,8 @@ export function setupFixtureIndex(): string {
     lineCount: lines.length,
     reportableLineCount: lines.filter((line) => line.isReportable).length,
     noteCount: 3,
-    scheduleBCount: 2,
+    scheduleBCount: FIXTURE_SCHEDULE_B.length,
+    scheduleBEdition: "2026",
     warnings: [],
   };
 
@@ -159,18 +200,7 @@ export function setupFixtureIndex(): string {
         body: "This chapter does not cover parts of general use of base metal (Section XV).",
       },
     ],
-    scheduleB: [
-      {
-        hts10: "8507600020",
-        scheduleB: "8507.60.0000",
-        description: "Lithium-ion storage batteries",
-      },
-      {
-        hts10: "9617001000",
-        scheduleB: "9617.00.0000",
-        description: "Vacuum flasks and other vacuum vessels",
-      },
-    ],
+    scheduleB: FIXTURE_SCHEDULE_B,
     manifest,
   });
 

@@ -57,6 +57,7 @@ export async function GET(
     },
     decidedAt: determination.decidedAt,
     htsusRevision: determination.htsusRevision,
+    scheduleBEdition: determination.scheduleBEdition,
     model: determination.model,
     effort: determination.effort,
     appVersion: determination.appVersion,

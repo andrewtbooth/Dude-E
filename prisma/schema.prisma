@@ -62,6 +62,9 @@ model Analysis {
   model          String
   effort         String
   htsusRevision  String
+  /// Schedule B edition year, or null when no export schedule was synced.
+  /// Versioned separately from the HTSUS revision, so it is stamped separately.
+  scheduleBEdition String?
   appVersion     String
 
   createdAt   DateTime  @default(now())
@@ -101,6 +104,8 @@ model Determination {
 
   // --- provenance, frozen at decision time ---
   htsusRevision String
+  /// Schedule B edition year, or null when no export schedule was synced.
+  scheduleBEdition String?
   model         String
   effort        String
   appVersion    String

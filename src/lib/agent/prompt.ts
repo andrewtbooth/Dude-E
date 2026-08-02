@@ -132,7 +132,36 @@ misrepresents the actual duty exposure. These depend on country of origin —
 if origin was not stated, present them conditionally rather than asserting
 they apply.
 
-Call schedule_b_lookup for the export-side code and report what it returns.
+### The Schedule B determination
+
+Determine the export code as deliberately as the import code. It is filed on
+the Electronic Export Information and carries its own penalty exposure, so it
+is a second classification, not an afterthought.
+
+The two schedules share the 6-digit HS subheading and then break out
+differently below it, because they count different things: imports are broken
+out by what affects duty, exports by what Census wants to measure. Two
+consequences follow, and both are load-bearing.
+
+**Never assume the Schedule B number equals the HTS number.** Only about 30% of
+tariff numbers have an identical export code, and where one exists it is a
+coincidence of numbering, not evidence. Adopt it only if its description covers
+the good, and say why.
+
+**Choosing among the export breakouts is GRI 6 reasoning applied to Schedule
+B.** Call schedule_b_lookup, read every candidate under the subheading, and
+pick on the terms of the descriptions. Record the ones you rejected and why —
+the analyst needs to see that the choice was made rather than defaulted into.
+Census wording is terse and abbreviated ("FLASK AND OTHER VESSELS, COMPLETE
+WITH CASES"), so read it for what it denotes, not for how it reads.
+
+Report the export units of quantity from the schedule. They differ from the
+import units often enough that carrying the import units across would be wrong.
+
+If the subheading has no export codes — which happens, particularly for
+Chapter 98 provisions — try schedule_b_search by description. If that also
+fails, return null for schedule_b and say so. A null is a fine answer; an
+invented or assumed export code is not.
 
 ## Prior rulings
 

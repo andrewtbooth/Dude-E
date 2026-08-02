@@ -106,6 +106,7 @@ export async function POST(request: Request) {
       ),
       analystNote,
       htsusRevision: analysis.htsusRevision,
+      scheduleBEdition: analysis.scheduleBEdition,
       model: analysis.model,
       effort: analysis.effort,
       appVersion: analysis.appVersion,

@@ -87,7 +87,7 @@ describe("DeterminationDoc", () => {
             ...sampleSelectedCandidate(),
             cross_rulings: [],
             chapter_99: [],
-            schedule_b: [],
+            schedule_b: null,
             notes_applied: [],
           },
           subject: {

@@ -84,10 +84,48 @@ export interface HtsNote {
   body: string;
 }
 
-export interface ScheduleBEntry {
-  hts10: string;
-  scheduleB: string;
+/**
+ * One record of the export schedule, as Census publishes it.
+ *
+ * This is a commodity line in its own right, not a mapping onto an HTSUS
+ * number — see `scheduleB.ts` for why the crosswalk has to be derived at
+ * HS-6 rather than stored.
+ */
+export interface ScheduleBLine {
+  /** Bare digits, e.g. "9617002000". */
+  code: string;
+  /** Dotted, e.g. "9617.00.20.00". */
+  htsNo: string;
+  /** First six digits — the HS subheading shared with HTSUS. */
+  hs6: string;
+  chapter: string;
+  /** Census's long description. Published in upper case. */
   description: string;
+  shortDescription: string;
+  /** Units of quantity required on the export declaration. */
+  units: string[];
+  sitc: string | null;
+  endUse: string | null;
+  naics: string | null;
+  isAgricultural: boolean;
+  hiTech: string | null;
+}
+
+/**
+ * The Schedule B numbers reachable from an HTSUS number, plus enough context
+ * for a reader to see how the two schedules relate at this subheading.
+ */
+export interface ScheduleBMatch {
+  /** The HS subheading the two schedules share. */
+  hs6: string;
+  candidates: ScheduleBLine[];
+  /**
+   * True when a Schedule B code with the identical 10 digits exists. Worth
+   * surfacing, but never sufficient on its own: the schedules break out
+   * differently below HS-6, so an identical number can still be the wrong
+   * export code.
+   */
+  hasIdenticalCode: boolean;
 }
 
 export interface Chapter99Entry {
@@ -120,6 +158,12 @@ export interface HtsusManifest {
   reportableLineCount: number;
   noteCount: number;
   scheduleBCount: number;
+  /**
+   * The Schedule B edition year, e.g. "2026". Census versions the export
+   * schedule annually and independently of the HTSUS revision cycle, so a
+   * determination that names an export code has to stamp both.
+   */
+  scheduleBEdition: string | null;
   /** Non-fatal problems hit during sync — surfaced in the UI, not swallowed. */
   warnings: string[];
 }

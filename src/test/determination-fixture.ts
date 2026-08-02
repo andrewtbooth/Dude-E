@@ -65,12 +65,21 @@ export function sampleSelectedCandidate(): Candidate {
           "Applies only if the country of origin is China. Origin was not stated by the analyst, so this is presented conditionally.",
       },
     ],
-    schedule_b: [
-      {
-        code: "9617.00.0000",
-        description: "Vacuum flasks and other vacuum vessels, complete with cases",
-      },
-    ],
+    schedule_b: {
+      code: "9617.00.20.00",
+      description: "FLASK AND OTHER VESSELS, COMPLETE WITH CASES",
+      unit_of_quantity: ["NO"],
+      justification:
+        "The article is a complete vacuum vessel with its case, not a part, so it falls in the 'complete with cases' breakout rather than 9617.00.60.00. Note that no export code shares all ten digits with the HTS number — Schedule B splits this subheading by complete-vs-parts where the tariff splits it by capacity.",
+      considered: [
+        {
+          code: "9617.00.60.00",
+          description: "PARTS OF VACUUM FLASKS ETC,EXCEPT GLASS INNERS",
+          why_not_selected:
+            "Covers parts; the article is a complete vessel sold as a finished good.",
+        },
+      ],
+    },
     cross_rulings: [
       {
         ruling_number: "N301234",
@@ -100,7 +109,7 @@ function sampleAlternate(
     notes_applied: [],
     cross_rulings: [],
     chapter_99: [],
-    schedule_b: [],
+    schedule_b: null,
     why_not_selected: reason,
   };
 }
@@ -113,6 +122,7 @@ export function sampleDeterminationView(
     analyst: { name: "Dana Okafor", email: "dana.okafor@example.com" },
     decidedAt: new Date("2026-07-31T14:22:05Z"),
     htsusRevision: "2026 HTS Revision 13",
+    scheduleBEdition: "2026",
     model: "claude-opus-5",
     effort: "max",
     appVersion: "0.1.0",

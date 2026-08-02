@@ -30,13 +30,13 @@ import {
   MANIFEST_FILENAME,
   buildIndex,
 } from "../src/lib/hts/store";
+import { parseScheduleB } from "../src/lib/hts/scheduleB";
 import type {
   HtsLine,
   HtsusManifest,
-  ScheduleBEntry,
+  ScheduleBLine,
   UsitcRawRow,
 } from "../src/lib/hts/types";
-import { parseConcordance } from "./sync-htsus";
 
 try {
   process.loadEnvFile(".env.local");
@@ -62,6 +62,7 @@ interface Args {
   dir?: string;
   revision?: string;
   scheduleB?: string;
+  scheduleBEdition?: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -72,6 +73,7 @@ function parseArgs(argv: string[]): Args {
     else if (flag === "--dir") args.dir = argv[++i];
     else if (flag === "--revision") args.revision = argv[++i];
     else if (flag === "--schedule-b") args.scheduleB = argv[++i];
+    else if (flag === "--schedule-b-year") args.scheduleBEdition = argv[++i];
   }
   return args;
 }
@@ -91,7 +93,11 @@ const USAGE = [
   "  --revision <label>   Required. Exactly as USITC names it, e.g.",
   '                       "2026 HTS Revision 13". This is stamped onto every',
   "                       determination, so it must be the truth.",
-  "  --schedule-b <path>  Optional Census HTS-to-Schedule B concordance file",
+  "  --schedule-b <path>  Optional Census export schedule (exp-code.txt), from",
+  "                       https://www.census.gov/foreign-trade/schedules/b",
+  "  --schedule-b-year <year>",
+  "                       Edition year of that file, e.g. 2026. Required with",
+  "                       --schedule-b; it is not recorded inside the file.",
 ].join("\n");
 
 // ---------------------------------------------------------------------------
@@ -234,13 +240,30 @@ function main(): void {
     );
   }
 
-  let scheduleB: ScheduleBEntry[] = [];
+  // Schedule B is a separate download with its own edition year, so the import
+  // path takes it as its own flag rather than inferring it from the HTS export.
+  let scheduleB: ScheduleBLine[] = [];
+  let scheduleBEdition: string | null = null;
   if (args.scheduleB) {
     const resolved = path.resolve(args.scheduleB);
     if (fs.existsSync(resolved)) {
-      scheduleB = parseConcordance(fs.readFileSync(resolved, "utf8"));
+      const parsed = parseScheduleB(fs.readFileSync(resolved, "utf8"));
+      scheduleB = parsed.lines;
+      for (const message of parsed.warnings) warn(message);
       if (scheduleB.length === 0) {
-        warn(`${path.basename(resolved)}: parsed to zero Schedule B entries.`);
+        warn(`${path.basename(resolved)}: parsed to zero Schedule B codes.`);
+      } else {
+        // The edition year is not in the file, only in the URL it came from.
+        // Guessing it would put a wrong stamp on every export code, so it is
+        // required alongside the file and recorded as unknown when absent.
+        scheduleBEdition = args.scheduleBEdition?.trim() || null;
+        if (!scheduleBEdition) {
+          warn(
+            "Schedule B was imported without --schedule-b-year, so the edition " +
+              "cannot be stamped on determinations. Pass the year of the file " +
+              "you downloaded, e.g. --schedule-b-year 2026.",
+          );
+        }
       }
     } else {
       warn(`Schedule B file not found: ${resolved}`);
@@ -271,6 +294,7 @@ function main(): void {
     reportableLineCount,
     noteCount: 0,
     scheduleBCount: scheduleB.length,
+    scheduleBEdition,
     warnings,
   };
 
@@ -293,7 +317,10 @@ function main(): void {
   console.log(`Done. ${revision}`);
   console.log(`  chapters:   ${chapters.size}`);
   console.log(`  lines:      ${allLines.length} (${reportableLineCount} reportable)`);
-  console.log(`  schedule B: ${scheduleB.length}`);
+  console.log(
+    `  schedule B: ${scheduleB.length}` +
+      (scheduleBEdition ? ` (${scheduleBEdition} edition)` : ""),
+  );
   console.log(`  warnings:   ${warnings.length}`);
   console.log(`  written to: ${revisionDir}`);
 }

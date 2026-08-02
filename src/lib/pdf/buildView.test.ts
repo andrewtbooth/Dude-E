@@ -26,16 +26,24 @@ function candidate(rank: number, code: string): Candidate {
     },
     notes_applied: [],
     justification: `Justification for ${code}.`,
-    duty: { general: "3.4%", special: "", column_2: "35%", rates_published_on: null },
+    duty: {
+      general: "3.4%",
+      special: "",
+      column_2: "35%",
+      rates_published_on: null,
+    },
     unit_of_quantity: ["No."],
     chapter_99: [],
-    schedule_b: [],
+    schedule_b: null,
     cross_rulings: [],
     why_not_selected: rank === 1 ? null : `Loses because of rank ${rank}.`,
   };
 }
 
-function run(candidates: Candidate[], recommended: string | null): ClassificationRun {
+function run(
+  candidates: Candidate[],
+  recommended: string | null,
+): ClassificationRun {
   return {
     result: {
       status: "complete",
@@ -58,7 +66,10 @@ function run(candidates: Candidate[], recommended: string | null): Classificatio
 }
 
 describe("findCandidate", () => {
-  const candidates = [candidate(1, "8507.60.00.20"), candidate(2, "9617.00.10.00")];
+  const candidates = [
+    candidate(1, "8507.60.00.20"),
+    candidate(2, "9617.00.10.00"),
+  ];
 
   it("matches regardless of dot formatting", () => {
     expect(findCandidate(candidates, "8507600020")?.rank).toBe(1);
@@ -110,7 +121,9 @@ describe("selectAlternates", () => {
 describe("parseRefinements", () => {
   it("reads a stored array", () => {
     expect(
-      parseRefinements('[{"questionId":"m","question":"Material?","answer":"Steel"}]'),
+      parseRefinements(
+        '[{"questionId":"m","question":"Material?","answer":"Steel"}]',
+      ),
     ).toEqual([{ questionId: "m", question: "Material?", answer: "Steel" }]);
   });
 
@@ -121,7 +134,10 @@ describe("parseRefinements", () => {
 });
 
 describe("buildDeterminationView", () => {
-  const candidates = [candidate(1, "8507.60.00.20"), candidate(2, "9617.00.10.00")];
+  const candidates = [
+    candidate(1, "8507.60.00.20"),
+    candidate(2, "9617.00.10.00"),
+  ];
 
   function build(selectedCode: string, recommended: string | null) {
     const selected = findCandidate(candidates, selectedCode)!;
@@ -130,6 +146,7 @@ describe("buildDeterminationView", () => {
       analyst: { name: "Dana Okafor", email: "dana@example.com" },
       decidedAt: new Date("2026-07-31T14:00:00Z"),
       htsusRevision: "2026 HTS Revision 13",
+      scheduleBEdition: "2026",
       model: "claude-opus-5",
       effort: "max",
       appVersion: "0.1.0",

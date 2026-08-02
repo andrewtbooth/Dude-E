@@ -8,6 +8,7 @@ import {
   htsSearchTool,
   htsSubtreeTool,
   scheduleBLookupTool,
+  scheduleBSearchTool,
 } from "./tools";
 
 beforeAll(() => setupFixtureIndex());
@@ -165,17 +166,60 @@ describe("chapter99_lookup", () => {
 });
 
 describe("schedule_b_lookup", () => {
-  it("maps a 10-digit HTSUS number to its export code", async () => {
+  it("returns the export codes under the shared HS-6 subheading", async () => {
+    const output = await run(scheduleBLookupTool, {
+      hts_code: "9617.00.10.00",
+    });
+    expect(output).toContain("9617.00.20.00");
+    expect(output).toContain("9617.00.60.00");
+    expect(output).toContain("961700");
+  });
+
+  it("says plainly that no candidate shares all ten digits", async () => {
+    const output = await run(scheduleBLookupTool, {
+      hts_code: "9617.00.10.00",
+    });
+    expect(output).toContain("No candidate shares all ten digits");
+  });
+
+  it("warns that an identical code is a numbering coincidence, not evidence", async () => {
+    const output = await run(scheduleBLookupTool, {
+      hts_code: "8507.60.00.00",
+    });
+    expect(output).toContain("coincidence");
+  });
+
+  it("does not let a lone candidate pass as automatically correct", async () => {
     const output = await run(scheduleBLookupTool, {
       hts_code: "8507.60.00.20",
     });
-    expect(output).toContain("8507.60.0000");
+    expect(output).toContain("Only one export code");
+    expect(output).toContain("not automatically the right one");
   });
 
-  it("does not assert the good has no export code when the map is empty", async () => {
+  it("points at search when the subheading has no export codes at all", async () => {
     const output = await run(scheduleBLookupTool, {
       hts_code: "7323.93.00.80",
     });
-    expect(output).toContain("do not assert that the good has no export code");
+    expect(output).toContain("schedule_b_search");
+    expect(output).toContain("not reachable from the HTS number");
+  });
+});
+
+describe("schedule_b_search", () => {
+  it("finds an export code from its abbreviated description", async () => {
+    const output = await run(scheduleBSearchTool, {
+      query: "vacuum flask parts",
+      limit: 10,
+    });
+    expect(output).toContain("9617.00.60.00");
+  });
+
+  it("explains the terse Census wording when nothing matches", async () => {
+    const output = await run(scheduleBSearchTool, {
+      query: "zzzz nonexistent commodity",
+      limit: 10,
+    });
+    expect(output).toContain("heavily abbreviated");
   });
 });

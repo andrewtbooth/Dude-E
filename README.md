@@ -22,11 +22,13 @@ and which alternates were considered and rejected.
 An exported determination carries, in this order:
 
 1. **Provenance** — determination ID, analyst name and email, UTC timestamp,
-   the HTSUS revision used, the model and effort level, the app version.
+   the HTSUS revision and Schedule B edition used, the model and effort level,
+   the app version.
 2. **Subject** — the part number or description, any researched product detail,
    and the answers the analyst supplied to clarifying questions.
 3. **Determination** — the 10-digit code, its full description path, General /
-   Special / Column 2 rates, unit of quantity, Chapter 99 exposure, Schedule B.
+   Special / Column 2 rates, unit of quantity, Chapter 99 exposure, and the
+   Schedule B export code with its own reasoning and rejected siblings.
 4. **Basis of classification** — the GRI 1 through 6 walk and the Section and
    Chapter Notes relied on.
 5. **Assumptions** — everything taken as given that the analyst did not state.
@@ -66,9 +68,9 @@ Everything else has a working default — see `.env.example`.
 classification outright, because a code that cannot be verified against a
 published edition is worse than no answer at all.
 
-The sync pulls tariff lines chapter by chapter from the USITC REST API, plus
-the General Notes and every Section and Chapter Note. It writes a snapshot
-directory and a manifest:
+The sync pulls tariff lines chapter by chapter from the USITC REST API, the
+General Notes and every Section and Chapter Note, and the complete Schedule B
+export schedule from Census. It writes a snapshot directory and a manifest:
 
 ```
 data/htsus/2026-hts-revision-14/
@@ -77,10 +79,10 @@ data/htsus/2026-hts-revision-14/
                     SHA-256 of the raw payloads, counts, warnings
 ```
 
-A full run against live USITC takes roughly a minute and a half and produces
-about 35,800 tariff lines, near 20,000 of them 10-digit reportable numbers,
-across 98 chapters plus 99 note documents. (Chapter 77 is reserved and
-correctly returns nothing.)
+A full run takes roughly a minute and a half and produces about 35,800 tariff
+lines, near 20,000 of them 10-digit reportable numbers, across 98 chapters,
+plus 99 note documents and 9,779 Schedule B export codes. (Chapter 77 is
+reserved and correctly returns nothing.)
 
 **Notes arrive as PDF.** USITC serves the note documents as
 `application/octet-stream` regardless of their real type, so the sync sniffs
@@ -98,7 +100,9 @@ dispatcher when `HTTPS_PROXY` is set, which is the portable fix.
 
 **`manifest.revision` is the single source of the version stamp.** It is read
 at render time and written into every analysis, determination, and PDF. Nothing
-in the codebase hardcodes a revision number.
+in the codebase hardcodes a revision number. Schedule B is versioned separately
+by Census, on its own annual cycle, so `manifest.scheduleBEdition` is stamped
+alongside it — a determination names both editions.
 
 Two behaviours worth knowing:
 
@@ -110,6 +114,44 @@ Two behaviours worth knowing:
   still useful. Warnings are recorded in the manifest and shown in the masthead
   and on the analyze page, so an analyst can see what is incomplete before
   relying on it.
+
+### The export side
+
+Schedule B comes from Census as one fixed-width file per edition
+(`exp-code.txt`), with its record layout published alongside it
+(`exp-stru.txt`). That makes it the export analogue of the USITC feed: the
+complete schedule, machine-readable, rather than a derived crosswalk.
+
+**There is no authoritative 10-digit crosswalk, and building one by string
+equality would be wrong.** Measured against 2026 HTS Revision 14, only **30.1%**
+of reportable HTSUS numbers have an identical 10-digit Schedule B code. The
+schedules share the 6-digit international HS subheading and then break out
+differently below it, because they count different things — imports by what
+affects duty, exports by what Census wants to measure.
+
+So the join is at HS-6, which the two share by construction, and it produces
+*candidates*:
+
+| | |
+|---|---|
+| Reportable HTSUS lines reaching ≥1 export code at HS-6 | **99.4%** |
+| …resolving to exactly one candidate | 45% |
+| …needing a description-level choice | 55% |
+
+Heading 9617 is the clean illustration. HTSUS splits `9617.00` by capacity
+(over or under one litre); Schedule B splits the same subheading by whether the
+article is complete or a part. `9617.00.10.00` therefore reaches
+`9617.00.20.00` and `9617.00.60.00`, and shares all ten digits with neither.
+`6109.10.00.12` ("Men's (338)") reaches ten export candidates, including
+women's garments — picking by number would be silently wrong.
+
+Choosing among them is GRI 6 reasoning applied to the export schedule, so the
+model does it explicitly and records the codes it rejected and why. Export
+units of quantity come from Schedule B, not carried across from the import
+line — they differ often enough to matter (`6109.10.00.12` is `DOZ, KG` on
+export). Export codes get the same anti-fabrication treatment as HTS codes:
+verified against the snapshot, description and units overwritten from the
+schedule, and dropped if they do not exist.
 
 Revisions ship every few weeks. Run the sync on a schedule — weekly is
 reasonable — and again whenever USITC publishes.
@@ -127,8 +169,17 @@ anything. A failed sync tells you a source "could not be retrieved"; the probe
 tells you what the server sent, which is what you need to fix it. Run it first
 whenever a sync misbehaves.
 
-The sync reads `.env.local`, so `CENSUS_CONCORDANCE_URL`, `HTSUS_DATA_DIR` and
+The sync reads `.env.local`, so `CENSUS_SCHEDULE_B_BASE`, `HTSUS_DATA_DIR` and
 `USITC_BASE_URL` overrides apply to it as well as to the app.
+
+Schedule B has its own flags. The edition year is discovered by probing next
+year, this year, then last year — Census publishes an edition late in the
+preceding year, so "the current year" is not reliably the newest available:
+
+```bash
+npm run sync:htsus -- --schedule-b-year 2026   # pin the edition
+npm run sync:htsus -- --no-schedule-b          # tariff only
+```
 
 ### If you cannot reach hts.usitc.gov
 
@@ -147,6 +198,17 @@ npm run import:htsus -- --file ./data/raw/hts.json --revision "2026 HTS Revision
 
 `--revision` is required and must match what USITC calls the edition — it is
 stamped onto every determination, so the import will not guess it.
+
+Schedule B can be imported the same way. Download the edition's `exp-code.txt`
+from **https://www.census.gov/foreign-trade/schedules/b** and pass it with its
+year — the year is not recorded inside the file, and guessing it would put a
+wrong edition stamp on every export code:
+
+```bash
+npm run import:htsus -- --file ./data/raw/hts.json \
+  --revision "2026 HTS Revision 14" \
+  --schedule-b ./data/raw/exp-code.txt --schedule-b-year 2026
+```
 
 **One real gap:** a file export carries tariff lines only. Section and Chapter
 Notes and the GRIs are published as PDF and are not included. The manifest
@@ -182,7 +244,8 @@ code that has not been verified.
 | `hts_notes` | Section and Chapter Notes — binding under GRI 1 |
 | `hts_gri` | The rule text verbatim |
 | `chapter99_lookup` | Section 301 / 232 duties referenced by footnote |
-| `schedule_b_lookup` | Export code via the Census concordance |
+| `schedule_b_lookup` | Export candidates under the shared HS-6 subheading |
+| `schedule_b_search` | The export schedule by description, when HS-6 finds nothing |
 | `web_search`, `web_fetch` | Part research and CROSS rulings |
 
 ### Two guardrails
@@ -262,17 +325,12 @@ scripts/
   HTSUS is revised. The snapshot captures Chapter 99 as published at sync time;
   the UI shows the sync date alongside those duties rather than implying they
   are live.
-- **Schedule B lookup is off until you supply a crosswalk.** Census publishes a
-  concordance for each schedule against SITC, end-use and NAICS, but nothing
-  that maps HTS onto Schedule B directly. The two numbers coincide for many
-  simple goods and diverge for others, so deriving one from the other by code
-  equality would produce confident, sometimes wrong export codes — the exact
-  failure this tool exists to prevent. The sync records the gap as a warning
-  and `schedule_b_lookup` returns nothing rather than guessing. Set
-  `CENSUS_CONCORDANCE_URL` to a delimited file with HTS and Schedule B columns
-  to enable it; the parser handles tab- and comma-delimited, dotted or bare
-  codes. **Sourcing that file is still open**, and export codes are a stated
-  requirement, so it is the next real gap to close.
+- **Schedule B needs an analyst's eye, not just a lookup.** The export code is
+  reached through the shared HS-6 subheading and then chosen by description —
+  see "The export side" above. Roughly 0.6% of tariff numbers sit under a
+  subheading Schedule B does not use at all; for those the model falls back to
+  searching the export schedule by description, and returns nothing rather than
+  guessing if that fails too.
 - **The USITC API has changed shape without notice before.** The parsers
   tolerate drift and fail loudly with the raw payload rather than silently
   producing a partial snapshot. Live output currently ships the additional-duty

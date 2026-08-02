@@ -54,6 +54,8 @@ export interface BuildViewInput {
   analyst: { name: string; email: string };
   decidedAt: Date;
   htsusRevision: string;
+  /** Schedule B edition year, or null when none was synced. */
+  scheduleBEdition: string | null;
   model: string;
   effort: string;
   appVersion: string;
@@ -80,6 +82,7 @@ export function buildDeterminationView(
     analyst: input.analyst,
     decidedAt: input.decidedAt,
     htsusRevision: input.htsusRevision,
+    scheduleBEdition: input.scheduleBEdition,
     model: input.model,
     effort: input.effort,
     appVersion: input.appVersion,

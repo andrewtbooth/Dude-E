@@ -12,6 +12,8 @@ import {
   getIndexStats,
   getNotes,
   getScheduleB,
+  lookupScheduleB,
+  searchScheduleB,
   getSubtree,
   lookupExact,
   searchHts,
@@ -32,7 +34,8 @@ describe("HTSUS index", () => {
     expect(stats.lineCount).toBe(13);
     expect(stats.reportableLineCount).toBe(4);
     expect(stats.noteCount).toBe(3);
-    expect(stats.scheduleBCount).toBe(2);
+    expect(stats.scheduleBCount).toBe(3);
+    expect(stats.scheduleBHs6Count).toBe(2);
   });
 
   it("finds lines by natural-language query", () => {
@@ -106,18 +109,50 @@ describe("HTSUS index", () => {
     expect(getNotes("section", "XVI")).toEqual([]);
   });
 
-  it("maps a 10-digit HTS number to Schedule B", () => {
-    expect(getScheduleB("8507.60.00.20")).toEqual([
-      {
-        hts10: "8507600020",
-        scheduleB: "8507.60.0000",
-        description: "Lithium-ion storage batteries",
-      },
-    ]);
+  it("reaches Schedule B through the shared HS-6 subheading", () => {
+    const match = getScheduleB("8507.60.00.20");
+    expect(match.hs6).toBe("850760");
+    expect(match.candidates.map((c) => c.htsNo)).toEqual(["8507.60.00.00"]);
+    expect(match.candidates[0].description).toBe("LITHIUM ION BATTERIES");
   });
 
-  it("returns no Schedule B mapping for an unmapped code", () => {
-    expect(getScheduleB("7323.93.00.80")).toEqual([]);
+  it("returns every candidate under the subheading rather than picking one", () => {
+    // HTSUS splits 9617.00 by capacity, Schedule B by complete-vs-parts, so
+    // this HTS number reaches two export codes and neither shares its digits.
+    const match = getScheduleB("9617.00.10.00");
+    expect(match.candidates.map((c) => c.htsNo)).toEqual([
+      "9617.00.20.00",
+      "9617.00.60.00",
+    ]);
+    expect(match.hasIdenticalCode).toBe(false);
+  });
+
+  it("flags when an export code shares all ten digits", () => {
+    expect(getScheduleB("8507.60.00.00").hasIdenticalCode).toBe(true);
+    expect(getScheduleB("8507.60.00.20").hasIdenticalCode).toBe(false);
+  });
+
+  it("joins from a 6- or 8-digit number too", () => {
+    expect(getScheduleB("9617.00").candidates).toHaveLength(2);
+    expect(getScheduleB("9617.00.10").candidates).toHaveLength(2);
+  });
+
+  it("returns no candidates for a subheading the export schedule does not use", () => {
+    const match = getScheduleB("7323.93.00.80");
+    expect(match.candidates).toEqual([]);
+    expect(match.hs6).toBe("732393");
+  });
+
+  it("looks a Schedule B code up exactly, and rejects one that does not exist", () => {
+    expect(lookupScheduleB("9617.00.20.00")?.description).toBe(
+      "FLASK AND OTHER VESSELS, COMPLETE WITH CASES",
+    );
+    expect(lookupScheduleB("9617.00.99.00")).toBeNull();
+  });
+
+  it("searches the export schedule by description", () => {
+    const hits = searchScheduleB("vacuum flask parts");
+    expect(hits.map((h) => h.code)).toContain("9617006000");
   });
 
   it("finds Chapter 99 duties via footnotes on ancestor rate lines", () => {
