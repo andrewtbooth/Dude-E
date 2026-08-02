@@ -157,9 +157,19 @@ Revisions ship every few weeks. Run the sync on a schedule — weekly is
 reasonable — and again whenever USITC publishes.
 
 ```bash
-npm run sync:htsus -- --chapters 84,85,96   # partial pull
+npm run sync:htsus -- --chapters 84,85,96   # partial pull, for dev
 npm run sync:htsus -- --probe               # diagnose sources, write nothing
 ```
+
+**A partial pull cannot pass as the published edition.** `--chapters` tags the
+revision label itself — `2026 HTS Revision 14 (PARTIAL — chapters 84-85, 96)` —
+which is what makes it safe: `manifest.revision` is the single source of the
+version stamp, so the tag reaches the masthead, every analysis and
+determination, and the PDF header without any of them needing to know the flag
+exists. It also changes the directory slug, so a partial pull writes alongside a
+complete snapshot rather than over it, and it records a warning explaining that
+most of the tariff is absent. Delete the partial directory to make the full
+snapshot active again.
 
 ### Diagnosing a sync
 

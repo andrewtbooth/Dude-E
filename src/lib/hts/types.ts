@@ -156,6 +156,13 @@ export interface HtsusManifest {
   chapterCount: number;
   lineCount: number;
   reportableLineCount: number;
+  /**
+   * True when only some chapters were fetched. Such a snapshot cannot support
+   * a real classification — most of the tariff is simply absent — so the
+   * revision label carries a "(PARTIAL — …)" tag as well, which is what makes
+   * it visible on every artifact.
+   */
+  isPartial: boolean;
   noteCount: number;
   scheduleBCount: number;
   /**

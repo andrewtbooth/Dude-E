@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_CHAPTERS,
+  describeChapters,
   extractRevision,
+  partialRevisionLabel,
   notesSectionOf,
   scheduleBCoverage,
   scheduleBEditionCandidates,
@@ -142,5 +145,47 @@ describe("scheduleBCoverage", () => {
   it("reports no orphans when every subheading is covered", () => {
     const coverage = scheduleBCoverage([htsLine("8507600010")], [sbLine("850760")]);
     expect(coverage.orphanHs6).toEqual([]);
+  });
+});
+
+describe("partial-pull labelling", () => {
+  it("collapses consecutive chapters into ranges", () => {
+    expect(describeChapters([84, 85, 86, 96])).toBe("84-86, 96");
+    expect(describeChapters([96, 84, 85])).toBe("84-85, 96");
+    expect(describeChapters([1])).toBe("01");
+  });
+
+  it("falls back to a count once the list stops being readable", () => {
+    // The label is stamped on determinations and shown in the masthead, so it
+    // has to stay legible whatever selection someone passes.
+    const scattered = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25];
+    expect(describeChapters(scattered)).toBe("13 of 99");
+  });
+
+  it("de-duplicates and sorts", () => {
+    expect(describeChapters([85, 84, 85])).toBe("84-85");
+  });
+
+  it("tags the revision so the partial snapshot cannot pass as the edition", () => {
+    // This is the whole mechanism: manifest.revision is the single source of
+    // the version stamp, so tagging it here propagates to the masthead, the
+    // Analysis and Determination rows, the PDF header, and the directory slug.
+    expect(partialRevisionLabel("2026 HTS Revision 14", [84, 85, 96])).toBe(
+      "2026 HTS Revision 14 (PARTIAL — chapters 84-85, 96)",
+    );
+  });
+
+  it("gives a partial pull a different directory slug than the full edition", () => {
+    const slug = (revision: string) =>
+      revision.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    expect(slug(partialRevisionLabel("2026 HTS Revision 14", [96]))).not.toBe(
+      slug("2026 HTS Revision 14"),
+    );
+  });
+
+  it("covers every chapter USITC publishes", () => {
+    expect(ALL_CHAPTERS).toHaveLength(99);
+    expect(ALL_CHAPTERS.at(0)).toBe(1);
+    expect(ALL_CHAPTERS.at(-1)).toBe(99);
   });
 });

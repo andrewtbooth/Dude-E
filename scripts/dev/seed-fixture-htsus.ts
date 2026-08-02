@@ -37,6 +37,7 @@ const manifest: HtsusManifest = {
   chapterCount: 4,
   lineCount: lines.length,
   reportableLineCount: lines.filter((line) => line.isReportable).length,
+  isPartial: true,
   noteCount: 3,
   scheduleBCount: FIXTURE_SCHEDULE_B.length,
   scheduleBEdition: null,

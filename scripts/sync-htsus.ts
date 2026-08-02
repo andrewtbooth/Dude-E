@@ -667,17 +667,78 @@ function slugify(revision: string): string {
     .replace(/^-|-$/g, "");
 }
 
+export const ALL_CHAPTERS: readonly number[] = Array.from(
+  { length: 99 },
+  (_, i) => i + 1,
+);
+
+/**
+ * Compact human description of a chapter selection: [84,85,86,96] -> "84-86, 96".
+ *
+ * Falls back to a count once the list would be too long to read, because this
+ * string ends up in a revision label that is stamped on determinations and
+ * shown in the masthead — it has to stay legible at any selection size.
+ */
+export function describeChapters(chapters: readonly number[]): string {
+  const sorted = [...new Set(chapters)].sort((a, b) => a - b);
+  if (sorted.length === 0) return "none";
+
+  const ranges: string[] = [];
+  let start = sorted[0];
+  let previous = sorted[0];
+
+  const flush = () => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    ranges.push(start === previous ? pad(start) : `${pad(start)}-${pad(previous)}`);
+  };
+
+  for (const chapter of sorted.slice(1)) {
+    if (chapter === previous + 1) {
+      previous = chapter;
+      continue;
+    }
+    flush();
+    start = chapter;
+    previous = chapter;
+  }
+  flush();
+
+  const listed = ranges.join(", ");
+  return listed.length <= 40
+    ? listed
+    : `${sorted.length} of ${ALL_CHAPTERS.length}`;
+}
+
+/**
+ * Mark a partial snapshot in the revision label itself.
+ *
+ * `manifest.revision` is the single source of the version stamp, so labelling
+ * it here is what makes a partial pull impossible to mistake for the published
+ * edition: the tag propagates to the masthead, every Analysis and Determination
+ * row, and the PDF header without any of them needing to know about `--chapters`.
+ * It also changes the directory slug, so a partial pull can no longer overwrite
+ * a complete snapshot of the same revision.
+ */
+export function partialRevisionLabel(
+  revision: string,
+  chapters: readonly number[],
+): string {
+  return `${revision} (PARTIAL — chapters ${describeChapters(chapters)})`;
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const chapters =
-    args.chapters && args.chapters.length > 0
-      ? args.chapters
-      : Array.from({ length: 99 }, (_, i) => i + 1);
+    args.chapters && args.chapters.length > 0 ? args.chapters : [...ALL_CHAPTERS];
+  const isPartial = chapters.length < ALL_CHAPTERS.length;
 
   log(`HTSUS sync`);
   log(`  source:   ${BASE_URL}`);
   log(`  target:   ${DATA_DIR}`);
-  log(`  chapters: ${chapters.length}`);
+  log(
+    `  chapters: ${chapters.length}` +
+      (isPartial ? ` (PARTIAL — ${describeChapters(chapters)})` : ""),
+  );
   log("");
 
   if (args.probe) {
@@ -685,7 +746,26 @@ async function main(): Promise<void> {
     return;
   }
 
-  const { revision, publishedDate } = await resolveRevision(args.revision);
+  const resolved = await resolveRevision(args.revision);
+  const publishedDate = resolved.publishedDate;
+
+  // A partial pull is a different artifact from the published edition and has
+  // to be named like one. Doing it through the revision label rather than a
+  // side flag means it lands everywhere the version stamp already goes, and it
+  // gives the snapshot its own directory so a complete one is never clobbered.
+  const revision = isPartial
+    ? partialRevisionLabel(resolved.revision, chapters)
+    : resolved.revision;
+
+  if (isPartial) {
+    warn(
+      `Partial pull: only chapters ${describeChapters(chapters)} were fetched, ` +
+        `so most of the tariff is absent from this snapshot. It is labelled ` +
+        `"${revision}" and written to its own directory, and that label appears ` +
+        `on anything produced against it. Run without --chapters for a snapshot ` +
+        `fit to classify against.`,
+    );
+  }
 
   log("\nFetching tariff lines...");
   const { lines, rawPayloads, fetched } = await fetchChapters(chapters);
@@ -740,6 +820,7 @@ async function main(): Promise<void> {
     chapterCount: fetched,
     lineCount: lines.length,
     reportableLineCount,
+    isPartial,
     noteCount: notes.length,
     scheduleBCount: scheduleB.length,
     scheduleBEdition,

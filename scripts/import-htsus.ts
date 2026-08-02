@@ -292,6 +292,9 @@ function main(): void {
     chapterCount: chapters.size,
     lineCount: allLines.length,
     reportableLineCount,
+    // A file import has no notion of "all chapters" — it holds whatever the
+    // operator exported — so completeness is their assertion, not ours.
+    isPartial: false,
     noteCount: 0,
     scheduleBCount: scheduleB.length,
     scheduleBEdition,

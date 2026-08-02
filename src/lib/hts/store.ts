@@ -269,9 +269,21 @@ function resolveLatestRevisionDir(root: string): string {
 
 function readManifestFile(dir: string): HtsusManifest | null {
   try {
-    return JSON.parse(
+    const parsed = JSON.parse(
       fs.readFileSync(path.join(dir, MANIFEST_FILENAME), "utf8"),
-    ) as HtsusManifest;
+    ) as Partial<HtsusManifest>;
+
+    // Snapshots outlive the code that wrote them, so fields added later are
+    // absent from manifests already on disk. Normalising here keeps the
+    // declared type honest instead of leaving `undefined` behind a `boolean`.
+    // Both defaults are the conservative reading of an older snapshot: no
+    // partial-pull tag means it was a full sync, and no recorded Schedule B
+    // edition means no export codes were stamped.
+    return {
+      ...parsed,
+      isPartial: parsed.isPartial === true,
+      scheduleBEdition: parsed.scheduleBEdition ?? null,
+    } as HtsusManifest;
   } catch {
     return null;
   }
