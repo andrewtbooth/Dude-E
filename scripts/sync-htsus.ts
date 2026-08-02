@@ -84,6 +84,22 @@ const CENSUS_SCHEDULE_B_BASE = (
 const USER_AGENT =
   "Dude-E-TariffClassifier/0.1 (internal compliance tool; +https://github.com/andrewtbooth/Dude-E)";
 
+/**
+ * pdf.js `VerbosityLevel.ERRORS` — errors still surface, warnings do not.
+ *
+ * pdf.js calls `Math.sumPrecise` while sanitising embedded fonts. That is a
+ * Stage 3 proposal available from Node 24, so on Node 22 the call throws and
+ * pdf.js logs a warning per document — nine lines of noise on a full sync,
+ * about a code path text extraction never uses. Verified: extraction is
+ * byte-identical with and without the throw, on the same chapter PDF.
+ *
+ * Nothing is lost by quieting it. pdf.js warnings describe PDF internals we
+ * cannot act on, while the check that actually matters is ours — a document
+ * that yields no usable notes is reported per chapter and recorded in the
+ * manifest, whatever pdf.js did or did not say on the way.
+ */
+const PDFJS_ERRORS_ONLY = 0;
+
 const warnings: string[] = [];
 
 function warn(message: string): void {
@@ -368,7 +384,9 @@ async function fetchNoteDocument(filename: string): Promise<string | null> {
     // content-type check would pass PDFs straight through and we would decode
     // binary as text and store the garbage as tariff notes.
     if (isPdf(bytes)) {
-      const doc = await getDocumentProxy(new Uint8Array(bytes));
+      const doc = await getDocumentProxy(new Uint8Array(bytes), {
+        verbosity: PDFJS_ERRORS_ONLY,
+      });
       const { text } = await extractText(doc, { mergePages: true });
       const notes = notesSectionOf(text);
       return notes.length > 40 ? notes : null;
