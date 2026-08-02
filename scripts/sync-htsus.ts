@@ -468,6 +468,27 @@ async function probeSources(): Promise<void> {
       url: CENSUS_CONCORDANCE_URL,
       expect: "delimited text with two 10-digit code columns per row",
     },
+
+    // The three below are unverified leads rather than endpoints this script
+    // uses. They are probed because they would each answer an open question,
+    // and probing costs one request.
+    {
+      label: "File endpoint control (Change Record)",
+      url: `${BASE_URL}/file?release=currentRelease&filename=${encodeURIComponent("Change Record")}`,
+      expect:
+        "any 200. This isolates cause: if this works but 'Chapter 84' does not, the file endpoint is fine and our filename convention is wrong",
+    },
+    {
+      label: "Section detail JSON (lead)",
+      url: `${BASE_URL}/api/details/sectionJSON?query=&offset=0&limit=5`,
+      expect:
+        "unverified. If it returns section/chapter note text, it would close the notes gap in the file-import path",
+    },
+    {
+      label: "HTS number detail JSON (lead)",
+      url: `${BASE_URL}/api/details/htsnoJSON/8507.60.00.20`,
+      expect: "unverified. A per-code detail lookup, possibly richer than exportList",
+    },
   ];
 
   for (const target of targets) {
