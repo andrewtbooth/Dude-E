@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { extractRevision, parseConcordance, stripMarkup } from "./sync-htsus";
+import {
+  extractRevision,
+  notesSectionOf,
+  parseConcordance,
+  stripMarkup,
+} from "./sync-htsus";
 
 describe("extractRevision", () => {
   it("pulls the revision label out of a JSON release listing", () => {
@@ -106,5 +111,47 @@ describe("stripMarkup", () => {
     expect(
       stripMarkup("<style>p{color:red}</style><p>Note 1.</p><script>x=1</script>"),
     ).toBe("Note 1.");
+  });
+});
+
+describe("notesSectionOf", () => {
+  it("cuts the tariff table off, keeping only the notes", () => {
+    // Each chapter PDF is notes followed by the full tariff table. We already
+    // hold the table as structured rows, so keeping it here would duplicate
+    // tens of thousands of characters and push the notes out of the tool's
+    // output window.
+    const text =
+      "CHAPTER 96 MISCELLANEOUS MANUFACTURED ARTICLES Notes 1. This chapter does not cover: " +
+      "(d) Parts of general use, as defined in note 2 to section XV. " +
+      "x".repeat(200) +
+      "Rates of Duty Article Description Heading/ 9601 Worked ivory 3.7%";
+
+    const notes = notesSectionOf(text);
+    expect(notes).toContain("This chapter does not cover");
+    expect(notes).toContain("Parts of general use");
+    expect(notes).not.toContain("Worked ivory");
+    expect(notes).not.toContain("Rates of Duty");
+  });
+
+  it("keeps the whole document when no table follows", () => {
+    // The General Notes PDF carries the GRIs and no tariff table.
+    const text = "GENERAL RULES OF INTERPRETATION 1. ... terms of the headings ...";
+    expect(notesSectionOf(text)).toBe(text);
+  });
+
+  it("ignores a marker appearing too early to be the table header", () => {
+    const text =
+      "CHAPTER 1 Notes 1. Rates of Duty are set out in the table below. " +
+      "y".repeat(300) +
+      "Rates of Duty Article Description Heading/ 0101 Live horses";
+    const notes = notesSectionOf(text);
+    expect(notes).toContain("Notes 1.");
+    expect(notes).not.toContain("Live horses");
+  });
+
+  it("collapses whitespace from PDF extraction", () => {
+    expect(notesSectionOf("Notes   1.\n\n  This\tchapter")).toBe(
+      "Notes 1. This chapter",
+    );
   });
 });

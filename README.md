@@ -67,15 +67,34 @@ classification outright, because a code that cannot be verified against a
 published edition is worse than no answer at all.
 
 The sync pulls tariff lines chapter by chapter from the USITC REST API, plus
-General Notes, Section and Chapter Notes, and the Census Schedule B
-concordance. It writes a snapshot directory and a manifest:
+the General Notes and every Section and Chapter Note. It writes a snapshot
+directory and a manifest:
 
 ```
-data/htsus/2026-hts-revision-13/
+data/htsus/2026-hts-revision-14/
   htsus.db          SQLite + FTS5 index
   manifest.json     revision label, publication date, retrieval time,
                     SHA-256 of the raw payloads, counts, warnings
 ```
+
+A full run against live USITC takes roughly a minute and a half and produces
+about 35,800 tariff lines, near 20,000 of them 10-digit reportable numbers,
+across 98 chapters plus 99 note documents. (Chapter 77 is reserved and
+correctly returns nothing.)
+
+**Notes arrive as PDF.** USITC serves the note documents as
+`application/octet-stream` regardless of their real type, so the sync sniffs
+the `%PDF-` magic bytes rather than trusting the content type, extracts the
+text with `unpdf`, and trims the tariff table that follows the notes — the
+table is already held as structured rows, and keeping it would bury the notes
+the agent actually needs. Getting this wrong is not cosmetic: without the sniff
+the binary would be decoded as text and stored as if it were the binding notes.
+
+**The sync routes through `HTTPS_PROXY` explicitly.** Node's global `fetch`
+ignores the variable, so on a proxied network it bypasses the tunnel and fails
+with an opaque 403 that reads like the remote host rejecting you — while `curl`
+in the same shell succeeds. The script installs an `undici` `ProxyAgent`
+dispatcher when `HTTPS_PROXY` is set, which is the portable fix.
 
 **`manifest.revision` is the single source of the version stamp.** It is read
 at render time and written into every analysis, determination, and PDF. Nothing
@@ -86,11 +105,11 @@ Two behaviours worth knowing:
 - **The script will not guess the revision label.** If it cannot discover the
   active revision from USITC it aborts with instructions rather than stamping
   determinations with the wrong edition. Override explicitly when needed:
-  `npm run sync:htsus -- --revision "2026 HTS Revision 13"`.
-- **Per-source failures degrade to warnings.** A snapshot missing the Schedule B
-  concordance is still useful. Warnings are recorded in the manifest and shown
-  in the masthead and on the analyze page, so an analyst can see what is
-  incomplete before relying on it.
+  `npm run sync:htsus -- --revision "2026 HTS Revision 14"`.
+- **Per-source failures degrade to warnings.** A snapshot missing Schedule B is
+  still useful. Warnings are recorded in the manifest and shown in the masthead
+  and on the analyze page, so an analyst can see what is incomplete before
+  relying on it.
 
 Revisions ship every few weeks. Run the sync on a schedule — weekly is
 reasonable — and again whenever USITC publishes.
@@ -123,7 +142,7 @@ after a network sync.
 3. Save the file into `data/raw/`, then:
 
 ```bash
-npm run import:htsus -- --file ./data/raw/hts.json --revision "2026 HTS Revision 13"
+npm run import:htsus -- --file ./data/raw/hts.json --revision "2026 HTS Revision 14"
 ```
 
 `--revision` is required and must match what USITC calls the edition — it is
@@ -243,12 +262,22 @@ scripts/
   HTSUS is revised. The snapshot captures Chapter 99 as published at sync time;
   the UI shows the sync date alongside those duties rather than implying they
   are live.
-- **Schedule B mapping is not one to one.** The concordance can return several
-  export codes for one HTSUS number; the app shows all of them rather than
-  picking one.
+- **Schedule B lookup is off until you supply a crosswalk.** Census publishes a
+  concordance for each schedule against SITC, end-use and NAICS, but nothing
+  that maps HTS onto Schedule B directly. The two numbers coincide for many
+  simple goods and diverge for others, so deriving one from the other by code
+  equality would produce confident, sometimes wrong export codes — the exact
+  failure this tool exists to prevent. The sync records the gap as a warning
+  and `schedule_b_lookup` returns nothing rather than guessing. Set
+  `CENSUS_CONCORDANCE_URL` to a delimited file with HTS and Schedule B columns
+  to enable it; the parser handles tab- and comma-delimited, dotted or bare
+  codes. **Sourcing that file is still open**, and export codes are a stated
+  requirement, so it is the next real gap to close.
 - **The USITC API has changed shape without notice before.** The parsers
   tolerate drift and fail loudly with the raw payload rather than silently
-  producing a partial snapshot.
+  producing a partial snapshot. Live output currently ships the additional-duty
+  column under both `additionalDuties` and the misspelled `addiitionalDuties`,
+  inconsistently, so the parser reads whichever is populated.
 - **Sign-in is attribution, not access control.** Anyone who can reach the app
   can name themselves. If determinations may be shown outside the team, move to
   SSO before that happens.

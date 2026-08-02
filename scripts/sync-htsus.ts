@@ -23,6 +23,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { ProxyAgent, setGlobalDispatcher } from "undici";
+import { extractText, getDocumentProxy } from "unpdf";
 import { parseUsitcRows } from "../src/lib/hts/parse";
 import {
   INDEX_FILENAME,
@@ -47,13 +49,44 @@ try {
   // No .env.local is fine; every value below has a working default.
 }
 
+/**
+ * Route fetch through HTTPS_PROXY when one is configured.
+ *
+ * Node's global fetch ignores HTTPS_PROXY by default. In a proxied network it
+ * therefore bypasses the tunnel and fails with an opaque 403 that reads like
+ * the remote host rejecting you — while curl, in the same shell, succeeds.
+ * That combination is genuinely hard to diagnose, so it is worth handling.
+ *
+ * NODE_USE_ENV_PROXY cannot be set from here: Node reads it during bootstrap,
+ * long before this line runs. Installing an explicit dispatcher is the
+ * portable fix, and it needs no shell-specific env var syntax.
+ */
+const proxyUrl = process.env.HTTPS_PROXY ?? process.env.https_proxy ?? "";
+if (proxyUrl) {
+  setGlobalDispatcher(new ProxyAgent(proxyUrl));
+}
+
 const BASE_URL = (
   process.env.USITC_BASE_URL ?? "https://hts.usitc.gov/reststop"
 ).replace(/\/+$/, "");
 const DATA_DIR = path.resolve(process.env.HTSUS_DATA_DIR ?? "./data/htsus");
-const CENSUS_CONCORDANCE_URL =
-  process.env.CENSUS_CONCORDANCE_URL ??
-  "https://www.census.gov/foreign-trade/aes/documentlibrary/concordance/hts-sb-concordance.txt";
+/**
+ * Empty by default, deliberately.
+ *
+ * Census does not publish a direct HTS-to-Schedule B crosswalk at a stable
+ * URL. What it does publish under /reference/codes/concordance/ is
+ * `expconcordNN.xlsx` — a Schedule B commodity list concorded to SITC,
+ * end-use and NAICS — and a matching import concordance for HTS. Neither maps
+ * one schedule onto the other.
+ *
+ * The two numbers coincide for many simple goods and diverge for others, so
+ * deriving one from the other by string equality would produce confident,
+ * wrong export codes. For a tool whose whole point is verified classification
+ * that is the wrong trade, so Schedule B stays off until a real source is
+ * chosen. Set this to a delimited file with HTS and Schedule B columns to
+ * switch it on.
+ */
+const CENSUS_CONCORDANCE_URL = process.env.CENSUS_CONCORDANCE_URL ?? "";
 
 const USER_AGENT =
   "Dude-E-TariffClassifier/0.1 (internal compliance tool; +https://github.com/andrewtbooth/Dude-E)";
@@ -149,7 +182,10 @@ async function resolveRevision(override?: string): Promise<RevisionInfo> {
     return { revision: override, publishedDate: null };
   }
 
-  for (const endpoint of ["/releases", "/currentRelease"]) {
+  // /currentRelease is the one that exists and answers with clean JSON:
+  //   {"name":"2026HTSRev14","description":"2026 HTS Revision 14", ...}
+  // /releases 404s, but is kept as a fallback in case USITC reinstates it.
+  for (const endpoint of ["/currentRelease", "/releases"]) {
     try {
       const response = await fetchWithRetry(`${BASE_URL}${endpoint}`, 1);
       const text = await response.text();
@@ -240,8 +276,14 @@ async function fetchChapters(
     }
 
     if (rows.length === 0) {
-      // Chapters 77, 98 and 99 legitimately vary; an empty 84 would not.
-      warn(`Chapter ${cc}: returned zero rows.`);
+      // Chapter 77 is reserved for future use in the Harmonized System and is
+      // genuinely empty, so it is not worth alarming anyone about. An empty
+      // chapter 84 would be a real problem.
+      if (cc === "77") {
+        log(`  ch ${cc}: empty (reserved for future use in the HS)`);
+      } else {
+        warn(`Chapter ${cc}: returned zero rows.`);
+      }
       continue;
     }
 
@@ -320,18 +362,48 @@ async function fetchNoteDocument(filename: string): Promise<string | null> {
   const url = `${BASE_URL}/file?release=currentRelease&filename=${encodeURIComponent(filename)}`;
   try {
     const response = await fetchWithRetry(url, 2);
-    const contentType = response.headers.get("content-type") ?? "";
-    if (contentType.includes("pdf")) {
-      // The notes endpoint sometimes serves PDF. We do not ship a PDF text
-      // extractor for a build-time script; record it rather than pretend.
-      return null;
+    const bytes = Buffer.from(await response.arrayBuffer());
+
+    // Sniff the payload rather than trusting the header: USITC serves these as
+    // application/octet-stream regardless of what they actually are, so a
+    // content-type check would pass PDFs straight through and we would decode
+    // binary as text and store the garbage as tariff notes.
+    if (isPdf(bytes)) {
+      const doc = await getDocumentProxy(new Uint8Array(bytes));
+      const { text } = await extractText(doc, { mergePages: true });
+      const notes = notesSectionOf(text);
+      return notes.length > 40 ? notes : null;
     }
-    const text = await response.text();
-    const cleaned = stripMarkup(text);
+
+    const cleaned = stripMarkup(bytes.toString("utf8"));
     return cleaned.length > 40 ? cleaned : null;
   } catch {
     return null;
   }
+}
+
+export function isPdf(bytes: Buffer): boolean {
+  return bytes.subarray(0, 5).toString("latin1") === "%PDF-";
+}
+
+/**
+ * Trim an extracted chapter PDF to just its notes.
+ *
+ * Each chapter PDF is the notes followed by the full tariff table. We already
+ * hold the table as structured rows, so keeping it here would duplicate tens
+ * of thousands of characters and push the actual notes out of the tool's
+ * output window. The table reliably opens with its column headers, which makes
+ * a clean cut point.
+ */
+export function notesSectionOf(text: string): string {
+  const markers = ["Rates of Duty", "Article Description", "Heading/"];
+  const cut = markers
+    .map((marker) => text.indexOf(marker))
+    .filter((index) => index > 200)
+    .sort((a, b) => a - b)[0];
+
+  const notes = cut === undefined ? text : text.slice(0, cut);
+  return notes.replace(/\s+/g, " ").trim();
 }
 
 export function stripMarkup(input: string): string {
@@ -401,6 +473,18 @@ export function parseConcordance(text: string): ScheduleBEntry[] {
 }
 
 async function fetchScheduleB(): Promise<ScheduleBEntry[]> {
+  if (!CENSUS_CONCORDANCE_URL) {
+    warn(
+      "Schedule B export codes are unavailable: no HTS-to-Schedule B crosswalk " +
+        "is configured. Census publishes the two schedules' concordances " +
+        "separately (each mapping to SITC/NAICS), not to each other, and " +
+        "inferring one from the other by code equality would produce confident " +
+        "but sometimes wrong export codes. Set CENSUS_CONCORDANCE_URL to a " +
+        "delimited file with HTS and Schedule B columns to enable this.",
+    );
+    return [];
+  }
+
   try {
     const response = await fetchWithRetry(CENSUS_CONCORDANCE_URL, 2);
     const entries = parseConcordance(await response.text());

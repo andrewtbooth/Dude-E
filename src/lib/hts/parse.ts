@@ -147,7 +147,9 @@ export function parseUsitcRows(
       ratesInheritedFrom: null,
       footnotes: coerceFootnotes(row.footnotes),
       quotaQuantity: clean(row.quotaQuantity) || null,
-      additionalDuties: clean(row.additionalDuties) || null,
+      // USITC publishes both spellings; take whichever is populated.
+      additionalDuties:
+        clean(row.additionalDuties) || clean(row.addiitionalDuties) || null,
       parentId,
       isReportable: level === 10,
     };

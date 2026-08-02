@@ -26,6 +26,12 @@ export interface UsitcRawRow {
   footnotes?: unknown;
   quotaQuantity?: string | null;
   additionalDuties?: string | null;
+  /**
+   * USITC ships this misspelled key alongside the correct one. Both appear in
+   * live `exportList` output, and which one carries the value is not
+   * consistent, so the parser reads whichever is populated.
+   */
+  addiitionalDuties?: string | null;
 }
 
 /**

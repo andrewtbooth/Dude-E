@@ -187,3 +187,30 @@ describe("parseUsitcRows", () => {
     expect(lines[1].general).toBe("");
   });
 });
+
+describe("USITC field-name quirks", () => {
+  it("reads the misspelled addiitionalDuties key USITC also ships", () => {
+    const { lines } = parseUsitcRows([
+      {
+        htsno: "9903.88.03",
+        indent: "0",
+        description: "Articles the product of China",
+        addiitionalDuties: "25% ad valorem",
+      },
+    ]);
+    expect(lines[0].additionalDuties).toBe("25% ad valorem");
+  });
+
+  it("prefers the correctly spelled key when both are present", () => {
+    const { lines } = parseUsitcRows([
+      {
+        htsno: "9903.88.03",
+        indent: "0",
+        description: "Articles the product of China",
+        additionalDuties: "correct",
+        addiitionalDuties: "typo",
+      },
+    ]);
+    expect(lines[0].additionalDuties).toBe("correct");
+  });
+});
