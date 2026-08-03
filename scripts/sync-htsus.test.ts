@@ -8,6 +8,8 @@ import {
   scheduleBCoverage,
   scheduleBEditionCandidates,
   scheduleBUrl,
+  splitSectionNotes,
+  tableHeaderIndex,
   stripMarkup,
 } from "./sync-htsus";
 
@@ -187,5 +189,103 @@ describe("partial-pull labelling", () => {
     expect(ALL_CHAPTERS).toHaveLength(99);
     expect(ALL_CHAPTERS.at(0)).toBe(1);
     expect(ALL_CHAPTERS.at(-1)).toBe(99);
+  });
+});
+
+describe("tableHeaderIndex", () => {
+  it("does not cut on a lone marker that occurs in prose", () => {
+    // "Rates of Duty" is the literal title of General Note 3, and chapter notes
+    // quote these phrases. Cutting on a single hit truncated the General Notes
+    // at General Note 3, Chapter 91 mid-sentence, and Chapter 23 mid-table.
+    const text =
+      "CHAPTER 91 Notes 1. The rates of duty for these articles are set out " +
+      "below. See Rates of Duty column 1. " +
+      "z".repeat(400) +
+      "and the note continues to its end.";
+    expect(tableHeaderIndex(text)).toBeNull();
+    expect(notesSectionOf(text)).toContain("the note continues to its end");
+  });
+
+  it("cuts where the column headings actually run together", () => {
+    const text =
+      "CHAPTER 96 Notes 1. This chapter does not cover: " +
+      "x".repeat(300) +
+      "Heading/ Subheading Stat Suffix Article Description Units of Quantity " +
+      "Rates of Duty 9601 Worked ivory 3.7%";
+    const notes = notesSectionOf(text);
+    expect(notes).toContain("This chapter does not cover");
+    expect(notes).not.toContain("Worked ivory");
+    expect(notes).not.toContain("Article Description");
+  });
+
+  it("needs three distinct headings, not two", () => {
+    const text = `Notes 1. ${"y".repeat(300)}Article Description and Rates of Duty are discussed above.`;
+    expect(tableHeaderIndex(text)).toBeNull();
+  });
+});
+
+describe("notesSectionOf — General Notes", () => {
+  it("stops at General Note 3 rather than keeping the FTA annexes", () => {
+    // The live document is ~2.7 MB: GRIs, the Additional U.S. Rules, GN 1-2,
+    // then tariff annexes for every trade agreement. Keeping all of it is
+    // unusable and implies a preference analysis this tool does not do.
+    const text =
+      "GENERAL RULES OF INTERPRETATION 1. Classification shall be determined " +
+      "according to the terms of the headings. " +
+      "w".repeat(300) +
+      "Rates of Duty 3. Rates of duty in the tariff schedule. USMCA originating goods";
+    const notes = notesSectionOf(text, "general");
+    expect(notes).toContain("terms of the headings");
+    expect(notes).not.toContain("USMCA");
+  });
+
+  it("keeps the whole document when the boundary is absent", () => {
+    const text = "GENERAL RULES OF INTERPRETATION 1. ... terms of the headings ...";
+    expect(notesSectionOf(text, "general")).toBe(text);
+  });
+});
+
+describe("splitSectionNotes", () => {
+  it("splits the section block from the chapter that carries it", () => {
+    const text =
+      "SECTION XVI MACHINERY AND MECHANICAL APPLIANCES Notes 1. This section " +
+      "does not cover: (a) transmission belts of chapter 39 or of vulcanized " +
+      "rubber. 2. Parts of machines are to be classified according to the " +
+      "following rules. CHAPTER 84 NUCLEAR REACTORS Notes 1. This chapter does " +
+      "not cover millstones.";
+    const { section, chapter } = splitSectionNotes(text);
+    expect(section?.ref).toBe("XVI");
+    expect(section?.body).toContain("Parts of machines");
+    expect(section?.body).not.toContain("millstones");
+    expect(chapter).toContain("millstones");
+    expect(chapter).not.toContain("Parts of machines");
+  });
+
+  it("does not cut at a lower-case prose reference to another chapter", () => {
+    // The structural headings are capitalised; the notes refer to other
+    // chapters in lower case. Matching case-insensitively kept only Section
+    // XVI's 331-character title and discarded Note 2, the parts rule.
+    const { section } = splitSectionNotes(
+      "SECTION XVI MACHINERY Notes 1. This section does not cover goods of " +
+        "chapter 39 or chapter 40. 2. Parts solely or principally used with a " +
+        "machine are classified with that machine. CHAPTER 84 REACTORS",
+    );
+    expect(section?.body).toContain("solely or principally");
+  });
+
+  it("says a section has no notes rather than storing its title page", () => {
+    const { section } = splitSectionNotes(
+      "SECTION V MINERAL PRODUCTS V-1 Harmonized Tariff Schedule of the " +
+        "United States CHAPTER 25 SALT; SULFUR Notes 1. Except where...",
+    );
+    expect(section?.ref).toBe("V");
+    expect(section?.body).toContain("has no section notes");
+  });
+
+  it("leaves a chapter that does not open a section alone", () => {
+    const text = "CHAPTER 85 ELECTRICAL MACHINERY Notes 1. This chapter does not cover...";
+    const { section, chapter } = splitSectionNotes(text);
+    expect(section).toBeNull();
+    expect(chapter).toBe(text);
   });
 });

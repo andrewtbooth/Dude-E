@@ -44,17 +44,30 @@ convenient answer.
 **GRI 1 governs and resolves most goods.** Classification is determined by the
 terms of the headings and any relative Section or Chapter Notes. This means you
 must actually read the notes — call hts_notes for every chapter you are
-seriously considering, and for the section it sits in. Exclusionary notes are
-as decisive as inclusive ones: a note that pushes a good out of Chapter 84 is
-often the whole analysis. Cite the notes you relied on by number.
+seriously considering, **and separately for the section it sits in**. The two
+are published together but apply independently, and a chapter's own document
+usually does not contain its section's notes: Section XVI Note 2 governs parts
+of machines throughout Chapters 84 and 85, and reading Chapter 85's notes alone
+will not surface it.
+
+Exclusionary notes are as decisive as inclusive ones: a note that pushes a good
+out of Chapter 84 is often the whole analysis. Cite the notes you relied on by
+number.
 
 If hts_notes reports that notes could not be retrieved, that means this
 deployment's tariff snapshot does not carry them — it does **not** mean the
-chapter has none. Try web_fetch against hts.usitc.gov for the chapter or
-section text before proceeding. If you still cannot obtain them, say so
-explicitly in your justification and lower your confidence accordingly: a GRI 1
-analysis that could not consult the binding notes is materially weaker, and the
-analyst needs to know that.
+chapter or section has none. This should be rare; both are normally present.
+When it happens, say so explicitly in your justification and lower your
+confidence accordingly, because a GRI 1 analysis that could not consult the
+binding notes is materially weaker and the analyst needs to know.
+
+Do not substitute web_fetch for the snapshot here. The determination is stamped
+with a specific tariff edition, and note text pulled from the live web on the
+day of the run is not that edition — it silently breaks the guarantee the
+version stamp exists to make. A stated gap is worth more than an unpinned fill.
+
+A section recorded as having no notes is a real answer, not a failure: several
+sections genuinely have none, and the snapshot says so in those words.
 
 Only if GRI 1 does not resolve it:
 - **GRI 2(a)** for incomplete, unfinished, unassembled or disassembled articles

@@ -27,6 +27,7 @@ import { ProxyAgent, setGlobalDispatcher } from "undici";
 import { extractText, getDocumentProxy } from "unpdf";
 import { parseUsitcRows } from "../src/lib/hts/parse";
 import { parseScheduleB } from "../src/lib/hts/scheduleB";
+import { ALL_SECTIONS } from "../src/lib/hts/sections";
 import {
   INDEX_FILENAME,
   MANIFEST_FILENAME,
@@ -340,7 +341,7 @@ async function fetchChapters(
 async function fetchNotes(chapters: number[]): Promise<HtsNote[]> {
   const notes: HtsNote[] = [];
 
-  const general = await fetchNoteDocument("General Notes");
+  const general = await fetchNoteDocument("General Notes", "general");
   if (general) {
     notes.push({
       kind: "general",
@@ -355,25 +356,57 @@ async function fetchNotes(chapters: number[]): Promise<HtsNote[]> {
     );
   }
 
+  const sectionsSeen = new Set<string>();
+
   for (const chapter of chapters) {
     const cc = String(chapter).padStart(2, "0");
     const body = await fetchNoteDocument(`Chapter ${chapter}`);
-    if (body) {
-      notes.push({
-        kind: "chapter",
-        ref: cc,
-        title: `Chapter ${chapter} Notes`,
-        body,
-      });
-    } else {
+    if (!body) {
       warn(`Chapter ${cc}: notes could not be retrieved.`);
+      continue;
+    }
+
+    const { section, chapter: chapterBody } = splitSectionNotes(body);
+    if (section && !sectionsSeen.has(section.ref)) {
+      sectionsSeen.add(section.ref);
+      notes.push({
+        kind: "section",
+        ref: section.ref,
+        title: `Section ${section.ref} Notes`,
+        body: section.body,
+      });
+    }
+
+    notes.push({
+      kind: "chapter",
+      ref: cc,
+      title: `Chapter ${chapter} Notes`,
+      body: chapterBody,
+    });
+  }
+
+  // Only meaningful on a full pull; a partial one legitimately misses sections
+  // whose opening chapter was not requested.
+  if (chapters.length === ALL_CHAPTERS.length) {
+    const missing = ALL_SECTIONS.filter((ref) => !sectionsSeen.has(ref));
+    if (missing.length > 0) {
+      warn(
+        `Section notes were not found for section(s) ${missing.join(", ")}. ` +
+          `They are published at the head of each section's first chapter, so a ` +
+          `gap here means that chapter's document did not carry them. Section ` +
+          `notes are binding under GRI 1; classifications in those sections will ` +
+          `be made without them.`,
+      );
     }
   }
 
   return notes;
 }
 
-async function fetchNoteDocument(filename: string): Promise<string | null> {
+async function fetchNoteDocument(
+  filename: string,
+  kind: NoteDocumentKind = "chapter",
+): Promise<string | null> {
   const url = `${BASE_URL}/file?release=currentRelease&filename=${encodeURIComponent(filename)}`;
   try {
     const response = await fetchWithRetry(url, 2);
@@ -388,7 +421,7 @@ async function fetchNoteDocument(filename: string): Promise<string | null> {
         verbosity: PDFJS_ERRORS_ONLY,
       });
       const { text } = await extractText(doc, { mergePages: true });
-      const notes = notesSectionOf(text);
+      const notes = notesSectionOf(text, kind);
       return notes.length > 40 ? notes : null;
     }
 
@@ -412,15 +445,158 @@ export function isPdf(bytes: Buffer): boolean {
  * output window. The table reliably opens with its column headers, which makes
  * a clean cut point.
  */
-export function notesSectionOf(text: string): string {
-  const markers = ["Rates of Duty", "Article Description", "Heading/"];
-  const cut = markers
-    .map((marker) => text.indexOf(marker))
-    .filter((index) => index > 200)
-    .sort((a, b) => a - b)[0];
+/**
+ * Column headings of the tariff table that follows the notes in each PDF.
+ *
+ * Matching any one of these is not safe. "Rates of Duty" is the literal title
+ * of General Note 3, and chapter notes quote these phrases in prose and in
+ * quota tables — cutting on a lone hit truncated the General Notes at General
+ * Note 3 (losing every FTA rule of origin), Chapter 91 mid-sentence, and
+ * Chapter 23 mid-quota-table. The real header is several of these appearing
+ * together, which prose never does.
+ */
+const TABLE_HEADER_MARKERS = [
+  "Heading/",
+  "Stat Suffix",
+  "Article Description",
+  "Unit of Quantity",
+  "Units of Quantity",
+  "Rates of Duty",
+];
 
-  const notes = cut === undefined ? text : text.slice(0, cut);
+/** How close the headings must sit to count as one header row. */
+const HEADER_WINDOW = 400;
+/** Below this the "header" is the document's own title block, not the table. */
+const MIN_NOTES_LENGTH = 200;
+
+/** Index where the tariff table's column header starts, or null if absent. */
+export function tableHeaderIndex(text: string): number | null {
+  const hits: { index: number; marker: string }[] = [];
+  for (const marker of TABLE_HEADER_MARKERS) {
+    for (
+      let at = text.indexOf(marker);
+      at !== -1;
+      at = text.indexOf(marker, at + 1)
+    ) {
+      hits.push({ index: at, marker });
+    }
+  }
+  hits.sort((a, b) => a.index - b.index);
+
+  for (let i = 0; i < hits.length; i += 1) {
+    if (hits[i].index <= MIN_NOTES_LENGTH) continue;
+    const nearby = new Set<string>();
+    for (
+      let j = i;
+      j < hits.length && hits[j].index - hits[i].index <= HEADER_WINDOW;
+      j += 1
+    ) {
+      nearby.add(hits[j].marker);
+    }
+    if (nearby.size >= 3) return hits[i].index;
+  }
+  return null;
+}
+
+/**
+ * Split a chapter's notes into the section notes it may carry and its own.
+ *
+ * USITC publishes no section-notes document — every filename we tried returns
+ * an error — but the section's notes are printed at the head of the section's
+ * first chapter, before that chapter's own heading. Chapter 84's document opens
+ * "SECTION XVI MACHINERY AND MECHANICAL APPLIANCES … Notes 1. This section does
+ * not cover: …" and only then reaches "CHAPTER 84".
+ *
+ * Splitting them here is what lets Section XVI's notes be retrieved when
+ * classifying in Chapter 85, whose own document does not contain them. Without
+ * it, every `hts_notes(kind:"section")` call fails and the binding note that
+ * decides most parts classifications is unreachable.
+ */
+export function splitSectionNotes(text: string): {
+  section: { ref: string; body: string } | null;
+  chapter: string;
+} {
+  // Case-sensitive on purpose. The structural headings are set in capitals
+  // ("SECTION XVI", "CHAPTER 84"), while the notes themselves refer to other
+  // chapters in lower case ("goods of chapter 39"). Matching case-insensitively
+  // cut Section XVI's block at the first such prose reference, keeping only the
+  // 331-character title and discarding Note 2 — the parts rule that decides
+  // most of the section's contested classifications.
+  const opening = /^\s*SECTION\s+([IVXL]+)\b/.exec(text);
+  if (!opening) return { section: null, chapter: text };
+
+  const chapterAt = text.search(/\bCHAPTER\s+\d+\b/);
+  if (chapterAt <= 0) return { section: null, chapter: text };
+
+  const ref = opening[1].toUpperCase();
+  const body = text.slice(0, chapterAt).trim();
+  const chapter = text.slice(chapterAt).trim();
+
+  // Several sections genuinely have no notes — V, XIII, XIX, XX and XXI carry
+  // only a title page. Storing that page verbatim would let it read as
+  // authority that was consulted and found silent on the point, which is not
+  // the same thing. Record the fact instead, so the tool can state it plainly
+  // rather than the model inferring it from a page header.
+  const hasNotes = /\bNotes?\s+\d+\./.test(body);
+  return {
+    section: {
+      ref,
+      body: hasNotes
+        ? body
+        : `Section ${ref} has no section notes in this revision. ` +
+          `Classification in this section turns on the chapter notes and the ` +
+          `heading terms alone.`,
+    },
+    chapter,
+  };
+}
+
+export type NoteDocumentKind = "chapter" | "general";
+
+/**
+ * Trim a notes PDF down to the notes.
+ *
+ * The two document kinds need different rules, and conflating them is what
+ * produced the original bug.
+ *
+ * **Chapter documents** are notes followed by that chapter's tariff table. We
+ * already hold the table as structured rows, so it is cut at the table's
+ * column-header run.
+ *
+ * **The General Notes document** is 878 pages and about 2.7 MB of text: the
+ * GRIs, the Additional U.S. Rules, General Notes 1 and 2, and then the tariff
+ * annexes for every free trade agreement. It has no single tariff table to cut
+ * at, so the header rule finds nothing and keeps all of it — unusable, and far
+ * past anything a classification needs.
+ *
+ * We deliberately keep only the part that governs classification: the rules of
+ * interpretation and the general notes preceding General Note 3. Everything
+ * after is preference-eligibility material — rules of origin, tariff-shift
+ * annexes — which this tool does not analyse and must not appear to. That
+ * scope limit is stated in `hts_gri`'s own description and in the README, so
+ * the model is told what it does not have rather than left to infer it.
+ */
+export function notesSectionOf(
+  text: string,
+  kind: NoteDocumentKind = "chapter",
+): string {
+  const cut =
+    kind === "general" ? generalNotesCutIndex(text) : tableHeaderIndex(text);
+  const notes = cut === null ? text : text.slice(0, cut);
   return notes.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Where the classification-relevant part of the General Notes ends.
+ *
+ * General Note 3 is titled "Rates of Duty" and begins the material we scope
+ * out, so its heading is the boundary. Falling back to the table-header rule
+ * keeps this from silently returning megabytes if USITC retitles the note.
+ */
+function generalNotesCutIndex(text: string): number | null {
+  const at = text.indexOf("Rates of Duty");
+  if (at > MIN_NOTES_LENGTH) return at;
+  return tableHeaderIndex(text);
 }
 
 export function stripMarkup(input: string): string {

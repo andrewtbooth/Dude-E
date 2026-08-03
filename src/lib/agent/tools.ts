@@ -12,6 +12,7 @@ import {
   searchScheduleB,
 } from "../hts/store";
 import { toDigits } from "../hts/parse";
+import { sectionForChapter } from "../hts/sections";
 import type { HtsLine, ScheduleBLine } from "../hts/types";
 
 /**
@@ -67,10 +68,22 @@ function formatTreeRow(line: HtsLine): string {
   return `${indent}${number}${line.description}${units}${rates}`;
 }
 
+/**
+ * Notes are handed to the model nearly whole.
+ *
+ * The old 12,000-character cap cut the chapters where the notes matter most —
+ * Chapter 84 runs 31,749 characters, Chapter 72 29,968, Chapter 85 29,428 — so
+ * the model saw under half of the binding material for machinery, steel and
+ * electricals, and the truncation notice told it to "request a narrower
+ * reference" that this tool does not accept. This clears every chapter in the
+ * live tariff with room to spare.
+ */
+const MAX_NOTE_CHARS = 60_000;
+
 function truncate(text: string, max: number): string {
   return text.length <= max
     ? text
-    : `${text.slice(0, max)}\n\n[truncated at ${max} characters — request a narrower reference for the rest]`;
+    : `${text.slice(0, max)}\n\n[Truncated at ${max} characters. The rest of these notes was not shown — do not treat what is above as the complete notes for this reference.]`;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,22 +219,36 @@ export const htsNotesTool = betaZodTool({
   }),
   run: ({ kind, reference }) => {
     const ref = kind === "chapter" ? reference.padStart(2, "0") : reference.toUpperCase();
+    const section = kind === "chapter" ? sectionForChapter(ref) : null;
     const notes = getNotes(kind, ref);
 
     if (notes.length === 0) {
       return `No ${kind} notes are stored for "${reference}" in this snapshot. Treat this as "not retrieved", NOT as "this ${kind} has no notes" — the sync may not have captured them. Do not conclude that no relevant note exists; say in your analysis that the notes could not be consulted.`;
     }
 
-    return notes
-      .map((note) => `${note.title}\n\n${truncate(note.body, 12_000)}`)
+    const body = notes
+      .map((note) => `${note.title}\n\n${truncate(note.body, MAX_NOTE_CHARS)}`)
       .join("\n\n---\n\n");
+
+    // Section notes are published only with the section's first chapter, so a
+    // chapter's own document usually does not carry them — and they are binding
+    // under GRI 1. Naming the section here stops the model reading the chapter
+    // notes and taking that for the whole of the binding material.
+    if (section) {
+      return (
+        `${body}\n\n---\n\nChapter ${ref} sits in Section ${section}. Its notes ` +
+        `are separate and equally binding — call hts_notes(kind:"section", ` +
+        `reference:"${section}") before relying on this.`
+      );
+    }
+    return body;
   },
 });
 
 export const htsGriTool = betaZodTool({
   name: "hts_gri",
   description:
-    "The General Notes, the General Rules of Interpretation, and the Additional U.S. Rules of Interpretation, verbatim from this revision. Consult them rather than paraphrasing from memory when a rule is doing real work in your analysis.",
+    "The General Rules of Interpretation, the Additional U.S. Rules of Interpretation, and General Notes 1-2, verbatim from this revision. Consult them rather than paraphrasing from memory when a rule is doing real work. Note the limit: General Note 3 onward — the rate-column definitions and every free trade agreement's rules of origin — is NOT included, so do not assess preference eligibility or read the Special column's programme codes as analysed.",
   inputSchema: z.object({}),
   run: () => {
     const rules = getGeneralRules();
