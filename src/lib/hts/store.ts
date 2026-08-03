@@ -236,6 +236,8 @@ interface OpenIndex {
   db: Database.Database;
   manifest: HtsusManifest;
   revisionDir: string;
+  /** Identity of the manifest this handle was opened against. */
+  fingerprint: string | null;
 }
 
 let cached: OpenIndex | null = null;
@@ -289,9 +291,53 @@ function readManifestFile(dir: string): HtsusManifest | null {
   }
 }
 
-function open(): OpenIndex {
-  if (cached) return cached;
+/**
+ * How often to re-check whether the snapshot on disk has moved under us.
+ *
+ * A long-running server used to hold its handle for the life of the process,
+ * so after `npm run sync:htsus` it kept serving the previous index *and* kept
+ * stamping determinations with the previous revision — silently, because on
+ * Linux the deleted file stays readable behind the open descriptor. The
+ * version stamp is the thing this whole system rests on, so it cannot be
+ * allowed to drift from what is actually installed.
+ *
+ * Checking a manifest's mtime is cheap; doing it on every query would still be
+ * wasteful, so it is throttled.
+ */
+const SNAPSHOT_RECHECK_MS = 30_000;
 
+let lastCheckedAt = 0;
+
+function manifestFingerprint(revisionDir: string): string | null {
+  try {
+    const stat = fs.statSync(path.join(revisionDir, MANIFEST_FILENAME));
+    return `${revisionDir}:${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return null;
+  }
+}
+
+function open(): OpenIndex {
+  const now = Date.now();
+
+  if (cached) {
+    if (now - lastCheckedAt < SNAPSHOT_RECHECK_MS) return cached;
+    lastCheckedAt = now;
+
+    const currentDir = resolveLatestRevisionDir(config.htsusDataDir);
+    const fingerprint = manifestFingerprint(currentDir);
+    // A missing or unreadable manifest means a sync is mid-flight. Keep serving
+    // the snapshot we already have rather than tearing down a working index to
+    // race a directory that is still being written.
+    if (fingerprint !== null && fingerprint !== cached.fingerprint) {
+      cached.db.close();
+      cached = null;
+    } else {
+      return cached;
+    }
+  }
+
+  lastCheckedAt = now;
   const revisionDir = resolveLatestRevisionDir(config.htsusDataDir);
   const manifest = readManifestFile(revisionDir);
   if (!manifest) throw new HtsusIndexMissingError(config.htsusDataDir);
@@ -301,14 +347,20 @@ function open(): OpenIndex {
     fileMustExist: true,
   });
 
-  cached = { db, manifest, revisionDir };
+  cached = {
+    db,
+    manifest,
+    revisionDir,
+    fingerprint: manifestFingerprint(revisionDir),
+  };
   return cached;
 }
 
-/** Drop the cached handle — used by tests and after a fresh sync. */
+/** Drop the cached handle. Called by tests; a live sync is picked up on its own. */
 export function resetStore(): void {
   cached?.db.close();
   cached = null;
+  lastCheckedAt = 0;
 }
 
 /**

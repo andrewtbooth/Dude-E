@@ -156,6 +156,7 @@ export function DeterminationDoc({ view }: { view: DeterminationView }) {
         <FinalDetermination view={view} />
         <GriSection candidate={view.selected} />
         <AssumptionsSection view={view} />
+        <VerificationSection view={view} />
         <AlternatesSection view={view} />
         <AuthoritiesSection view={view} />
         <Footer />
@@ -501,6 +502,63 @@ function AssumptionsSection({ view }: { view: DeterminationView }) {
 
 // --- 6. Alternates considered -----------------------------------------------
 
+/**
+ * What the tariff check changed, on the record.
+ *
+ * Silent when the run was clean, which is the common case — this is not a
+ * disclaimer to pad every document with. When it is not silent it is the most
+ * important thing on the page: a code the model named that does not exist is
+ * the strongest available evidence that the analysis needs a second look, and
+ * the analyst who exported this saw it while the reader otherwise would not.
+ */
+function VerificationSection({ view }: { view: DeterminationView }) {
+  const { rejectedCodes, corrections } = view.verification;
+  if (rejectedCodes.length === 0 && corrections.length === 0) return null;
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>AUTOMATED CHECKS AGAINST THE TARIFF</Text>
+      <Text style={{ fontSize: 8, color: COLORS.muted, marginBottom: 5 }}>
+        Every code in this analysis was re-checked against {view.htsusRevision}.
+        The following did not match and were corrected or discarded before this
+        document was produced.
+      </Text>
+
+      {rejectedCodes.length > 0 && (
+        <View>
+          <Text style={styles.subhead}>Codes discarded</Text>
+          {rejectedCodes.map((entry, index) => (
+            <View key={index} style={styles.bulletRow}>
+              <Text style={styles.bulletMark}>—</Text>
+              <Text style={styles.bulletText}>
+                <Text style={styles.codeInline}>{entry.code}</Text> — {entry.reason}.
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {corrections.length > 0 && (
+        <View>
+          <Text style={styles.subhead}>Values corrected from the tariff</Text>
+          {corrections.map((entry, index) => (
+            <View key={index} style={styles.bulletRow}>
+              <Text style={styles.bulletMark}>—</Text>
+              <Text style={styles.bulletText}>
+                <Text style={styles.codeInline}>{entry.htsCode}</Text>{" "}
+                {entry.field}: analysis stated &ldquo;{truncate(entry.modelValue, 120)}
+                &rdquo;; the tariff publishes &ldquo;
+                {truncate(entry.indexValue, 120)}&rdquo;. The tariff value is used
+                above.
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 function AlternatesSection({ view }: { view: DeterminationView }) {
   if (view.alternates.length === 0) return null;
   return (
@@ -539,6 +597,11 @@ function AuthoritiesSection({ view }: { view: DeterminationView }) {
       {rulings.length > 0 && (
         <View>
           <Text style={styles.subhead}>CBP rulings (CROSS)</Text>
+          <Text style={{ fontSize: 7.5, color: COLORS.muted, marginBottom: 3 }}>
+            Cited by the analysis and screened for a valid CBP ruling number and
+            link. Not independently retrieved from CROSS — read each ruling
+            before relying on it.
+          </Text>
           {rulings.map((ruling, index) => (
             <View key={index} style={styles.bulletRow}>
               <Text style={styles.bulletMark}>—</Text>
@@ -580,13 +643,18 @@ function Footer() {
   return (
     <View style={styles.footer} fixed>
       <Text style={styles.footerText}>
-        Advisory work product prepared with machine assistance and reviewed by
-        the named analyst. This is not a ruling letter and is not binding on
-        U.S. Customs and Border Protection. For high-value, high-volume, or
-        genuinely ambiguous merchandise, request a binding ruling under 19 CFR
-        Part 177 before entry. Duty rates and Chapter 99 provisions are as
-        published in the tariff edition named above and change frequently;
-        confirm currency before filing.
+        Advisory work product, machine-generated. The named analyst selected the
+        classification from the candidates presented; this document does not
+        evidence any further review, and the identity above is self-asserted at
+        sign-in and not authenticated. It is not a ruling letter and is not
+        binding on U.S. Customs and Border Protection. Scope is tariff
+        classification only — country of origin, valuation, free trade agreement
+        eligibility, antidumping and countervailing duty scope, quota, and
+        partner government agency requirements were not analysed. For
+        high-value, high-volume, or genuinely ambiguous merchandise, request a
+        binding ruling under 19 CFR Part 177 before entry. Duty rates and
+        Chapter 99 provisions are as published in the tariff edition named
+        above and change frequently; confirm currency before filing.
       </Text>
       <Text
         style={styles.pageNumber}

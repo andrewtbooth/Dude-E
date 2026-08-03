@@ -124,6 +124,7 @@ export function sampleDeterminationView(
     htsusRevision: "2026 HTS Revision 13",
     scheduleBEdition: "2026",
     tariffRetrievedAt: new Date("2026-07-30T09:00:00Z"),
+    verification: { rejectedCodes: [], corrections: [] },
     model: "claude-opus-5",
     effort: "max",
     appVersion: "0.1.0",

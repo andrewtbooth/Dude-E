@@ -102,3 +102,65 @@ describe("DeterminationDoc", () => {
     expect(isPdf(buffer)).toBe(true);
   }, 30_000);
 });
+
+describe("automated checks section", () => {
+  /** Extract the PDF's text so we can assert on what a reader actually sees. */
+  async function textOf(view: Parameters<typeof DeterminationDoc>[0]["view"]) {
+    const { getDocumentProxy, extractText } = await import("unpdf");
+    const buffer = await renderToBuffer(<DeterminationDoc view={view} />);
+    const doc = await getDocumentProxy(new Uint8Array(buffer), { verbosity: 0 });
+    return (await extractText(doc, { mergePages: true })).text;
+  }
+
+  /**
+   * Section headings are letter-spaced for display, and extraction returns
+   * that spacing literally ("A U T O M A T E D"). Compare without whitespace
+   * so the test asserts on the heading rather than on its typography.
+   */
+  const squashed = (text: string) => text.replace(/\s+/g, "");
+
+  it("stays silent when the run passed every check", async () => {
+    // The common case. A disclaimer on every document teaches people to skip it.
+    const text = await textOf(sampleDeterminationView());
+    expect(squashed(text)).not.toContain("AUTOMATEDCHECKS");
+  }, 30_000);
+
+  it("records codes the tariff check discarded", async () => {
+    // These were shown to the analyst on screen and then vanished from the
+    // record, making the exported document more confident than the run was.
+    const text = await textOf(
+      sampleDeterminationView({
+        verification: {
+          rejectedCodes: [
+            { code: "9617.00.10.99", reason: "not present in this HTSUS revision" },
+          ],
+          corrections: [],
+        },
+      }),
+    );
+    expect(squashed(text)).toContain("AUTOMATEDCHECKS");
+    expect(text).toContain("9617.00.10.99");
+    expect(text).toContain("not present in this HTSUS revision");
+  }, 30_000);
+
+  it("records values the tariff overrode", async () => {
+    const text = await textOf(
+      sampleDeterminationView({
+        verification: {
+          rejectedCodes: [],
+          corrections: [
+            {
+              htsCode: "9617.00.10.00",
+              field: "duty.general",
+              modelValue: "3.4%",
+              indexValue: "7.2%",
+            },
+          ],
+        },
+      }),
+    );
+    expect(text).toContain("Values corrected from the tariff");
+    expect(text).toContain("3.4%");
+    expect(text).toContain("7.2%");
+  }, 30_000);
+});

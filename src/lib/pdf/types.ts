@@ -25,6 +25,19 @@ export interface DeterminationView {
    */
   scheduleBEdition: string | null;
   /**
+   * What the tariff check did to the model's answer.
+   *
+   * On screen this is the analyst's strongest signal that a run went wrong —
+   * codes that did not exist, rates the model mis-transcribed. Leaving it out
+   * of the exported document made the artifact systematically more confident
+   * than the screen it came from, which is the wrong direction for a record
+   * someone may rely on without having watched the run.
+   */
+  verification: {
+    rejectedCodes: { code: string; reason: string }[];
+    corrections: { htsCode: string; field: string; modelValue: string; indexValue: string }[];
+  };
+  /**
    * When the tariff snapshot was pulled. Chapter 99 duties are captured as
    * published at sync time and change faster than the HTSUS is revised, so
    * they have to be dated on the artifact rather than left to read as live.

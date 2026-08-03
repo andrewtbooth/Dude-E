@@ -86,6 +86,10 @@ export function buildDeterminationView(
     htsusRevision: input.htsusRevision,
     scheduleBEdition: input.scheduleBEdition,
     tariffRetrievedAt: input.tariffRetrievedAt,
+    verification: {
+      rejectedCodes: input.run.verification.rejectedCodes,
+      corrections: input.run.verification.corrections,
+    },
     model: input.model,
     effort: input.effort,
     appVersion: input.appVersion,

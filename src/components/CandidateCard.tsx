@@ -266,6 +266,10 @@ function CrossRulings({ candidate }: { candidate: Candidate }) {
       <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
         Prior CBP rulings
       </h4>
+      <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+        Cited by the analysis and screened for a valid ruling number and CBP
+        link — not independently retrieved from CROSS. Open each one.
+      </p>
       <ul className="mt-2 space-y-2">
         {candidate.cross_rulings.map((ruling, index) => (
           <li key={index} className="text-xs text-[var(--text-secondary)]">

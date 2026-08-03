@@ -283,10 +283,40 @@ domain, and the one a language model is most prone to.
 
 **Facts come from the tariff, not the transcription.** Duty rates, units, and
 description paths are lookups rather than judgements, so the index overwrites
-whatever the model wrote, and any disagreement is surfaced in the UI.
+whatever the model wrote. Chapter 99 provisions are checked the same way — an
+invented "+25% Section 301" line is a larger duty error than most base-rate
+mistakes, and it renders in the callout a reader is most likely to act on.
+
+Every disagreement is recorded and appears **both** on screen and in the
+exported PDF. Leaving it out of the document made the artifact systematically
+more confident than the run it came from, which is the wrong direction for a
+record someone may rely on without having watched the analysis.
+
+**CROSS citations are screened, not confirmed.** A ruling can only be verified
+by retrieving it, which the app does not do; what it can reject is a citation
+that could not be real — a malformed ruling number, a link off CBP's domain, or
+a link that does not reference the ruling it cites. Survivors are labelled as
+cited-but-not-retrieved in the UI and the PDF rather than presented as checked
+authority.
+
+**`web_fetch` is domain-limited.** Fetching is the only tool that can send data
+outward, and the inputs here are customer part numbers. Without a limit, a page
+reached during part research can instruct the model to fetch an
+attacker-controlled URL with the part number in the query string. Retrieval is
+confined to CBP, USITC, Census and a few federal sources, the system prompt
+treats all fetched content as untrusted data rather than instruction, and
+content is token-capped so one datasheet cannot dominate the run.
 
 The selected code is verified a second time when the analyst records their
-decision, in case the snapshot was re-synced in between.
+decision, in case the snapshot was re-synced in between. A run that ended in
+`needs_more_info` cannot be recorded at all: the model declining to answer is
+not a conclusion to sign.
+
+**The snapshot can change under a running server.** Syncs write to a staging
+directory and swap it in, so a rebuild is never half-visible, and the app
+re-checks the manifest periodically rather than holding one handle for the life
+of the process — otherwise it would keep serving the old index *and* keep
+stamping the old revision after a sync, silently.
 
 ---
 

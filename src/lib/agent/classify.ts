@@ -61,6 +61,27 @@ export interface ClassificationRun {
   durationMs: number;
 }
 
+/**
+ * Hosts `web_fetch` may retrieve.
+ *
+ * Deliberately short. Everything the classification *relies* on comes from the
+ * pinned snapshot; the web is for product research and for reading a ruling the
+ * search surfaced. Manufacturer datasheets live on arbitrary hosts, so part
+ * research is served by `web_search` — whose results are summaries rather than
+ * a channel the model can be induced to send data through — and by fetching
+ * only from the authorities below.
+ */
+const WEB_FETCH_ALLOWED_DOMAINS = [
+  "rulings.cbp.gov",
+  "www.cbp.gov",
+  "cbp.gov",
+  "hts.usitc.gov",
+  "www.usitc.gov",
+  "www.census.gov",
+  "www.federalregister.gov",
+  "www.trade.gov",
+];
+
 export class ClassificationError extends Error {
   constructor(message: string) {
     super(message);
@@ -137,7 +158,23 @@ export async function* classify(
     tools: [
       ...classificationTools,
       { type: "web_search_20260209", name: "web_search", max_uses: 12 },
-      { type: "web_fetch_20260209", name: "web_fetch", max_uses: 8 },
+      {
+        type: "web_fetch_20260209",
+        name: "web_fetch",
+        max_uses: 8,
+        // Fetching is the one tool that can send data outward, and the inputs
+        // here are customer part numbers and unreleased product descriptions.
+        // Without a domain limit, a page reached during part research can
+        // instruct the model to fetch an attacker-controlled URL with the part
+        // number in the query string, and eight fetches is ample to exfiltrate
+        // an item master. The allowlist is the authorities the analysis is
+        // actually meant to read plus manufacturer research; widen it
+        // deliberately rather than by removing it.
+        allowed_domains: WEB_FETCH_ALLOWED_DOMAINS,
+        // A fetched datasheet can otherwise add five figures of tokens to the
+        // history, which is then re-billed on every subsequent tool iteration.
+        max_content_tokens: 30_000,
+      },
     ],
     messages: [
       {
@@ -379,6 +416,130 @@ function parseResult(message: BetaMessage): ClassificationResult {
  * the only route is `schedule_b_search`, which legitimately crosses
  * subheadings. It is recorded instead, so a reviewer sees the divergence.
  */
+/**
+ * Chapter 99 provisions get the same treatment as the base code.
+ *
+ * An invented "+25% Section 301" line is a larger duty-exposure error than most
+ * base-rate mistakes, and it renders in a callout headed ADDITIONAL DUTIES MAY
+ * APPLY — the part of the determination a reader is most likely to act on. The
+ * provision must exist in this revision and must actually be a Chapter 99
+ * subheading; the duty text is then read from the tariff rather than from the
+ * model's transcription.
+ */
+function verifyChapter99(
+  candidate: Candidate,
+  htsNo: string,
+  sink: {
+    rejectedCodes: { code: string; reason: string }[];
+    corrections: CodeCorrection[];
+  },
+): Candidate["chapter_99"] {
+  const kept: Candidate["chapter_99"] = [];
+
+  for (const entry of candidate.chapter_99) {
+    const line = lookupExact(entry.hts_code);
+    if (!line) {
+      sink.rejectedCodes.push({
+        code: entry.hts_code,
+        reason: "Chapter 99 provision not present in this HTSUS revision",
+      });
+      continue;
+    }
+    if (!line.digits.startsWith("99")) {
+      sink.rejectedCodes.push({
+        code: entry.hts_code,
+        reason: `resolves to ${line.htsNo}, which is not a Chapter 99 provision`,
+      });
+      continue;
+    }
+
+    // The published duty text lives on the provision itself.
+    const published = line.general || line.additionalDuties || "";
+    if (published && entry.additional_duty.trim() !== published) {
+      sink.corrections.push({
+        htsCode: htsNo,
+        field: `chapter_99[${line.htsNo}].additional_duty`,
+        modelValue: entry.additional_duty,
+        indexValue: published,
+      });
+    }
+
+    kept.push({
+      ...entry,
+      hts_code: line.htsNo,
+      additional_duty: published || entry.additional_duty,
+    });
+  }
+
+  return kept;
+}
+
+/** CBP ruling number formats: N123456, NY N123456, HQ H289712, HQ 967890. */
+const RULING_NUMBER = /^(?:HQ|NY)?\s*[HN]?\d{6}$/i;
+
+/**
+ * Structural screening for cited rulings.
+ *
+ * This is deliberately weaker than the code checks, and the difference is worth
+ * being explicit about: a ruling can only be *confirmed* by fetching it from
+ * CROSS, which is a network call this function does not make. What it can do is
+ * reject citations that could not possibly be real — a ruling number in the
+ * wrong shape, or a link pointing somewhere other than CBP's database — and
+ * ensure the link actually references the ruling it claims to.
+ *
+ * Everything surviving is still only *cited*, not verified, and the UI and the
+ * PDF say so rather than presenting it as a checked authority.
+ */
+function verifyCrossRulings(
+  candidate: Candidate,
+  sink: { rejectedCodes: { code: string; reason: string }[] },
+): Candidate["cross_rulings"] {
+  const kept: Candidate["cross_rulings"] = [];
+
+  for (const ruling of candidate.cross_rulings) {
+    const number = ruling.ruling_number.trim();
+    if (!RULING_NUMBER.test(number)) {
+      sink.rejectedCodes.push({
+        code: number || "(no ruling number)",
+        reason: "not a CBP ruling number format",
+      });
+      continue;
+    }
+
+    let host: string;
+    try {
+      host = new URL(ruling.url).hostname.toLowerCase();
+    } catch {
+      sink.rejectedCodes.push({
+        code: number,
+        reason: `citation URL is not a valid URL (${ruling.url})`,
+      });
+      continue;
+    }
+
+    if (host !== "rulings.cbp.gov" && !host.endsWith(".cbp.gov")) {
+      sink.rejectedCodes.push({
+        code: number,
+        reason: `citation links to ${host}, not CBP's ruling database`,
+      });
+      continue;
+    }
+
+    const digits = number.replace(/\D/g, "");
+    if (digits && !ruling.url.replace(/\D/g, "").includes(digits)) {
+      sink.rejectedCodes.push({
+        code: number,
+        reason: "citation URL does not reference the ruling number it cites",
+      });
+      continue;
+    }
+
+    kept.push(ruling);
+  }
+
+  return kept;
+}
+
 function verifyScheduleB(
   candidate: Candidate,
   htsNo: string,
@@ -492,6 +653,11 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         rejectedCodes,
         corrections,
       }),
+      chapter_99: verifyChapter99(candidate, line.htsNo, {
+        rejectedCodes,
+        corrections,
+      }),
+      cross_rulings: verifyCrossRulings(candidate, { rejectedCodes }),
     });
   }
 

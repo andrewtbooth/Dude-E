@@ -1004,19 +1004,41 @@ async function main(): Promise<void> {
   };
 
   const revisionDir = path.join(DATA_DIR, slugify(revision));
-  fs.mkdirSync(revisionDir, { recursive: true });
+
+  // Build into a staging directory and swap it in, rather than writing over a
+  // live snapshot. Re-syncing the same revision — which is the normal way to
+  // refresh — used to delete the database and rebuild it in place while the
+  // old manifest sat beside it, so for the length of the build any reader
+  // would pass the both-files-exist check and open a half-written index.
+  const stagingDir = `${revisionDir}.staging-${process.pid}`;
+  fs.rmSync(stagingDir, { recursive: true, force: true });
+  fs.mkdirSync(stagingDir, { recursive: true });
 
   log("\nBuilding index...");
-  buildIndex(path.join(revisionDir, INDEX_FILENAME), {
-    lines,
-    notes,
-    scheduleB,
-    manifest,
-  });
-  fs.writeFileSync(
-    path.join(revisionDir, MANIFEST_FILENAME),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
+  try {
+    buildIndex(path.join(stagingDir, INDEX_FILENAME), {
+      lines,
+      notes,
+      scheduleB,
+      manifest,
+    });
+    // Manifest last: it is what makes a directory look complete to a reader.
+    fs.writeFileSync(
+      path.join(stagingDir, MANIFEST_FILENAME),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+
+    // Rename is atomic within a filesystem, but only onto a free name, so the
+    // old snapshot is moved aside first and removed once the new one is live.
+    const retiredDir = `${revisionDir}.retired-${process.pid}`;
+    const hadPrevious = fs.existsSync(revisionDir);
+    if (hadPrevious) fs.renameSync(revisionDir, retiredDir);
+    fs.renameSync(stagingDir, revisionDir);
+    if (hadPrevious) fs.rmSync(retiredDir, { recursive: true, force: true });
+  } catch (error) {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    throw error;
+  }
 
   log("");
   log(`Done. ${revision}`);

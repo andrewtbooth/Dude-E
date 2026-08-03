@@ -197,7 +197,7 @@ function main(): void {
         USAGE,
     );
   }
-  const revision = args.revision.trim();
+  let revision = args.revision.trim();
 
   const files = collectInputFiles(args);
   console.log("HTSUS import");
@@ -283,6 +283,22 @@ function main(): void {
   const chapters = new Set(allLines.map((line) => line.chapter).filter(Boolean));
   const reportableLineCount = allLines.filter((line) => line.isReportable).length;
 
+  // A file import cannot know what "all chapters" was meant to be, but it can
+  // tell that a handful of chapters is not the tariff. Without this an
+  // exploratory import of one file sat in the data directory wearing a real
+  // edition's name, and would have been picked up as the active snapshot and
+  // stamped onto determinations. The full schedule spans 98 chapters; anything
+  // materially short of that is labelled, exactly as a partial sync is.
+  const isPartial = chapters.size < 90;
+  if (isPartial) {
+    revision = `${revision} (PARTIAL — ${chapters.size} chapter${chapters.size === 1 ? "" : "s"} imported)`;
+    warn(
+      `Only ${chapters.size} chapter(s) were imported, so this is not the full ` +
+        `tariff. It is labelled "${revision}" and written to its own directory, ` +
+        `and that label appears on anything produced against it.`,
+    );
+  }
+
   const manifest: HtsusManifest = {
     revision,
     publishedDate: null,
@@ -292,9 +308,7 @@ function main(): void {
     chapterCount: chapters.size,
     lineCount: allLines.length,
     reportableLineCount,
-    // A file import has no notion of "all chapters" — it holds whatever the
-    // operator exported — so completeness is their assertion, not ours.
-    isPartial: false,
+    isPartial,
     noteCount: 0,
     scheduleBCount: scheduleB.length,
     scheduleBEdition,

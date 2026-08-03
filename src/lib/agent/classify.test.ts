@@ -333,3 +333,89 @@ describe("verifyAgainstTariff — recommendation handling", () => {
     expect(verified.recommended_hts_code).toBe("8507.60.00.20");
   });
 });
+
+describe("verifyAgainstTariff — Chapter 99 and rulings", () => {
+  const ch99 = (overrides: Partial<Candidate["chapter_99"][number]> = {}) => ({
+    hts_code: "9903.88.03",
+    program: "Section 301 (China)",
+    additional_duty: "The duty provided in the applicable subheading + 25%",
+    applies_when: "Country of origin is China.",
+    ...overrides,
+  });
+
+  const ruling = (overrides: Partial<Candidate["cross_rulings"][number]> = {}) => ({
+    ruling_number: "N301234",
+    url: "https://rulings.cbp.gov/ruling/N301234",
+    holding: "CBP classified a comparable article in 8507.60.00.20.",
+    relevance: "Materially similar construction.",
+    ...overrides,
+  });
+
+  it("drops a Chapter 99 provision that does not exist", () => {
+    // An invented "+25%" line is a larger duty error than most base-rate
+    // mistakes, and it renders in the callout a reader is most likely to act on.
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([candidate({ chapter_99: [ch99({ hts_code: "9903.99.99" })] })]),
+    );
+    expect(verified.candidates[0].chapter_99).toEqual([]);
+    expect(verification.rejectedCodes[0].reason).toMatch(/not present/);
+  });
+
+  it("drops a provision that is real but is not Chapter 99", () => {
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([candidate({ chapter_99: [ch99({ hts_code: "8507.60.00.20" })] })]),
+    );
+    expect(verified.candidates[0].chapter_99).toEqual([]);
+    expect(verification.rejectedCodes[0].reason).toMatch(/not a Chapter 99/);
+  });
+
+  it("keeps a real provision and reads its duty text from the tariff", () => {
+    const { result: verified } = verifyAgainstTariff(
+      result([
+        candidate({ chapter_99: [ch99({ additional_duty: "plus 10 percent" })] }),
+      ]),
+    );
+    expect(verified.candidates[0].chapter_99[0].additional_duty).toBe(
+      "The duty provided in the applicable subheading + 25%",
+    );
+  });
+
+  it("rejects a ruling number that is not a CBP format", () => {
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([candidate({ cross_rulings: [ruling({ ruling_number: "RULING-7" })] })]),
+    );
+    expect(verified.candidates[0].cross_rulings).toEqual([]);
+    expect(verification.rejectedCodes[0].reason).toMatch(/ruling number format/);
+  });
+
+  it("rejects a citation that links somewhere other than CBP", () => {
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([
+        candidate({
+          cross_rulings: [ruling({ url: "https://example.com/ruling/N301234" })],
+        }),
+      ]),
+    );
+    expect(verified.candidates[0].cross_rulings).toEqual([]);
+    expect(verification.rejectedCodes[0].reason).toMatch(/not CBP's ruling database/);
+  });
+
+  it("rejects a link that does not reference the ruling it cites", () => {
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([
+        candidate({
+          cross_rulings: [ruling({ url: "https://rulings.cbp.gov/ruling/N999888" })],
+        }),
+      ]),
+    );
+    expect(verified.candidates[0].cross_rulings).toEqual([]);
+    expect(verification.rejectedCodes[0].reason).toMatch(/does not reference/);
+  });
+
+  it("keeps a well-formed citation", () => {
+    const { result: verified } = verifyAgainstTariff(
+      result([candidate({ cross_rulings: [ruling()] })]),
+    );
+    expect(verified.candidates[0].cross_rulings).toHaveLength(1);
+  });
+});
