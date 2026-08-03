@@ -69,6 +69,7 @@ buildIndex(path.join(dir, INDEX_FILENAME), {
     },
   ],
   scheduleB: FIXTURE_SCHEDULE_B,
+  chapter99Coverage: [],
   manifest,
 });
 

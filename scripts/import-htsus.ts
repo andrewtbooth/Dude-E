@@ -323,6 +323,7 @@ function main(): void {
     lines: allLines,
     notes: [],
     scheduleB,
+    chapter99Coverage: [],
     manifest,
   });
   fs.writeFileSync(

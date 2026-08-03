@@ -128,6 +128,33 @@ Two behaviours worth knowing:
   and on the analyze page, so an analyst can see what is incomplete before
   relying on it.
 
+### Chapter 99 exposure
+
+Section 301 and 232 duties routinely exceed the base rate, and the app was
+close to blind to them. The only linkage it used was a `See 9903.xx.xx.`
+footnote published on a base line — which covers 771 of 35,789 lines. Staple
+exposed goods carried none: metal furniture, cotton T-shirts and lithium-ion
+batteries all returned "no Chapter 99 provisions found".
+
+Coverage is actually defined from the other direction. A Chapter 99 heading
+states in its subchapter U.S. Note which base subheadings it reaches:
+
+> **(k)** The rates of duty in heading 9903.85.08 apply to all entries of
+> derivative aluminum products classifiable in the following HTSUS provisions
+> … 0402.99.68; 0402.99.70; … 9403.20.00; …
+
+Those notes are in the Chapter 99 document — 2.6 MB of text — *after* the first
+tariff table, which is why the notes extraction never reached them. The sync
+now parses them into a screening index: **1,217 subheadings**, each with the
+note reference, the headings named in the note's operative sentence, and that
+sentence itself. Metal furniture now returns note 19(k) → heading 9903.85.08
+rather than silence.
+
+Two deliberate limits. Each note block is bounded at the tariff table that
+follows it — an unbounded block runs into the table and treats every code
+printed there as enumerated (667 spurious codes from one block). And this is a
+**flag, not a determination**: see Known limitations.
+
 ### The export side
 
 Schedule B comes from Census as one fixed-width file per edition
@@ -266,7 +293,7 @@ code that has not been verified.
 | `hts_subtree` | Sibling breakouts, indented as the schedule reads — for GRI 6 |
 | `hts_notes` | Section and Chapter Notes — binding under GRI 1. A chapter read also names its section, since the two are published together but apply separately |
 | `hts_gri` | The rule text verbatim |
-| `chapter99_lookup` | Section 301 / 232 duties referenced by footnote |
+| `chapter99_lookup` | Section 301 / 232 exposure, from footnotes *and* the notes that enumerate coverage |
 | `schedule_b_lookup` | Export candidates under the shared HS-6 subheading |
 | `schedule_b_search` | The export schedule by description, when HS-6 finds nothing |
 | `web_search`, `web_fetch` | Part research and CROSS rulings |
@@ -387,14 +414,14 @@ scripts/
   imply it does. `hts_gri` states the limit in its own description, and the
   Special column's programme codes on a determination are reproduced from the
   tariff, not analysed.
-- **Chapter 99 linkage is footnote-based and therefore mostly blind.**
-  `chapter99_lookup` finds provisions by matching `99xx.` references in a
-  line's footnotes and its ancestors'. Only 771 of 35,789 lines carry such a
-  footnote, and the Section 301 coverage lists live in the Chapter 99
-  subchapter U.S. Notes, which are not ingested. Staple 301-exposed goods —
-  `9403.20.00.50`, `7318.15.20.95`, `6109.10.00.12`, `8471.30.01.00` — all
-  return no footnotes and therefore no Chapter 99 finding. Treat "none found"
-  as "not detected", never as "none apply".
+- **Chapter 99 screening flags exposure; it does not determine duty.** The
+  notes carry conditions the index does not evaluate — country of origin,
+  effective and expiry dates, granted exclusions, carve-outs — and some notes
+  enumerate goods that are *exempt* rather than covered. A hit means "read this
+  note", and the note's operative sentence travels with it so the reader can.
+  Neither linkage is complete: footnotes reach 771 of 35,789 lines, the notes
+  reach 1,217 subheadings, and they overlap only partly, so "none found" still
+  means "not detected in this revision", never "none apply".
 - **Schedule B needs an analyst's eye, not just a lookup.** The export code is
   reached through the shared HS-6 subheading and then chosen by description —
   see "The export side" above. Roughly 0.6% of tariff numbers sit under a

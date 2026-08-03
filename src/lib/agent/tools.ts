@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 import {
   getAncestors,
   getChapter99Candidates,
+  getChapter99Coverage,
   getGeneralRules,
   getNotes,
   getScheduleB,
@@ -274,16 +275,51 @@ export const chapter99LookupTool = betaZodTool({
     }
 
     const entries = getChapter99Candidates(hts_code);
-    if (entries.length === 0) {
-      return `No Chapter 99 provisions reference ${hts_code} via footnotes in this snapshot. Trade actions change faster than HTSUS revisions are published, so report this as "none found in this revision" rather than as a guarantee that none apply.`;
+    const coverage = getChapter99Coverage(hts_code);
+
+    const sections: string[] = [];
+
+    if (entries.length > 0) {
+      sections.push(
+        `Provisions referenced by a footnote on this line or an ancestor:\n\n` +
+          entries
+            .map(
+              (entry) =>
+                `${entry.htsNo}  [${entry.program}]\n  ${entry.description}\n  Additional duty: ${entry.additionalDuty || "see subheading text"}`,
+            )
+            .join("\n\n"),
+      );
     }
 
-    return entries
-      .map(
-        (entry) =>
-          `${entry.htsNo}  [${entry.program}]\n  ${entry.description}\n  Additional duty: ${entry.additionalDuty || "see subheading text"}`,
-      )
-      .join("\n\n");
+    if (coverage.length > 0) {
+      sections.push(
+        `This subheading is ENUMERATED in ${coverage.length} Chapter 99 U.S. ` +
+          `note${coverage.length === 1 ? "" : "s"}. These notes define coverage from ` +
+          `the Chapter 99 side, which is how most Section 301 and 232 exposure is ` +
+          `expressed — a good can be covered with no footnote on its line at all.\n\n` +
+          coverage
+            .map(
+              (row) =>
+                `U.S. note ${row.noteRef}` +
+                (row.headings.length > 0
+                  ? ` — heading${row.headings.length === 1 ? "" : "s"} ${row.headings.join(", ")}`
+                  : "") +
+                `\n  ${row.excerpt}`,
+            )
+            .join("\n\n") +
+          `\n\nRead these before reporting duty exposure. They carry conditions ` +
+          `this index does not evaluate — country of origin, effective and expiry ` +
+          `dates, granted exclusions, and carve-outs — and some enumerate goods ` +
+          `that are EXEMPT rather than covered. Report what the note says, ` +
+          `conditionally on origin, rather than asserting a rate.`,
+      );
+    }
+
+    if (sections.length === 0) {
+      return `No Chapter 99 provision references ${hts_code} by footnote, and no Chapter 99 U.S. note enumerates this subheading, in this snapshot. Both checks are incomplete by nature: footnotes are published on only some covered lines, and trade actions change faster than HTSUS revisions. Report this as "none found in this revision", never as a guarantee that none apply.`;
+    }
+
+    return sections.join("\n\n---\n\n");
   },
 });
 

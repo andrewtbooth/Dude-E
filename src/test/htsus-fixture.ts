@@ -152,6 +152,21 @@ export const FIXTURE_SCHEDULE_B: ScheduleBLine[] = [
   scheduleBLine("9617006000", "PARTS OF VACUUM FLASKS ETC,EXCEPT GLASS INNERS"),
 ];
 
+/**
+ * One Chapter 99 note enumerating a fixture subheading, so the coverage path
+ * is exercised. 7323.93.00 carries a footnote *and* appears here, which is the
+ * case worth testing: the two linkages are independent and both must show.
+ */
+export const FIXTURE_CH99_COVERAGE = [
+  {
+    baseDigits: "73239300",
+    noteRef: "19(k)",
+    headings: ["9903.85.08"],
+    excerpt:
+      "(k) The rates of duty in heading 9903.85.08 apply to all entries of derivative aluminum products classifiable in the following HTSUS provisions: 7323.93.00; 7610.10.00.",
+  },
+];
+
 let fixtureRoot: string | null = null;
 let previousDataDir: string | undefined;
 
@@ -202,6 +217,7 @@ export function setupFixtureIndex(): string {
       },
     ],
     scheduleB: FIXTURE_SCHEDULE_B,
+    chapter99Coverage: FIXTURE_CH99_COVERAGE,
     manifest,
   });
 

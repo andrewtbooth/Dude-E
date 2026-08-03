@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { splitSectionNotes, tableHeaderIndex } from "../src/lib/hts/notes";
 import {
   ALL_CHAPTERS,
   describeChapters,
@@ -8,8 +9,6 @@ import {
   scheduleBCoverage,
   scheduleBEditionCandidates,
   scheduleBUrl,
-  splitSectionNotes,
-  tableHeaderIndex,
   stripMarkup,
 } from "./sync-htsus";
 

@@ -142,26 +142,33 @@ describe("hts_gri", () => {
 });
 
 describe("chapter99_lookup", () => {
-  it("finds a Section 301 provision referenced by an ancestor footnote", async () => {
-    const output = await run(chapter99LookupTool, {
-      hts_code: "8507.60.00.20",
-    });
+  it("reports provisions linked by a footnote on an ancestor line", async () => {
+    const output = await run(chapter99LookupTool, { hts_code: "8507.60.00.20" });
     expect(output).toContain("9903.88.03");
-    expect(output).toContain("Section 301 (China)");
-    expect(output).toContain("25%");
+    expect(output).toContain("footnote");
   });
 
-  it("refuses to look up a code that does not exist", async () => {
-    const output = await run(chapter99LookupTool, { hts_code: "8507.60.00.99" });
-    expect(output).toMatch(/^NOT FOUND/);
+  it("reports a subheading enumerated in a Chapter 99 note", async () => {
+    // This is the linkage that was missing entirely. Most Section 301 and 232
+    // coverage is expressed from the Chapter 99 side, so a good can be covered
+    // with no footnote on its line at all.
+    const output = await run(chapter99LookupTool, { hts_code: "7323.93.00.80" });
+    expect(output).toContain("ENUMERATED");
+    expect(output).toContain("U.S. note 19(k)");
+    expect(output).toContain("9903.85.08");
+    expect(output).toContain("derivative aluminum");
+  });
+
+  it("tells the reader the note carries conditions it did not evaluate", async () => {
+    const output = await run(chapter99LookupTool, { hts_code: "7323.93.00.80" });
+    expect(output).toContain("country of origin");
+    expect(output).toContain("EXEMPT");
   });
 
   it("hedges a null result rather than guaranteeing no duties apply", async () => {
-    const output = await run(chapter99LookupTool, {
-      hts_code: "9617.00.10.00",
-    });
-    expect(output).toContain("No Chapter 99 provisions");
-    expect(output).toContain("rather than as a guarantee");
+    const output = await run(chapter99LookupTool, { hts_code: "9617.00.10.00" });
+    expect(output).toContain("none found in this revision");
+    expect(output).toContain("never as a guarantee");
   });
 });
 

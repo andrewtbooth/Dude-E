@@ -14,6 +14,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { config } from "../config";
 import { formatHtsNo, searchText, toDigits } from "./parse";
+import type { Chapter99Coverage } from "./chapter99";
 import type {
   Chapter99Entry,
   HtsLevel,
@@ -104,6 +105,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS schedule_b_fts USING fts5(
   tokenize = 'porter unicode61'
 );
 
+-- Which base subheadings a Chapter 99 note enumerates. A screening index, not
+-- a duty determination: the notes carry origin, date and exclusion conditions
+-- this does not evaluate. See chapter99.ts.
+CREATE TABLE IF NOT EXISTS chapter99_coverage (
+  base_digits TEXT NOT NULL,
+  note_ref    TEXT NOT NULL,
+  headings    TEXT NOT NULL,
+  excerpt     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ch99cov_base ON chapter99_coverage(base_digits);
+
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -118,6 +130,7 @@ export interface BuildIndexInput {
   lines: HtsLine[];
   notes: HtsNote[];
   scheduleB: ScheduleBLine[];
+  chapter99Coverage: Chapter99Coverage[];
   manifest: HtsusManifest;
 }
 
@@ -157,6 +170,10 @@ export function buildIndex(dbPath: string, input: BuildIndexInput): void {
     `);
     const insertScheduleBFts = db.prepare(
       `INSERT INTO schedule_b_fts (rowid, description, code) VALUES (?, ?, ?)`,
+    );
+    const insertCoverage = db.prepare(
+      `INSERT INTO chapter99_coverage (base_digits, note_ref, headings, excerpt)
+       VALUES (?, ?, ?, ?)`,
     );
     const insertMeta = db.prepare(
       `INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`,
@@ -208,6 +225,14 @@ export function buildIndex(dbPath: string, input: BuildIndexInput): void {
         // FTS rowids are positional; nothing joins on them, so the index is fine.
         insertScheduleBFts.run(index + 1, entry.description, entry.code);
       });
+      for (const row of input.chapter99Coverage) {
+        insertCoverage.run(
+          row.baseDigits,
+          row.noteRef,
+          JSON.stringify(row.headings),
+          row.excerpt,
+        );
+      }
       insertMeta.run("manifest", JSON.stringify(input.manifest));
     })();
 
@@ -747,6 +772,38 @@ function classifyChapter99Program(digits: string): string {
   return "Chapter 99 additional duty";
 }
 
+/**
+ * Chapter 99 notes that enumerate this subheading.
+ *
+ * Complements the footnote path rather than replacing it: USITC publishes a
+ * `See 9903.xx.xx.` footnote on some covered lines and not others, while the
+ * notes enumerate coverage from the Chapter 99 side. Neither alone is close to
+ * complete — footnotes reach 771 of 35,789 lines, the notes reach 1,217
+ * subheadings, and they overlap only partly.
+ */
+export function getChapter99Coverage(htsNo: string): Chapter99Coverage[] {
+  const { db } = open();
+  const base = toDigits(htsNo).slice(0, 8);
+  if (base.length < 8) return [];
+  const rows = db
+    .prepare(
+      `SELECT base_digits, note_ref, headings, excerpt
+         FROM chapter99_coverage WHERE base_digits = ? ORDER BY note_ref`,
+    )
+    .all(base) as {
+    base_digits: string;
+    note_ref: string;
+    headings: string;
+    excerpt: string;
+  }[];
+  return rows.map((row) => ({
+    baseDigits: row.base_digits,
+    noteRef: row.note_ref,
+    headings: JSON.parse(row.headings) as string[],
+    excerpt: row.excerpt,
+  }));
+}
+
 export interface IndexStats {
   lineCount: number;
   reportableLineCount: number;
@@ -754,6 +811,8 @@ export interface IndexStats {
   scheduleBCount: number;
   /** Distinct HS-6 subheadings the export schedule covers. */
   scheduleBHs6Count: number;
+  /** Distinct subheadings a Chapter 99 note enumerates. */
+  chapter99CoverageCount: number;
 }
 
 export function getIndexStats(): IndexStats {
@@ -768,5 +827,8 @@ export function getIndexStats(): IndexStats {
     noteCount: one("SELECT COUNT(*) AS n FROM notes"),
     scheduleBCount: one("SELECT COUNT(*) AS n FROM schedule_b"),
     scheduleBHs6Count: one("SELECT COUNT(DISTINCT hs6) AS n FROM schedule_b"),
+    chapter99CoverageCount: one(
+      "SELECT COUNT(DISTINCT base_digits) AS n FROM chapter99_coverage",
+    ),
   };
 }
