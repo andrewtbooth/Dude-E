@@ -347,15 +347,68 @@ stamping the old revision after a sync, silently.
 
 ---
 
+## Measuring whether it is right
+
+`npm run eval` runs the classifier over a case file and reports accuracy and
+confidence calibration. Nothing else in the repo answers the question "is this
+tool correct", and without it the effort sweep below is guesswork.
+
+```bash
+npm run eval                                    # committed seed set
+npm run eval -- --effort high                   # sweep against your bar
+npm run eval -- --cases ./eval/team.local.jsonl # your own ruled cases
+```
+
+It reports more than one number, deliberately:
+
+- **Accuracy by depth.** Exact 10-digit, then correct to the 8-digit rate line
+  — duty right, statistical suffix wrong — then 6-digit, then chapter. A suffix
+  miss and a wrong-chapter miss are both "incorrect" and are not the same
+  failure.
+- **Recall at any rank.** Whether the right code was offered but ranked below
+  the pick. That is a re-ranking problem, not a retrieval one, and it is fixed
+  differently.
+- **Calibration.** Stated confidence against observed accuracy per band, plus
+  expected calibration error and a Brier score. An analyst's only defence
+  against a fluent wrong answer is the confidence number telling them to look
+  harder, and a model that is 70% accurate and knows it beats one that is 80%
+  accurate and claims 95% throughout.
+- **Wrong while above 0.9.** Counted separately, because the prompt reserves
+  that band for classifications defensible to CBP unaided — so anything here is
+  a case where the analyst was told not to check and should have.
+
+**The seed set proves less than a green number suggests, and the harness says
+so.** All five cases are constructed from the tariff's own eo nomine wording,
+so they measure retrieval and GRI mechanics rather than judgement on
+contestable goods. Every run prints that caveat until the case file contains
+work grounded in CBP rulings or your own analysts' determinations. Cases
+declaring `"source": "cbp_ruling"` must carry the ruling number, so the claim
+can be checked rather than taken.
+
+Add your own in `eval/*.local.jsonl` — gitignored, because a real case file
+contains customer part numbers and this repository is public:
+
+```json
+{"id":"pump-housing","mode":"DESCRIPTION","source":"cbp_ruling","citation":"N301234",
+ "expected":"8413.91.90.80","input":"Cast aluminum centrifugal pump housing…"}
+```
+
+The harness costs real money — each case is a full agent run — so it never runs
+in the test suite and is not wired into CI. The scoring is pure and unit-tested
+separately, so the harness itself is verifiable without spending anything.
+
+---
+
 ## Tuning cost vs. depth
 
 `CLASSIFIER_EFFORT` defaults to `max` because classification is a
 correctness-over-cost task. It is genuinely expensive and slow — a thorough run
 takes minutes.
 
-Once you have real analyses to compare against, sweep `high` and `xhigh`
-against your own accuracy bar before deciding. `max` can also overthink routine
-goods. It is one config value; nothing else changes.
+Sweep it with `npm run eval -- --effort high` and compare exact accuracy
+against wall clock and tokens; `max` can overthink routine goods. It is one
+config value and nothing else changes, but change it on measurement rather than
+on impression — that is what the harness is for.
 
 ---
 
@@ -373,6 +426,7 @@ goods. It is one config value; nothing else changes.
 | `npm run import:htsus` | Build the index from a downloaded HTS export |
 | `npm run dev:seed` | Build the offline fixture tariff index |
 | `npm run dev:pdf` | Render the sample determination to `data/pdf/` |
+| `npm run eval` | Measure classification accuracy and calibration (costs API credits) |
 
 ---
 

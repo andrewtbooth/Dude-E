@@ -42,3 +42,9 @@ coverage/
 .vitest/
 .eslintcache
 prisma/generated/
+
+# Eval runs and team-supplied cases. Cases can contain customer part numbers
+# and product descriptions, and this repository is public — only the seed set,
+# which is constructed from published tariff text, is committed.
+/eval/runs/
+/eval/*.local.jsonl
