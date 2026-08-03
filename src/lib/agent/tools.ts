@@ -11,6 +11,7 @@ import {
   searchHts,
   searchScheduleB,
 } from "../hts/store";
+import { toDigits } from "../hts/parse";
 import type { HtsLine, ScheduleBLine } from "../hts/types";
 
 /**
@@ -168,11 +169,28 @@ export const htsSubtreeTool = betaZodTool({
       .describe("Cap on rows returned, 1-400. Use 400 for a whole heading."),
   }),
   run: ({ hts_code, max_rows }) => {
-    const rows = getSubtree(hts_code, Math.min(Math.max(max_rows, 1), 400));
+    const cap = Math.min(Math.max(max_rows, 1), 400);
+    const rows = getSubtree(hts_code, cap);
     if (rows.length === 0) {
       return `NOT FOUND: nothing at or beneath "${hts_code}" in this revision.`;
     }
-    return rows.map(formatTreeRow).join("\n");
+
+    const tree = rows.map(formatTreeRow).join("\n");
+
+    // Say so when the cap bites. Silent truncation here is the worst kind: the
+    // whole point of this tool is comparing siblings under GRI 6, and a caller
+    // who cannot see the last breakouts will conclude they do not exist and
+    // settle for a residual instead.
+    const digits = toDigits(hts_code);
+    const matched = rows.filter((row) => row.digits.startsWith(digits)).length;
+    if (matched >= cap) {
+      return (
+        `${tree}\n\n[Truncated at ${cap} matching lines — there may be further ` +
+        `breakouts under ${hts_code} that are not shown. Request a narrower ` +
+        `subheading, or raise max_rows, before concluding a breakout is absent.]`
+      );
+    }
+    return tree;
   },
 });
 

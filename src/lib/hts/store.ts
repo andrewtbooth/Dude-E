@@ -486,20 +486,24 @@ export function getSubtree(htsNo: string, maxRows = 400): HtsLine[] {
     .all(digits, maxRows) as LineRow[];
 
   const lines = rows.map(mapLine);
+  if (lines.length === 0) return lines;
 
-  // Include unnumbered header rows that sit between numbered siblings; without
-  // them the returned slice reads as a list of bare "Other" entries.
-  if (lines.length > 0) {
-    const minId = lines[0].id;
-    const maxId = lines[lines.length - 1].id;
-    const withHeaders = db
-      .prepare(
-        `SELECT * FROM lines WHERE id BETWEEN ? AND ? ORDER BY id LIMIT ?`,
-      )
-      .all(minId, maxId, maxRows) as LineRow[];
-    return withHeaders.map(mapLine);
-  }
-  return lines;
+  // Re-read the id span to reinstate the unnumbered header rows that sit
+  // between numbered siblings; without them the slice reads as a list of bare
+  // "Other" entries with nothing to distinguish them.
+  //
+  // The span is bounded by the capped query above, so it can only *add* header
+  // rows — which is exactly why it must not reuse `maxRows`. Doing so let the
+  // headers consume the cap and pushed real matches off the end silently: for
+  // heading 6204 that hid 77 lines, everything past 6204.63.75, with no
+  // truncation marker. A caller comparing siblings under GRI 6 would conclude
+  // those breakouts do not exist.
+  const minId = lines[0].id;
+  const maxId = lines[lines.length - 1].id;
+  const withHeaders = db
+    .prepare(`SELECT * FROM lines WHERE id BETWEEN ? AND ? ORDER BY id`)
+    .all(minId, maxId) as LineRow[];
+  return withHeaders.map(mapLine);
 }
 
 /** Ancestor chain for a line, outermost first. */

@@ -88,8 +88,12 @@ export function parseUsitcRows(
   const warnings: string[] = [];
   const lines: HtsLine[] = [];
 
-  // stack[i] holds the id of the most recent row seen at indent level i.
-  const stack: number[] = [];
+  // Open ancestors, in strictly increasing indent order. A stack indexed *by*
+  // indent cannot represent the real feed: USITC sometimes jumps indent by more
+  // than one (2826.90.90 goes 2 -> 4), which leaves holes that later rows read
+  // as missing ancestors. Keeping the stack dense and popping by comparison
+  // handles jumps, and equal-indent siblings, without either case being special.
+  const stack: { id: number; indent: number }[] = [];
   const byId = new Map<number, HtsLine>();
 
   rows.forEach((row, index) => {
@@ -118,9 +122,26 @@ export function parseUsitcRows(
       return;
     }
 
-    const parentId =
-      indent > 0 && stack.length >= indent ? (stack[indent - 1] ?? null) : null;
+    // Anything at or below this row's depth is closed; the nearest shallower
+    // row is the parent. Attaching an indent-jumped row to root instead — as a
+    // by-index stack does — is not a cosmetic loss: its description path
+    // collapses to its own text, and rate resolution finds no ancestor, so a
+    // 10-digit line publishes a blank duty rate where the schedule plainly
+    // gives it one.
+    while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
+    }
+    const top = stack[stack.length - 1] ?? null;
+    const parentId = top?.id ?? null;
     const parent = parentId === null ? null : (byId.get(parentId) ?? null);
+
+    if (top && indent > top.indent + 1) {
+      warnings.push(
+        `Row ${index} (${htsNoRaw || "no hts number"}) jumps from indent ` +
+          `${top.indent} to ${indent}; it was attached to the nearest ancestor ` +
+          `(${lines[top.id]?.htsNo || "unnumbered row"}) rather than dropped.`,
+      );
+    }
 
     const id = lines.length;
     const level = levelOf(digits);
@@ -157,9 +178,8 @@ export function parseUsitcRows(
     lines.push(line);
     byId.set(id, line);
 
-    // This row is now the most recent at its depth; anything deeper is stale.
-    stack[indent] = id;
-    stack.length = indent + 1;
+    // This row is now the innermost open ancestor.
+    stack.push({ id, indent });
   });
 
   resolveRates(lines, byId);

@@ -302,3 +302,34 @@ describe("verifyAgainstTariff — Schedule B", () => {
     expect(verification.rejectedCodes).toEqual([]);
   });
 });
+
+describe("verifyAgainstTariff — recommendation handling", () => {
+  it("keeps a null recommendation rather than promoting rank 1", () => {
+    // Null is schema-mandated when the model needs more information. Filling
+    // it in converts an explicit refusal into a recommendation, which the UI
+    // then pre-selects — one click from a determination the model declined.
+    const input = result([candidate()]);
+    const { result: verified } = verifyAgainstTariff({
+      ...input,
+      status: "needs_more_info",
+      recommended_hts_code: null,
+    });
+    expect(verified.recommended_hts_code).toBeNull();
+  });
+
+  it("still promotes when the recommendation itself failed verification", () => {
+    // Here the model did commit to an answer — it just named a code that does
+    // not exist, so falling back to the best surviving candidate is right.
+    const input = result([candidate()]);
+    const { result: verified } = verifyAgainstTariff({
+      ...input,
+      recommended_hts_code: "9999.99.99.99",
+    });
+    expect(verified.recommended_hts_code).toBe("8507.60.00.20");
+  });
+
+  it("keeps a recommendation that survived verification", () => {
+    const { result: verified } = verifyAgainstTariff(result([candidate()]));
+    expect(verified.recommended_hts_code).toBe("8507.60.00.20");
+  });
+});

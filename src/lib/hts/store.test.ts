@@ -174,3 +174,29 @@ describe("HTSUS index", () => {
     expect(getChapter99Candidates("9617.00.10.00")).toEqual([]);
   });
 });
+
+describe("getSubtree", () => {
+  it("returns every matching line, not a cap shared with header rows", () => {
+    // Reinstating unnumbered headers re-reads the id span. Reusing the caller's
+    // cap on that second read let headers consume it and silently dropped real
+    // matches off the end — 77 of them under heading 6204 in the live tariff.
+    const rows = getSubtree("8507", 400);
+    const matching = rows.filter((row) => row.digits.startsWith("8507"));
+    expect(matching.map((row) => row.htsNo)).toEqual([
+      "8507",
+      "8507.60",
+      "8507.60.00",
+      "8507.60.00.10",
+      "8507.60.00.20",
+    ]);
+  });
+
+  it("honours a genuinely small cap on matching lines", () => {
+    const rows = getSubtree("8507", 2);
+    expect(rows.filter((row) => row.digits.startsWith("8507"))).toHaveLength(2);
+  });
+
+  it("returns nothing for a heading that does not exist", () => {
+    expect(getSubtree("4202", 400)).toEqual([]);
+  });
+});

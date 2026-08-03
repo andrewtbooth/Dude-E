@@ -214,3 +214,89 @@ describe("USITC field-name quirks", () => {
     expect(lines[0].additionalDuties).toBe("correct");
   });
 });
+
+describe("indent jumps", () => {
+  /**
+   * Shaped after the real 2826.90.90 rows, which go from indent 2 straight to
+   * indent 4. Attaching such a row to root strips its ancestry, and because
+   * duty rates are inherited from the nearest ancestor that publishes them,
+   * the 10-digit statistical line ends up with no rate at all — while the
+   * schedule plainly gives it 3.1%.
+   */
+  const fluorides: UsitcRawRow[] = [
+    { htsno: "2826", indent: "0", description: "Fluorides; fluorosilicates:" },
+    { htsno: "2826.90", indent: "1", description: "Other:" },
+    {
+      htsno: "2826.90.90",
+      indent: "2",
+      description: "Other",
+      units: ["kg"],
+      general: "3.1%",
+      other: "25%",
+    },
+    {
+      htsno: "2826.90.90.10",
+      indent: "4",
+      description: "Lithium hexafluorophosphate",
+      units: ["kg"],
+    },
+    {
+      htsno: "2826.90.90.90",
+      indent: "4",
+      description: "Other",
+      units: ["kg"],
+    },
+  ];
+
+  it("attaches a jumped row to the nearest ancestor, not to root", () => {
+    const { lines } = parseUsitcRows(fluorides);
+    const stat = lines.find((l) => l.htsNo === "2826.90.90.10");
+    const rateLine = lines.find((l) => l.htsNo === "2826.90.90");
+    expect(stat?.parentId).toBe(rateLine?.id);
+  });
+
+  it("still inherits the duty rate across the jump", () => {
+    const { lines } = parseUsitcRows(fluorides);
+    const stat = lines.find((l) => l.htsNo === "2826.90.90.10");
+    expect(stat?.general).toBe("3.1%");
+    expect(stat?.other).toBe("25%");
+    expect(stat?.ratesInheritedFrom).toBe("2826.90.90");
+  });
+
+  it("keeps equal-indent rows as siblings, not as a chain", () => {
+    const { lines } = parseUsitcRows(fluorides);
+    const first = lines.find((l) => l.htsNo === "2826.90.90.10");
+    const second = lines.find((l) => l.htsNo === "2826.90.90.90");
+    expect(second?.parentId).toBe(first?.parentId);
+  });
+
+  it("builds the full description path across the jump", () => {
+    const { lines } = parseUsitcRows(fluorides);
+    const stat = lines.find((l) => l.htsNo === "2826.90.90.10");
+    expect(stat?.descriptionPath).toEqual([
+      "Fluorides; fluorosilicates:",
+      "Other:",
+      "Other",
+      "Lithium hexafluorophosphate",
+    ]);
+  });
+
+  it("reports the jump rather than absorbing it silently", () => {
+    const { warnings } = parseUsitcRows(fluorides);
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toMatch(/jumps from indent 2 to 4/);
+    expect(warnings[0]).toMatch(/2826\.90\.90/);
+  });
+
+  it("closes a deeper branch when indent drops back", () => {
+    const { lines } = parseUsitcRows([
+      ...fluorides,
+      { htsno: "2827", indent: "0", description: "Chlorides:" },
+      { htsno: "2827.20", indent: "1", description: "Calcium chloride" },
+    ]);
+    const calcium = lines.find((l) => l.htsNo === "2827.20");
+    const chlorides = lines.find((l) => l.htsNo === "2827");
+    expect(calcium?.parentId).toBe(chlorides?.id);
+    expect(calcium?.descriptionPath).toEqual(["Chlorides:", "Calcium chloride"]);
+  });
+});

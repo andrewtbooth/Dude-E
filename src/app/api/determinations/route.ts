@@ -70,6 +70,21 @@ export async function POST(request: Request) {
     );
   }
 
+  if (analysis.status !== "COMPLETE") {
+    // A run that asked for more information has not reached a conclusion.
+    // Recording one anyway produces a signed determination for a question the
+    // model explicitly declined to answer.
+    return NextResponse.json(
+      {
+        error:
+          `This analysis is ${analysis.status.toLowerCase().replace(/_/g, " ")}, ` +
+          `not complete. Answer the outstanding questions and re-run before ` +
+          `recording a determination.`,
+      },
+      { status: 409 },
+    );
+  }
+
   const run = parseRun(analysis.resultJson);
   const selected = findCandidate(run.result.candidates, selectedHtsCode);
   if (!selected) {

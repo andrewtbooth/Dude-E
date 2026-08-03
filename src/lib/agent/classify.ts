@@ -503,8 +503,14 @@ export function verifyAgainstTariff(result: ClassificationResult): {
     why_not_selected: index === 0 ? null : candidate.why_not_selected,
   }));
 
+  // A null recommendation is a deliberate answer, not a missing one: the schema
+  // requires it when status is "needs_more_info", i.e. the model is saying it
+  // cannot responsibly pick yet. Promoting rank 1 into that slot converts a
+  // refusal into a recommendation, and the UI pre-selects it — which is one
+  // click from a signed determination the model declined to make.
+  const modelDeclinedToRecommend = result.recommended_hts_code === null;
   const recommendedStillValid =
-    result.recommended_hts_code !== null &&
+    !modelDeclinedToRecommend &&
     verifiedCodes.some(
       (code) =>
         code.replace(/\D/g, "") ===
@@ -515,13 +521,18 @@ export function verifyAgainstTariff(result: ClassificationResult): {
     result: {
       ...result,
       candidates: reRanked,
-      recommended_hts_code: recommendedStillValid
-        ? (reRanked.find(
-            (candidate) =>
-              candidate.hts_code.replace(/\D/g, "") ===
-              (result.recommended_hts_code ?? "").replace(/\D/g, ""),
-          )?.hts_code ?? null)
-        : (reRanked[0]?.hts_code ?? null),
+      recommended_hts_code: modelDeclinedToRecommend
+        ? null
+        : recommendedStillValid
+          ? (reRanked.find(
+              (candidate) =>
+                candidate.hts_code.replace(/\D/g, "") ===
+                (result.recommended_hts_code ?? "").replace(/\D/g, ""),
+            )?.hts_code ?? null)
+          : // The recommendation itself failed verification. Falling back to the
+            // best surviving candidate is right here — the model did commit to
+            // an answer, it just named one that does not exist.
+            (reRanked[0]?.hts_code ?? null),
     },
     verification: { verifiedCodes, rejectedCodes, corrections },
   };
