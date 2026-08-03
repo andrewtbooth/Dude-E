@@ -5,6 +5,7 @@ import type { AnalysisMode, Refinement } from "@/lib/agent/schema";
 import { UnauthenticatedError, requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { tryGetActiveRevision } from "@/lib/hts/store";
+import { clientKey, rateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 /** A max-effort run with tool use legitimately takes minutes. */
@@ -42,6 +43,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Not signed in." }, { status: 401 });
     }
     throw error;
+  }
+
+  // Sign-in records who decided; it does not gate anything, and on a publicly
+  // reachable deployment that leaves the API budget as the exposed surface.
+  // One request is a full max-effort agent run, so a handful of them is real
+  // money. Keyed per client and per analyst so one of either cannot exhaust it.
+  const limit = rateLimit(
+    `analyze:${clientKey(request)}:${session.id}`,
+    config.analyzeRateLimit,
+    config.analyzeRateWindowMs,
+  );
+  if (!limit.ok) {
+    return NextResponse.json(
+      {
+        error:
+          `Rate limit reached — ${limit.limit} analyses per ` +
+          `${Math.round(config.analyzeRateWindowMs / 60000)} minutes. ` +
+          `Try again in ${limit.retryAfter}s.`,
+      },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    );
   }
 
   const revision = tryGetActiveRevision();

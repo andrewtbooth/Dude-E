@@ -44,7 +44,29 @@ function parseEffort(raw: string): Effort {
   );
 }
 
+function optionalInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw || raw.trim() === "") return fallback;
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer (got "${raw}").`);
+  }
+  return value;
+}
+
 export const config = {
+  /**
+   * Analyses allowed per client per window. A budget guard rather than access
+   * control — see src/lib/rateLimit.ts. Sized so an analyst working steadily
+   * never notices it and a script hitting the endpoint does, immediately.
+   */
+  get analyzeRateLimit(): number {
+    return optionalInt("ANALYZE_RATE_LIMIT", 10);
+  },
+  get analyzeRateWindowMs(): number {
+    return optionalInt("ANALYZE_RATE_WINDOW_MINUTES", 15) * 60_000;
+  },
+
   /**
    * The classification model. Opus 5 is the only model this prompt has been
    * tuned against; the GRI discipline it enforces degrades noticeably on

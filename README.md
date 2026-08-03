@@ -412,6 +412,24 @@ on impression — that is what the harness is for.
 
 ---
 
+## Deploying
+
+`docs/DEPLOY.md` covers a standalone trial deployment: `Dockerfile`, `fly.toml`
+with a persistent volume, seeding the snapshot, the weekly re-sync, and
+backups.
+
+The short version of why it is a container with a volume rather than
+serverless: one analysis holds an SSE connection for up to 13 minutes, the
+tariff snapshot and audit database are files on disk, and `better-sqlite3` is a
+native addon. Those three rule out platforms that cap request duration or hand
+you an ephemeral filesystem.
+
+`/api/health` reports the active revision and its age, and turns `degraded`
+once the snapshot passes three weeks — point an uptime check at the status
+field, not just the HTTP code.
+
+---
+
 ## Commands
 
 | Command | What it does |
@@ -427,6 +445,11 @@ on impression — that is what the harness is for.
 | `npm run dev:seed` | Build the offline fixture tariff index |
 | `npm run dev:pdf` | Render the sample determination to `data/pdf/` |
 | `npm run eval` | Measure classification accuracy and calibration (costs API credits) |
+
+Deployment env vars beyond the two required secrets: `HTSUS_DATA_DIR` and
+`DATABASE_URL` should both point at the mounted volume, and
+`ANALYZE_RATE_LIMIT` / `ANALYZE_RATE_WINDOW_MINUTES` bound spend on a publicly
+reachable URL (default: 10 analyses per client per 15 minutes).
 
 ---
 
