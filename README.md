@@ -414,9 +414,16 @@ on impression — that is what the harness is for.
 
 ## Deploying
 
-`docs/DEPLOY.md` covers a standalone trial deployment: `Dockerfile`, `fly.toml`
-with a persistent volume, seeding the snapshot, the weekly re-sync, and
-backups.
+**`docs/SETUP.md`** is the one to follow if you are putting this online: four
+steps, no terminal, no Docker, runnable from a phone. Paste two keys into the
+repository's secrets and tap *Run workflow*; GitHub builds the image on Fly's
+remote builders, provisions the volume, deploys, downloads the tariff, and
+health-checks the result. A second workflow re-syncs the tariff weekly.
+
+**`docs/DEPLOY.md`** is the same deployment done by hand, for when you need to
+understand or debug what the automation is doing: `Dockerfile`, `fly.toml` with
+a persistent volume, seeding the snapshot, backups, and the Render/Railway
+variants.
 
 The short version of why it is a container with a volume rather than
 serverless: one analysis holds an SSE connection for up to 13 minutes, the
