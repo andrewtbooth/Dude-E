@@ -62,15 +62,26 @@ jobs:
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "Deploying to Fly app: $NAME"
 
+      # An app-scoped deploy token — which is all Fly issues when your account
+      # belongs to an SSO-enforced organisation — cannot create apps. So this
+      # only tries when the app is genuinely absent, and explains the fix
+      # rather than failing with a permissions error.
       - name: Create the app if it does not exist
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          if flyctl status --app "${{ steps.app.outputs.name }}" >/dev/null 2>&1; then
+          APP="${{ steps.app.outputs.name }}"
+          if flyctl status --app "$APP" >/dev/null 2>&1; then
             echo "App already exists."
-          else
-            echo "Creating app…"
-            flyctl apps create "${{ steps.app.outputs.name }}" --org personal
+            exit 0
+          fi
+          echo "Creating app…"
+          if ! flyctl apps create "$APP" --org personal; then
+            echo "::error::Could not create the app '$APP'. Either the name is"
+            echo "::error::already taken globally — re-run with a different Fly"
+            echo "::error::app name — or your token is app-scoped, in which case"
+            echo "::error::create the app in the Fly dashboard first, named exactly '$APP'."
+            exit 1
           fi
 
       - name: Create the storage volume if it does not exist
@@ -83,10 +94,15 @@ jobs:
           # it both are wiped on every deploy, silently.
           if flyctl volumes list --app "$APP" | grep -q dude_e_data; then
             echo "Volume already exists."
-          else
-            echo "Creating volume in $REGION…"
-            flyctl volumes create dude_e_data \
-              --app "$APP" --region "$REGION" --size 3 --yes
+            exit 0
+          fi
+          echo "Creating volume in $REGION…"
+          if ! flyctl volumes create dude_e_data \
+                 --app "$APP" --region "$REGION" --size 3 --yes; then
+            echo "::error::Could not create the volume. If your Fly token is"
+            echo "::error::app-scoped, create it in the Fly dashboard instead:"
+            echo "::error::app '$APP' -> Volumes -> name 'dude_e_data', 3GB, region $REGION."
+            exit 1
           fi
 
       - name: Set secrets
@@ -123,15 +139,24 @@ jobs:
           flyctl deploy --app "${{ steps.app.outputs.name }}" \
             --remote-only --wait-timeout 600
 
-      - name: Download the current tariff
+      # The container seeds the tariff itself on first boot, so this is a
+      # refresh rather than a requirement. It needs SSH, which an app-scoped
+      # deploy token may not grant — so a failure here is reported and
+      # tolerated instead of failing the deploy.
+      - name: Refresh the tariff
         if: ${{ inputs.run_tariff_sync }}
+        continue-on-error: true
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          echo "Syncing the tariff — about 90 seconds. The app refuses to"
-          echo "classify anything until this has run at least once."
-          flyctl ssh console --app "${{ steps.app.outputs.name }}" \
-            -C "npm run sync:htsus"
+          if flyctl ssh console --app "${{ steps.app.outputs.name }}" \
+               -C "npm run sync:htsus"; then
+            echo "Tariff refreshed."
+          else
+            echo "::warning::Could not run the sync over SSH — likely an"
+            echo "::warning::app-scoped token. Not a problem on a first deploy:"
+            echo "::warning::the app downloads the tariff itself on startup."
+          fi
 
       - name: Verify it is serving
         env:
@@ -139,10 +164,16 @@ jobs:
         run: |
           URL="https://${{ steps.app.outputs.name }}.fly.dev"
           echo "Checking $URL/api/health …"
-          for attempt in 1 2 3 4 5 6; do
+          # Up to four minutes: the app answers within seconds, but on a first
+          # deploy it is downloading the tariff in the background and reports
+          # "degraded" until that finishes.
+          for attempt in $(seq 1 24); do
             BODY=$(curl -fsS --max-time 20 "$URL/api/health" || true)
-            if [ -n "$BODY" ]; then break; fi
-            echo "  not answering yet, retrying in 10s ($attempt/6)"
+            case "$BODY" in
+              *'"status":"ok"'*) break ;;
+              "") echo "  not answering yet ($attempt/24)" ;;
+              *) echo "  up, tariff still downloading ($attempt/24)" ;;
+            esac
             sleep 10
           done
 
@@ -163,7 +194,8 @@ jobs:
               REVISION=$(printf '%s' "$BODY" | sed -n 's/.*"revision":"\([^"]*\)".*/\1/p')
               echo "Tariff loaded: **$REVISION**. Open the link and sign in with your name and email."
             else
-              echo "The app is running but has **no tariff data yet**, so it will not classify."
-              echo "Re-run this workflow with *Download the current tariff* ticked."
+              echo "The app is running but the tariff is **still downloading**."
+              echo "Wait a couple of minutes, then reload the site. If it has not"
+              echo "finished after five minutes, check the logs in the Fly dashboard."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

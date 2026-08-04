@@ -25,15 +25,34 @@ see [Cost](#cost) below, and set a spending cap.
 
 ---
 
-## Step 1 — Get a Fly.io token
+## Step 1 — Create the app on Fly and get a token
 
 1. Go to **fly.io** and sign up. Add a payment method when asked.
-2. Go to **fly.io/user/personal_access_tokens**.
-3. Tap **Create token**, name it `github-deploy`, and create it.
-4. **Copy the token immediately** — it is shown once and never again. It is a
-   long string starting with `Fly`.
 
-Paste it somewhere safe for a minute. You will need it in step 3.
+2. **Create the app.** In the dashboard, create a new app named exactly
+   **`dude-e-tariff`**. Fly app names are unique across all its customers, so
+   if that is taken, pick something like `dude-e-tariff-yourinitials` and
+   remember it — you will type it into the workflow later.
+
+3. **Add the storage.** Open the app, find **Volumes**, and create one:
+   - name: `dude_e_data`
+   - size: 3 GB
+   - region: the same region as the app
+
+   This holds the tariff data and your records. Without it, both are wiped
+   every time the app updates.
+
+4. **Create the token.** Go to **fly.io/user/personal_access_tokens**, tap
+   **Create token**, and pick the app you just made. Name it `github-deploy`.
+
+   **Copy it immediately** — it is shown once and never again. It starts with
+   `Fly`.
+
+> **If Fly refuses to create a token** and mentions single sign-on, your email
+> belongs to a company Fly organisation that blocks personal tokens. Either
+> create an app-scoped token as above, or sign up again with a personal email
+> address — a fresh account has no such restriction, and keeping a public trial
+> separate from a corporate account is sensible anyway.
 
 ---
 
@@ -76,10 +95,16 @@ somewhere first.
 2. Choose **Deploy** in the left sidebar.
 3. Tap **Run workflow**. Leave *Download the current tariff* ticked — the
    first run needs it.
-4. Tap the green **Run workflow** button.
+4. If you named the Fly app anything other than `dude-e-tariff`, type that
+   name into the **Fly app name** box.
+5. Tap the green **Run workflow** button.
 
 Now wait. It takes **10 to 15 minutes** the first time. You can close the page;
 it keeps running.
+
+The app downloads the tariff itself when it first starts, so nothing else is
+needed. For a minute or two after deploying, the site will load but say it has
+no tariff data — that is the download in progress, and it clears on its own.
 
 Tap into the run to watch. When it finishes, the summary shows your web
 address, something like `https://dude-e-tariff.fly.dev`.
@@ -146,9 +171,10 @@ common ones:
 | `Error: Not authorized` | The Fly token is wrong or expired. Make a new one and update the secret. |
 | `did not answer its health check` | It deployed but did not start. Re-run the workflow; if it repeats, send me the log. |
 
-**The site loads but says "No HTSUS data".** The tariff download did not
-finish. Run the **Deploy** workflow again with *Download the current tariff*
-ticked.
+**The site loads but says "No HTSUS data".** For the first couple of minutes
+after a deploy this is normal — the app is downloading the tariff and will
+clear it on its own. If it persists past five minutes, the download failed;
+re-run the **Deploy** workflow.
 
 **An analysis seems stuck.** They genuinely take several minutes — the
 progress log should keep moving. If it stops dead for more than five minutes,
