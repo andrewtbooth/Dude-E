@@ -12,7 +12,9 @@
 # unchanged that mismatch passes the build and then fails every health check.
 
 app = "dude-e"
-primary_region = "ewr"
+# Must match the region the volume was created in — a deploy that names a
+# region with no volume in it fails to place the machine.
+primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile"
@@ -21,6 +23,9 @@ primary_region = "ewr"
   NODE_ENV = "production"
   # Both pieces of durable state live on the mounted volume.
   HTSUS_DATA_DIR = "/data/htsus"
+  # flyctl warns that DATABASE_URL "may be sensitive" and suggests a secret.
+  # It is not, here: SQLite's URL is a path on the mounted volume, with no
+  # host, user or password in it. It belongs in [env] where it is readable.
   DATABASE_URL = "file:/data/dude-e.db"
   PORT = "3000"
 

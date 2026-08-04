@@ -30,6 +30,12 @@ COPY package.json package-lock.json prisma.config.ts ./
 COPY prisma ./prisma
 RUN npm ci --include=dev
 COPY . .
+# This project has no static-asset directory today — the favicon is
+# src/app/icon.svg, an App Router file convention, and `next build` does not
+# create public/ on its own. Docker's COPY fails hard on a missing source, so
+# guarantee the directory exists rather than leaving the runtime stage's copy
+# contingent on whether anyone has added a static asset yet.
+RUN mkdir -p public
 RUN npx prisma generate && npx next build
 
 # --- runtime ---------------------------------------------------------------
