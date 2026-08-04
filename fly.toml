@@ -45,7 +45,7 @@ primary_region = "iad"
     hard_limit = 12
 
 [[http_service.checks]]
-  grace_period = "30s"
+  grace_period = "90s"
   interval = "30s"
   method = "GET"
   timeout = "10s"
