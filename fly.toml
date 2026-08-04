@@ -40,7 +40,10 @@ primary_region = "iad"
   force_https = true
   # A machine that stops mid-analysis kills the run and loses the work. Keep
   # one machine up rather than suspending on idle.
-  auto_stop_machines = false
+  # "off", not `false`: the boolean form is the older spelling and flyctl now
+  # emits the string. Same behaviour, but it matches what Fly's own generator
+  # produces, so a regenerated config no longer shows a spurious diff here.
+  auto_stop_machines = "off"
   auto_start_machines = true
   min_machines_running = 1
 
