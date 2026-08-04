@@ -14,7 +14,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
-import { extractJsonObject, isGrammarTooLarge } from "./classify";
+import { extractJsonObject, isGrammarTooLarge, nextContainer } from "./classify";
 
 function apiError(status: number, message: string) {
   return new Anthropic.APIError(
@@ -99,5 +99,34 @@ describe("extractJsonObject", () => {
     expect(extractJsonObject("I could not complete this analysis.")).toBe(
       "I could not complete this analysis.",
     );
+  });
+});
+
+describe("nextContainer", () => {
+  const withId = (id: string) =>
+    ({ container: { id, expires_at: "", skills: null } }) as never;
+  const none = { container: null } as never;
+
+  it("adopts the container the first message opens", () => {
+    // The _20260209 web tools filter search results inside a code execution
+    // sandbox. Once one is open, every later request in the turn has to name
+    // it or the API rejects the continuation.
+    expect(nextContainer(null, withId("cntr_abc"))).toBe("cntr_abc");
+  });
+
+  it("keeps the container on messages that do not mention one", () => {
+    // The load-bearing case. A turn reporting no container is not saying the
+    // sandbox is gone — clearing it here strands any tool call still pending
+    // inside it and reproduces the exact 400 this exists to prevent.
+    expect(nextContainer("cntr_abc", none)).toBe("cntr_abc");
+  });
+
+  it("follows the API when it hands back a different container", () => {
+    expect(nextContainer("cntr_abc", withId("cntr_def"))).toBe("cntr_def");
+  });
+
+  it("stays null until a container actually exists", () => {
+    // Most runs never open one; sending container: null is correct there.
+    expect(nextContainer(null, none)).toBeNull();
   });
 });
