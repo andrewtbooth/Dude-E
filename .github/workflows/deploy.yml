@@ -1,0 +1,169 @@
+# One-tap deployment. No terminal, no Docker.
+#
+# Everything the manual runbook did from a laptop happens here instead: the
+# image is built on Fly's own builders (`--remote-only`), so nothing needs
+# Docker locally, and every step is written to be safe to re-run. That matters
+# more than elegance here — the person triggering this is not expected to be
+# able to debug a half-finished deploy from a phone.
+#
+# Setup is two repository secrets. See docs/SETUP.md.
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_tariff_sync:
+        description: "Download the current tariff after deploying (needed on the first run)"
+        type: boolean
+        default: true
+      app_name:
+        description: "Fly app name (leave blank to use the one in fly.toml)"
+        type: string
+        default: ""
+
+concurrency:
+  # Two deploys racing onto one volume is a bad time.
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build, deploy and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # A broken build reaching production is worse than a failed deploy, and
+      # the person triggering this cannot easily tell the two apart afterwards.
+      - name: Check the code is sound
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx eslint .
+          npx vitest run
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Resolve app name
+        id: app
+        run: |
+          NAME="${{ inputs.app_name }}"
+          if [ -z "$NAME" ]; then
+            NAME=$(grep -m1 '^app = ' fly.toml | cut -d'"' -f2)
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Deploying to Fly app: $NAME"
+
+      - name: Create the app if it does not exist
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if flyctl status --app "${{ steps.app.outputs.name }}" >/dev/null 2>&1; then
+            echo "App already exists."
+          else
+            echo "Creating app…"
+            flyctl apps create "${{ steps.app.outputs.name }}" --org personal
+          fi
+
+      - name: Create the storage volume if it does not exist
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP="${{ steps.app.outputs.name }}"
+          REGION=$(grep -m1 '^primary_region = ' fly.toml | cut -d'"' -f2)
+          # The volume holds the tariff snapshot and the audit database. Without
+          # it both are wiped on every deploy, silently.
+          if flyctl volumes list --app "$APP" | grep -q dude_e_data; then
+            echo "Volume already exists."
+          else
+            echo "Creating volume in $REGION…"
+            flyctl volumes create dude_e_data \
+              --app "$APP" --region "$REGION" --size 3 --yes
+          fi
+
+      - name: Set secrets
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP="${{ steps.app.outputs.name }}"
+
+          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "::error::ANTHROPIC_API_KEY is not set in this repository's secrets. See docs/SETUP.md."
+            exit 1
+          fi
+
+          # SESSION_SECRET signs the analyst cookie. Generated once and left
+          # alone: rotating it on every deploy would sign everyone out mid-run,
+          # so it is only created when genuinely absent.
+          if flyctl secrets list --app "$APP" | grep -q SESSION_SECRET; then
+            echo "SESSION_SECRET already set; leaving it alone."
+            flyctl secrets set --app "$APP" --stage \
+              ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
+          else
+            echo "Generating SESSION_SECRET…"
+            flyctl secrets set --app "$APP" --stage \
+              ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+              SESSION_SECRET="$(openssl rand -base64 48)"
+          fi
+
+      # --remote-only builds the image on Fly's builders, which is what makes
+      # this runnable from a device that has no Docker.
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy --app "${{ steps.app.outputs.name }}" \
+            --remote-only --wait-timeout 600
+
+      - name: Download the current tariff
+        if: ${{ inputs.run_tariff_sync }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          echo "Syncing the tariff — about 90 seconds. The app refuses to"
+          echo "classify anything until this has run at least once."
+          flyctl ssh console --app "${{ steps.app.outputs.name }}" \
+            -C "npm run sync:htsus"
+
+      - name: Verify it is serving
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          URL="https://${{ steps.app.outputs.name }}.fly.dev"
+          echo "Checking $URL/api/health …"
+          for attempt in 1 2 3 4 5 6; do
+            BODY=$(curl -fsS --max-time 20 "$URL/api/health" || true)
+            if [ -n "$BODY" ]; then break; fi
+            echo "  not answering yet, retrying in 10s ($attempt/6)"
+            sleep 10
+          done
+
+          if [ -z "$BODY" ]; then
+            echo "::error::The app did not answer its health check. Run: flyctl logs --app ${{ steps.app.outputs.name }}"
+            exit 1
+          fi
+
+          echo "$BODY"
+          STATUS=$(printf '%s' "$BODY" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')
+
+          {
+            echo "## Deployment complete"
+            echo ""
+            echo "**Your app:** $URL"
+            echo ""
+            if [ "$STATUS" = "ok" ]; then
+              REVISION=$(printf '%s' "$BODY" | sed -n 's/.*"revision":"\([^"]*\)".*/\1/p')
+              echo "Tariff loaded: **$REVISION**. Open the link and sign in with your name and email."
+            else
+              echo "The app is running but has **no tariff data yet**, so it will not classify."
+              echo "Re-run this workflow with *Download the current tariff* ticked."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

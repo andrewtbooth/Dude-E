@@ -1,0 +1,50 @@
+# === SECRETS =================================================================
+# This repository is PUBLIC. Nothing below may ever be committed.
+.env
+.env.*
+!.env.example
+
+# === LOCAL DATA ==============================================================
+# Audit database contains analyst identities and customer part numbers.
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
+*.sqlite
+*.sqlite3
+
+# Synced HTSUS snapshots and the derived FTS index (hundreds of MB, and
+# regenerable via `npm run sync:htsus` — see README).
+/data/htsus/
+
+# Tariff exports you downloaded by hand for `npm run import:htsus`.
+# A full-schedule export is tens of MB and is public data — no reason to
+# carry it in git.
+/data/raw/
+
+# Generated determination PDFs
+/data/pdf/
+
+# === BUILD ===================================================================
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# === TOOLING =================================================================
+.DS_Store
+*.log
+npm-debug.log*
+coverage/
+.vitest/
+.eslintcache
+prisma/generated/
+
+# Eval runs and team-supplied cases. Cases can contain customer part numbers
+# and product descriptions, and this repository is public — only the seed set,
+# which is constructed from published tariff text, is committed.
+/eval/runs/
+/eval/*.local.jsonl

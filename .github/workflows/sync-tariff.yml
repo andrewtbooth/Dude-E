@@ -1,0 +1,54 @@
+# Keep the deployed tariff current.
+#
+# USITC ships a new revision every few weeks — Revision 15 landed days after
+# Revision 14 while this app was being built. A snapshot left alone does not
+# announce itself as stale; it quietly keeps stamping determinations with a
+# superseded edition. That is the failure this schedule exists to prevent.
+
+name: Weekly tariff sync
+
+on:
+  schedule:
+    # Sundays 06:00 UTC — before the working week, after USITC's usual
+    # mid-week publishing.
+    - cron: "0 6 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Download the current tariff
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Resolve app name
+        id: app
+        run: echo "name=$(grep -m1 '^app = ' fly.toml | cut -d'\"' -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Sync
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl ssh console --app "${{ steps.app.outputs.name }}" \
+            -C "npm run sync:htsus"
+
+      - name: Report what is now live
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          BODY=$(curl -fsS --max-time 20 \
+            "https://${{ steps.app.outputs.name }}.fly.dev/api/health" || true)
+          echo "$BODY"
+          REVISION=$(printf '%s' "$BODY" | sed -n 's/.*"revision":"\([^"]*\)".*/\1/p')
+          {
+            echo "## Tariff sync complete"
+            echo ""
+            echo "Now serving: **${REVISION:-unknown}**"
+          } >> "$GITHUB_STEP_SUMMARY"
