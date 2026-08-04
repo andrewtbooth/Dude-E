@@ -136,11 +136,30 @@ export function parseUsitcRows(
     const parent = parentId === null ? null : (byId.get(parentId) ?? null);
 
     if (top && indent > top.indent + 1) {
-      warnings.push(
-        `Row ${index} (${htsNoRaw || "no hts number"}) jumps from indent ` +
-          `${top.indent} to ${indent}; it was attached to the nearest ancestor ` +
-          `(${lines[top.id]?.htsNo || "unnumbered row"}) rather than dropped.`,
-      );
+      // An indent jump is only worth reporting when the recovery is doubtful.
+      //
+      // USITC numbers indents inconsistently, so jumps are routine and the
+      // stack lands the row on the right ancestor nearly every time: a 10-digit
+      // statistical line whose parent is its own dotted prefix is parented
+      // correctly, whatever the indent column claimed. Reporting those anyway
+      // produced 27 warnings on a snapshot where all 27 were correct — which
+      // trains an operator to ignore the count, and buries the one warning that
+      // would matter. Warn only when the ancestor is *not* the row's prefix,
+      // because that is a genuine misattachment: the description path and the
+      // inherited duty rate would both come from the wrong branch.
+      const ancestorHtsNo = lines[top.id]?.htsNo ?? "";
+      const parentedByPrefix =
+        ancestorHtsNo !== "" && htsNoRaw.startsWith(ancestorHtsNo);
+
+      if (!parentedByPrefix) {
+        warnings.push(
+          `Row ${index} (${htsNoRaw || "no hts number"}) jumps from indent ` +
+            `${top.indent} to ${indent} and was attached to ` +
+            `${ancestorHtsNo || "an unnumbered row"}, which is not its prefix. ` +
+            `Its description path and inherited rates may come from the wrong ` +
+            `branch — check this line before relying on it.`,
+        );
+      }
     }
 
     const id = lines.length;

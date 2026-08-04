@@ -281,11 +281,35 @@ describe("indent jumps", () => {
     ]);
   });
 
-  it("reports the jump rather than absorbing it silently", () => {
-    const { warnings } = parseUsitcRows(fluorides);
-    expect(warnings).toHaveLength(2);
-    expect(warnings[0]).toMatch(/jumps from indent 2 to 4/);
-    expect(warnings[0]).toMatch(/2826\.90\.90/);
+  it("stays quiet when the jump still lands on the row's own prefix", () => {
+    // USITC numbers indents inconsistently, so jumps are routine and almost
+    // always recover correctly — 2826.90.90.10 under 2826.90.90 is right,
+    // whatever the indent column claimed. Warning on these produced 27
+    // warnings on a real snapshot where all 27 were correct, which teaches an
+    // operator that the warning count means nothing.
+    const { warnings, lines } = parseUsitcRows(fluorides);
+    expect(warnings).toEqual([]);
+    const stat = lines.find((l) => l.htsNo === "2826.90.90.10");
+    const parent = lines.find((l) => l.htsNo === "2826.90.90");
+    expect(stat?.parentId).toBe(parent?.id);
+  });
+
+  it("warns when a jump attaches a row outside its own prefix", () => {
+    // This is the case worth interrupting someone for: the row inherits a
+    // description path and duty rates from a branch it does not belong to.
+    const { warnings, lines } = parseUsitcRows([
+      { htsno: "2826", indent: "0", description: "Fluorides:" },
+      { htsno: "2826.90.90", indent: "1", description: "Other" },
+      { htsno: "2827.20.00.10", indent: "3", description: "Calcium chloride" },
+    ]);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/2827\.20\.00\.10/);
+    expect(warnings[0]).toMatch(/not its prefix/);
+    expect(warnings[0]).toMatch(/wrong\s+branch/);
+
+    // The row is still kept — dropping it would hide a real tariff line.
+    expect(lines.some((l) => l.htsNo === "2827.20.00.10")).toBe(true);
   });
 
   it("closes a deeper branch when indent drops back", () => {

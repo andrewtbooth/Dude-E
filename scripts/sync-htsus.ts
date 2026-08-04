@@ -345,7 +345,17 @@ async function fetchChapters(
  * cannot be retrieved we record it explicitly, because the agent must be able
  * to tell "this chapter has no notes" apart from "we failed to fetch them".
  */
-async function fetchNotes(chapters: number[]): Promise<HtsNote[]> {
+/**
+ * @param populated Chapters that actually returned tariff lines. A chapter with
+ *   none is reserved in the Harmonized System — Chapter 77 is "reserved for
+ *   possible future use" — so it has no notes to retrieve and its absence is
+ *   the correct result, not a failed fetch. Reporting it anyway put a
+ *   permanent, unfixable warning on every snapshot.
+ */
+async function fetchNotes(
+  chapters: number[],
+  populated: ReadonlySet<string>,
+): Promise<HtsNote[]> {
   const notes: HtsNote[] = [];
 
   const general = await fetchNoteDocument("General Notes", "general");
@@ -369,7 +379,11 @@ async function fetchNotes(chapters: number[]): Promise<HtsNote[]> {
     const cc = String(chapter).padStart(2, "0");
     const body = await fetchNoteDocument(`Chapter ${chapter}`);
     if (!body) {
-      warn(`Chapter ${cc}: notes could not be retrieved.`);
+      if (populated.has(cc)) {
+        warn(`Chapter ${cc}: notes could not be retrieved.`);
+      } else {
+        log(`  Chapter ${cc}: reserved (no tariff lines), so no notes to fetch.`);
+      }
       continue;
     }
 
@@ -894,7 +908,10 @@ async function main(): Promise<void> {
   }
 
   log("\nFetching notes...");
-  const notes = await fetchNotes(chapters);
+  const populatedChapters = new Set(
+    lines.map((line) => line.chapter).filter(Boolean),
+  );
+  const notes = await fetchNotes(chapters, populatedChapters);
 
   log("\nFetching Chapter 99 coverage notes...");
   const chapter99Coverage = await fetchChapter99Coverage();
