@@ -12,7 +12,8 @@ import {
   lookupExact,
   lookupScheduleB,
 } from "../hts/store";
-import { buildSystemPrompt, buildUserTurn } from "./prompt";
+import * as z from "zod/v4";
+import { buildOutputContract, buildSystemPrompt, buildUserTurn } from "./prompt";
 import {
   type AnalysisMode,
   type Candidate,
@@ -82,6 +83,27 @@ const WEB_FETCH_ALLOWED_DOMAINS = [
   "www.trade.gov",
 ];
 
+/**
+ * Does this error mean the request's compiled grammar was rejected as too big?
+ *
+ *   400 invalid_request_error — "The compiled grammar is too large, which
+ *   would cause performance issues. Simplify your tool schemas or reduce the
+ *   number of strict tools."
+ *
+ * The grammar spans the structured-output schema *and* every tool schema in
+ * the request, and Anthropic publishes no size limit — so there is no number to
+ * design against, and a schema that fits today can stop fitting when a tool is
+ * added. Matched on status plus message text because the API exposes no
+ * dedicated error code for it; a wording change degrades this to a hard
+ * failure with the API's own message, which is the safe direction.
+ */
+export function isGrammarTooLarge(error: unknown): boolean {
+  if (!(error instanceof Anthropic.APIError) || error.status !== 400) {
+    return false;
+  }
+  return /compiled grammar is too large/i.test(error.message ?? "");
+}
+
 export class ClassificationError extends Error {
   constructor(message: string) {
     super(message);
@@ -134,64 +156,82 @@ export async function* classify(
     message: `Classifying against ${revision.revision} at ${effort} effort.`,
   };
 
-  const runner = client.beta.messages.toolRunner({
-    model: config.model,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    // Thinking is on by default on Opus 5; `summarized` is requested
-    // explicitly because the default omits the text and the analyst is
-    // watching a multi-minute run.
-    thinking: { type: "adaptive", display: "summarized" },
-    output_config: {
-      effort,
-      format: betaZodOutputFormat(resultSchemaFor(input.mode)),
-    },
-    system: [
-      {
-        type: "text",
-        text: buildSystemPrompt(input.mode),
-        // Stable prefix: prompt + tool definitions are identical across runs
-        // and across the clarifying-question round trip, so a refinement
-        // re-run is cheap.
-        cache_control: { type: "ephemeral" },
+  /**
+   * Build the run.
+   *
+   * `structuredOutput` selects how the final answer's shape is obtained:
+   * enforced by the API's compiled grammar, or asked for in the prompt and
+   * validated on the way back. See `buildOutputContract` for why the second
+   * mode has to exist.
+   */
+  const buildRunner = (structuredOutput: boolean) =>
+    client.beta.messages.toolRunner({
+      model: config.model,
+      max_tokens: MAX_OUTPUT_TOKENS,
+      // Thinking is on by default on Opus 5; `summarized` is requested
+      // explicitly because the default omits the text and the analyst is
+      // watching a multi-minute run.
+      thinking: { type: "adaptive", display: "summarized" },
+      output_config: {
+        effort,
+        ...(structuredOutput
+          ? { format: betaZodOutputFormat(resultSchemaFor(input.mode)) }
+          : {}),
       },
-    ],
-    tools: [
-      ...classificationTools,
-      { type: "web_search_20260209", name: "web_search", max_uses: 12 },
-      {
-        type: "web_fetch_20260209",
-        name: "web_fetch",
-        max_uses: 8,
-        // Fetching is the one tool that can send data outward, and the inputs
-        // here are customer part numbers and unreleased product descriptions.
-        // Without a domain limit, a page reached during part research can
-        // instruct the model to fetch an attacker-controlled URL with the part
-        // number in the query string, and eight fetches is ample to exfiltrate
-        // an item master. The allowlist is the authorities the analysis is
-        // actually meant to read plus manufacturer research; widen it
-        // deliberately rather than by removing it.
-        allowed_domains: WEB_FETCH_ALLOWED_DOMAINS,
-        // A fetched datasheet can otherwise add five figures of tokens to the
-        // history, which is then re-billed on every subsequent tool iteration.
-        max_content_tokens: 30_000,
-      },
-    ],
-    messages: [
-      {
-        role: "user",
-        content: buildUserTurn({
-          mode: input.mode,
-          input: input.input,
-          htsusRevision: revision.revision,
-          revisionPublished: revision.publishedDate,
-          refinements: input.refinements,
-        }),
-      },
-    ],
-    max_iterations: MAX_TOOL_ITERATIONS,
-    stream: true,
-  });
+      system: [
+        {
+          type: "text",
+          text: structuredOutput
+            ? buildSystemPrompt(input.mode)
+            : `${buildSystemPrompt(input.mode)}\n\n${buildOutputContract(
+                z.toJSONSchema(resultSchemaFor(input.mode)),
+              )}`,
+          // Stable prefix: prompt + tool definitions are identical across runs
+          // and across the clarifying-question round trip, so a refinement
+          // re-run is cheap. The two modes have different prefixes and so
+          // different cache entries, which is correct — a deployment settles
+          // into one of them and keeps that entry warm.
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+      tools: [
+        ...classificationTools,
+        { type: "web_search_20260209", name: "web_search", max_uses: 12 },
+        {
+          type: "web_fetch_20260209",
+          name: "web_fetch",
+          max_uses: 8,
+          // Fetching is the one tool that can send data outward, and the inputs
+          // here are customer part numbers and unreleased product descriptions.
+          // Without a domain limit, a page reached during part research can
+          // instruct the model to fetch an attacker-controlled URL with the part
+          // number in the query string, and eight fetches is ample to exfiltrate
+          // an item master. The allowlist is the authorities the analysis is
+          // actually meant to read plus manufacturer research; widen it
+          // deliberately rather than by removing it.
+          allowed_domains: WEB_FETCH_ALLOWED_DOMAINS,
+          // A fetched datasheet can otherwise add five figures of tokens to the
+          // history, which is then re-billed on every subsequent tool iteration.
+          max_content_tokens: 30_000,
+        },
+      ],
+      messages: [
+        {
+          role: "user",
+          content: buildUserTurn({
+            mode: input.mode,
+            input: input.input,
+            htsusRevision: revision.revision,
+            revisionPublished: revision.publishedDate,
+            refinements: input.refinements,
+          }),
+        },
+      ],
+      max_iterations: MAX_TOOL_ITERATIONS,
+      stream: true,
+    });
 
+  let runner = buildRunner(true);
   if (input.signal) {
     runner.setRequestOptions({ signal: input.signal });
   }
@@ -200,98 +240,126 @@ export async function* classify(
   let inputTokens = 0;
   let outputTokens = 0;
   let pauseResumes = 0;
+  let structuredOutput = true;
 
-  try {
-    for await (const stream of runner) {
-      // Buffer thinking deltas into sentence-ish chunks; per-token events
-      // would flood the SSE channel for no readability gain.
-      let thinkingBuffer = "";
+  // One downgrade, at most. The grammar is compiled during request validation,
+  // so a rejection lands before any tokens are generated and before anything
+  // has been yielded to the analyst — re-running costs nothing and shows
+  // nothing but a warning.
+  for (;;) {
+    try {
+      for await (const stream of runner) {
+        // Buffer thinking deltas into sentence-ish chunks; per-token events
+        // would flood the SSE channel for no readability gain.
+        let thinkingBuffer = "";
 
-      for await (const event of stream) {
-        if (event.type === "content_block_delta") {
-          if (event.delta.type === "thinking_delta") {
-            thinkingBuffer += event.delta.thinking;
-            if (/[.!?]\s$|\n/.test(thinkingBuffer) && thinkingBuffer.length > 40) {
-              yield { type: "thinking", text: thinkingBuffer.trim() };
-              thinkingBuffer = "";
+        for await (const event of stream) {
+          if (event.type === "content_block_delta") {
+            if (event.delta.type === "thinking_delta") {
+              thinkingBuffer += event.delta.thinking;
+              if (/[.!?]\s$|\n/.test(thinkingBuffer) && thinkingBuffer.length > 40) {
+                yield { type: "thinking", text: thinkingBuffer.trim() };
+                thinkingBuffer = "";
+              }
+            }
+            // Text deltas are suppressed: with a structured output format the
+            // assistant's visible text is the JSON payload, which is not
+            // something an analyst wants streamed at them.
+          } else if (event.type === "content_block_start") {
+            const block = event.content_block;
+            if (block.type === "tool_use") {
+              yield {
+                type: "tool_use",
+                name: block.name,
+                summary: describeToolInput(block.name, block.input),
+              };
+            } else if (block.type === "server_tool_use") {
+              yield {
+                type: "tool_use",
+                name: block.name,
+                summary: describeToolInput(block.name, block.input),
+              };
             }
           }
-          // Text deltas are suppressed: with a structured output format the
-          // assistant's visible text is the JSON payload, which is not
-          // something an analyst wants streamed at them.
-        } else if (event.type === "content_block_start") {
-          const block = event.content_block;
-          if (block.type === "tool_use") {
-            yield {
-              type: "tool_use",
-              name: block.name,
-              summary: describeToolInput(block.name, block.input),
-            };
-          } else if (block.type === "server_tool_use") {
-            yield {
-              type: "tool_use",
-              name: block.name,
-              summary: describeToolInput(block.name, block.input),
-            };
-          }
         }
-      }
 
-      if (thinkingBuffer.trim()) {
-        yield { type: "thinking", text: thinkingBuffer.trim() };
-      }
+        if (thinkingBuffer.trim()) {
+          yield { type: "thinking", text: thinkingBuffer.trim() };
+        }
 
-      const message = await stream.finalMessage();
-      finalMessage = message;
-      inputTokens += message.usage?.input_tokens ?? 0;
-      outputTokens += message.usage?.output_tokens ?? 0;
+        const message = await stream.finalMessage();
+        finalMessage = message;
+        inputTokens += message.usage?.input_tokens ?? 0;
+        outputTokens += message.usage?.output_tokens ?? 0;
 
-      // Server-side tools can pause a long turn. The runner only continues
-      // after a *client* tool produces a result, so a paused turn would
-      // otherwise end the loop silently with a truncated answer.
-      if (message.stop_reason === "pause_turn") {
-        pauseResumes += 1;
-        if (pauseResumes > MAX_PAUSE_RESUMES) {
+        // Server-side tools can pause a long turn. The runner only continues
+        // after a *client* tool produces a result, so a paused turn would
+        // otherwise end the loop silently with a truncated answer.
+        if (message.stop_reason === "pause_turn") {
+          pauseResumes += 1;
+          if (pauseResumes > MAX_PAUSE_RESUMES) {
+            yield {
+              type: "warning",
+              message: `Run paused ${pauseResumes} times and was stopped. The answer may be incomplete.`,
+            };
+            break;
+          }
+          yield {
+            type: "status",
+            message: "Resuming after a paused research step…",
+          };
+          runner.pushMessages({ role: "assistant", content: message.content });
+        }
+
+        if (message.stop_reason === "refusal") {
+          yield {
+            type: "error",
+            message:
+              "The model declined this request. If the product is dual-use or " +
+              "security-related, rephrase around its physical characteristics.",
+          };
+          return;
+        }
+
+        if (message.stop_reason === "max_tokens") {
           yield {
             type: "warning",
-            message: `Run paused ${pauseResumes} times and was stopped. The answer may be incomplete.`,
+            message:
+              "The response hit the output token limit and may be truncated.",
           };
-          break;
         }
-        yield {
-          type: "status",
-          message: "Resuming after a paused research step…",
-        };
-        runner.pushMessages({ role: "assistant", content: message.content });
       }
-
-      if (message.stop_reason === "refusal") {
-        yield {
-          type: "error",
-          message:
-            "The model declined this request. If the product is dual-use or " +
-            "security-related, rephrase around its physical characteristics.",
-        };
-        return;
-      }
-
-      if (message.stop_reason === "max_tokens") {
+      break;
+    } catch (error) {
+      if (structuredOutput && finalMessage === null && isGrammarTooLarge(error)) {
+        structuredOutput = false;
+        inputTokens = 0;
+        outputTokens = 0;
+        pauseResumes = 0;
         yield {
           type: "warning",
           message:
-            "The response hit the output token limit and may be truncated.",
+            "The API rejected the enforced output schema as too large to " +
+            "compile. Re-running with the shape requested in the prompt and " +
+            "validated on return — the determination is unchanged, but a " +
+            "malformed answer now surfaces as an error instead of being " +
+            "impossible.",
         };
+        runner = buildRunner(false);
+        if (input.signal) {
+          runner.setRequestOptions({ signal: input.signal });
+        }
+        continue;
       }
+      yield {
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The classification run failed.",
+      };
+      return;
     }
-  } catch (error) {
-    yield {
-      type: "error",
-      message:
-        error instanceof Error
-          ? error.message
-          : "The classification run failed.",
-    };
-    return;
   }
 
   if (!finalMessage) {
@@ -353,6 +421,33 @@ export async function* classify(
 // Parsing
 // ---------------------------------------------------------------------------
 
+/**
+ * Pull the JSON object out of the model's final message.
+ *
+ * Under `output_config.format` the text *is* the object and this returns it
+ * untouched. Under the prompt-only fallback nothing enforces that, so the two
+ * things a model actually does — wrap the object in a ```json fence, or add a
+ * sentence around it — are handled here rather than failing the run. Anything
+ * beyond that is a genuine malformation and should surface as one.
+ */
+export function extractJsonObject(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{")) return trimmed;
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    const inner = fenced[1].trim();
+    if (inner.startsWith("{")) return inner;
+  }
+
+  // Fall back to the outermost brace span.
+  const first = trimmed.indexOf("{");
+  const last = trimmed.lastIndexOf("}");
+  if (first !== -1 && last > first) return trimmed.slice(first, last + 1);
+
+  return trimmed;
+}
+
 function parseResult(
   message: BetaMessage,
   mode: AnalysisMode,
@@ -373,7 +468,7 @@ function parseResult(
 
   let json: unknown;
   try {
-    json = JSON.parse(text);
+    json = JSON.parse(extractJsonObject(text));
   } catch {
     throw new ClassificationError(
       "The model's final answer was not valid JSON.",

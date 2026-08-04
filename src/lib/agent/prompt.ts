@@ -249,6 +249,36 @@ export function buildSystemPrompt(mode: AnalysisMode): string {
   }`;
 }
 
+/**
+ * The output shape, stated in the prompt instead of enforced by the API.
+ *
+ * Normally `output_config.format` compiles the schema into a decoding grammar
+ * and conformance is guaranteed. That grammar spans the output schema *and*
+ * every tool schema in the request, and the API rejects the whole request when
+ * the combination compiles too large — a limit Anthropic does not publish, so
+ * there is no size to design against. When that rejection happens the run falls
+ * back to this: the same schema, asked for rather than enforced, then parsed
+ * and validated against the identical Zod contract on the way back in.
+ *
+ * The guarantee that is lost is *shape on the first attempt*, and the app
+ * already handles a shape failure — `parseResult` validates and reports. The
+ * guarantee that never depended on the grammar is the one that matters:
+ * `verifyAgainstTariff` checks every code against the snapshot, so a fabricated
+ * number is caught by the tariff, not by the JSON schema.
+ */
+export function buildOutputContract(schema: unknown): string {
+  return [
+    "## Final answer format",
+    "",
+    "Your final message must be a single JSON object and nothing else — no",
+    "prose before or after it, no Markdown code fence. It must validate against",
+    "this JSON Schema exactly. Every property is required; where a value does",
+    "not apply, emit `null` rather than omitting the key.",
+    "",
+    JSON.stringify(schema, null, 2),
+  ].join("\n");
+}
+
 export interface UserTurnInput {
   mode: AnalysisMode;
   input: string;
