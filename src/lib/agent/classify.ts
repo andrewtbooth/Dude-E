@@ -259,6 +259,7 @@ export async function* classify(
   let outputTokens = 0;
   let pauseResumes = 0;
   let structuredOutput = true;
+  let iterations = 0;
 
   // One downgrade, at most. The grammar is compiled during request validation,
   // so a rejection lands before any tokens are generated and before anything
@@ -267,6 +268,7 @@ export async function* classify(
   for (;;) {
     try {
       for await (const stream of runner) {
+        iterations += 1;
         // Buffer thinking deltas into sentence-ish chunks; per-token events
         // would flood the SSE channel for no readability gain.
         let thinkingBuffer = "";
@@ -405,6 +407,35 @@ export async function* classify(
     yield { type: "error", message: "The model returned no response." };
     return;
   }
+
+  // The tool runner stops at `max_iterations` without saying so: it simply
+  // stops yielding, and the last message is whatever the model was in the
+  // middle of. A turn that ends still asking for a tool is that case, and it
+  // is worth naming — the alternative is a confusing "no final answer" from
+  // the parser, several minutes and a real amount of money after the run
+  // could have been recognised as doomed.
+  if (finalMessage.stop_reason === "tool_use") {
+    const elapsedMin = Math.round((Date.now() - startedAt) / 60_000);
+    yield {
+      type: "error",
+      message:
+        `The analysis was still working after ${iterations} tool steps ` +
+        `(${elapsedMin} min) and hit its ${MAX_TOOL_ITERATIONS}-step ceiling ` +
+        `before reaching a determination. Nothing was saved. This usually ` +
+        `means the input sent it hunting — a part number it could not pin ` +
+        `down, or a product spanning several chapters. Try again with the ` +
+        `product described directly rather than by part number, or narrow ` +
+        `the description.`,
+    };
+    return;
+  }
+
+  console.log(
+    `[classify] finished: ${iterations} tool step(s), ` +
+      `${Math.round((Date.now() - startedAt) / 1000)}s, ` +
+      `stop_reason=${finalMessage.stop_reason}, ` +
+      `structuredOutput=${structuredOutput}`,
+  );
 
   yield { type: "status", message: "Verifying codes against the tariff…" };
 
