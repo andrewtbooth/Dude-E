@@ -20,10 +20,15 @@ WORKDIR /app
 
 # --- build -----------------------------------------------------------------
 FROM base AS build
-ENV NODE_ENV=development
+# NODE_ENV stays "production", inherited from base. The build needs devDeps
+# (tailwind, postcss, the type packages), but the way to get them is
+# `--include=dev`, *not* NODE_ENV=development: building with a non-production
+# NODE_ENV makes Next resolve React's development runtime while prerendering
+# against the production one, and the built-in /_global-error and /_not-found
+# pages then fail with "Cannot read properties of null (reading 'useContext')".
 COPY package.json package-lock.json prisma.config.ts ./
 COPY prisma ./prisma
-RUN npm ci
+RUN npm ci --include=dev
 COPY . .
 RUN npx prisma generate && npx next build
 

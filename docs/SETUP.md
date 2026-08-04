@@ -30,9 +30,9 @@ see [Cost](#cost) below, and set a spending cap.
 1. Go to **fly.io** and sign up. Add a payment method when asked.
 
 2. **Create the app.** In the dashboard, create a new app named exactly
-   **`dude-e-tariff`**. Fly app names are unique across all its customers, so
-   if that is taken, pick something like `dude-e-tariff-yourinitials` and
-   remember it — you will type it into the workflow later.
+   **`dude-e`**. Fly app names are unique across all its customers, so if that
+   is taken, pick something like `dude-e-yourinitials` and remember it — you
+   will type it into the workflow later.
 
 3. **Add the storage.** Open the app, find **Volumes**, and create one:
    - name: `dude_e_data`
@@ -95,8 +95,8 @@ somewhere first.
 2. Choose **Deploy** in the left sidebar.
 3. Tap **Run workflow**. Leave *Download the current tariff* ticked — the
    first run needs it.
-4. If you named the Fly app anything other than `dude-e-tariff`, type that
-   name into the **Fly app name** box.
+4. If you named the Fly app anything other than `dude-e`, type that name into
+   the **Fly app name** box.
 5. Tap the green **Run workflow** button.
 
 Now wait. It takes **10 to 15 minutes** the first time. You can close the page;
@@ -107,7 +107,7 @@ needed. For a minute or two after deploying, the site will load but say it has
 no tariff data — that is the download in progress, and it clears on its own.
 
 Tap into the run to watch. When it finishes, the summary shows your web
-address, something like `https://dude-e-tariff.fly.dev`.
+address, something like `https://dude-e.fly.dev`.
 
 Open it, enter your name and work email, and you are in.
 
@@ -170,6 +170,13 @@ common ones:
 | `ANTHROPIC_API_KEY is not set` | Step 3 was missed, or the name has a typo. |
 | `Error: Not authorized` | The Fly token is wrong or expired. Make a new one and update the secret. |
 | `did not answer its health check` | It deployed but did not start. Re-run the workflow; if it repeats, send me the log. |
+| `Cannot read properties of null (reading 'useContext')` | An old copy of the `Dockerfile` that builds with `NODE_ENV=development`. Take the current one from the repository. |
+
+**You deployed from Fly's own web interface instead of the workflow.** Fly
+generates its own `fly.toml` with `internal_port = 8080`, but this app listens
+on **3000**. Change that line to `internal_port = 3000` or every health check
+fails even though the build succeeded. The `fly.toml` in this repository
+already has the right value — the workflow uses it.
 
 **The site loads but says "No HTSUS data".** For the first couple of minutes
 after a deploy this is normal — the app is downloading the tariff and will

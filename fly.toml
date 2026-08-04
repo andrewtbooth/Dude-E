@@ -6,10 +6,13 @@
 # on disk. Platforms that cap request duration or hand you an ephemeral
 # filesystem require reworking the app rather than configuring it.
 #
-# Rename this app before the first deploy.
+# The app name must match the app created in the Fly dashboard, and
+# `internal_port` below must match the PORT the container listens on (3000,
+# set in the Dockerfile). Fly's own generated fly.toml defaults to 8080; left
+# unchanged that mismatch passes the build and then fails every health check.
 
-app = "dude-e-tariff"
-primary_region = "iad"
+app = "dude-e"
+primary_region = "ewr"
 
 [build]
   dockerfile = "Dockerfile"
