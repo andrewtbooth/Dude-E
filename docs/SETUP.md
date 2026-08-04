@@ -158,6 +158,36 @@ Two separate bills:
 
 The app also limits itself to 10 analyses per person per 15 minutes.
 
+### Spending less while you are still testing
+
+Most of that per-analysis cost is reasoning depth, and depth is one setting.
+In the Fly dashboard, under **Secrets**, add:
+
+| Name | Value |
+|---|---|
+| `CLASSIFIER_EFFORT` | `low`, `medium`, `high`, `xhigh` or `max` |
+
+Saving it restarts the app; no redeploy, no code change. Delete it to go back
+to the default (`max`). An invalid value fails loudly at startup rather than
+silently picking something for you.
+
+Which to use depends on what you are testing:
+
+| You are checking | Use | Why |
+|---|---|---|
+| Does the app work at all — sign-in, progress log, PDF export | `low` | Cheapest, fastest, exercises the same plumbing |
+| Whether a classification is any good | `high` or `max` | Depth is the thing being judged; anything less measures the setting, not the tool |
+
+> **One trap worth knowing.** Lower effort also means *fewer tool calls*. A
+> `low` run on a plain product description may never reach web search at all —
+> so it can pass while leaving a chunk of the pipeline untouched, and look like
+> proof of something it did not test. If you are specifically checking the
+> research path, use a **part number** (which forces the research step) rather
+> than turning the depth down and hoping.
+
+Actual token usage is recorded per analysis in the database, so real spend can
+be measured rather than estimated once you have a few runs behind you.
+
 ---
 
 ## If something goes wrong

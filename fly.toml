@@ -28,6 +28,16 @@ primary_region = "iad"
   # host, user or password in it. It belongs in [env] where it is readable.
   DATABASE_URL = "file:/data/dude-e.db"
   PORT = "3000"
+  # Reasoning depth, and the main spend lever: low | medium | high | xhigh | max.
+  # Unset means `max` — correctness over cost, which is right for real
+  # determinations and expensive for shaking out plumbing. Override it here, or
+  # set CLASSIFIER_EFFORT in the Fly dashboard for a change that takes effect on
+  # restart without a redeploy.
+  #
+  # Note when trialling: lower effort also means fewer tool calls. A `low` run on
+  # a plain description may never reach web search, so it exercises less of the
+  # pipeline than it appears to — see docs/SETUP.md.
+  # CLASSIFIER_EFFORT = "medium"
 
 # The snapshot is ~60 MB and the audit database grows slowly. 3 GB is generous
 # and leaves room to keep a previous revision alongside the current one.
