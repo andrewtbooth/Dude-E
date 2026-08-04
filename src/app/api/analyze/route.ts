@@ -156,13 +156,45 @@ export async function POST(request: Request) {
       });
 
   const encoder = new TextEncoder();
+  const startedAt = Date.now();
+
+  /**
+   * Set when the consumer goes away.
+   *
+   * A run takes minutes, and the browser can disappear at any point in them —
+   * a closed tab, a sleeping laptop, a proxy giving up. When it does, the
+   * stream is cancelled and the controller closes, but `classify` keeps going,
+   * because it is driven by this loop rather than by the socket. Every
+   * subsequent `send` then throws "Invalid state: Controller is already
+   * closed" — which lands in the catch below, whose own `send` throws the same
+   * thing again, and *that* is the error that reaches the analyst and the
+   * database. The genuine failure, if there was one, is gone.
+   *
+   * So writes become no-ops once the consumer is gone. The run itself is
+   * deliberately *not* cancelled here: by the time a browser drops, most of the
+   * cost of an analysis has already been incurred, and abandoning it converts
+   * money already spent into nothing at all. Letting it finish means the result
+   * still lands in the database and shows up under History, so a closed tab
+   * costs the analyst their place in the progress log rather than their
+   * analysis. (If the platform tears the request down it will abort via
+   * `request.signal` regardless — that part is not ours to decide.)
+   */
+  let consumerGone = false;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (payload: unknown) => {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-        );
+        if (consumerGone) return;
+        try {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+          );
+        } catch {
+          // Raced with a cancel between the check and the write. The consumer
+          // is gone either way; losing this event is the correct outcome and
+          // must not become the run's reported failure.
+          consumerGone = true;
+        }
       };
 
       send({ type: "analysis_started", analysisId: analysis.id });
@@ -174,6 +206,16 @@ export async function POST(request: Request) {
           refinements,
           signal: request.signal,
         })) {
+          // One line per tool call and status change. A run takes minutes and
+          // can fail deep inside it; without this the only evidence of how far
+          // it got is whatever reached the browser, which is precisely what is
+          // lost when the browser is the thing that went away.
+          if (event.type === "tool_use") {
+            console.log(`[analyze] ${analysis.id} tool ${event.name}`);
+          } else if (event.type === "status" || event.type === "warning") {
+            console.log(`[analyze] ${analysis.id} ${event.type}: ${event.message}`);
+          }
+
           if (event.type === "done") {
             const { run } = event;
             await prisma.analysis.update({
@@ -190,6 +232,11 @@ export async function POST(request: Request) {
                 outputTokens: run.usage.outputTokens,
               },
             });
+            console.log(
+              `[analyze] ${analysis.id} complete in ${run.durationMs}ms — ` +
+                `${run.result.candidates.length} candidate(s), ` +
+                `${run.usage.inputTokens} in / ${run.usage.outputTokens} out`,
+            );
             send({ type: "done", analysisId: analysis.id, run });
           } else if (event.type === "error") {
             await prisma.analysis.update({
@@ -208,6 +255,15 @@ export async function POST(request: Request) {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "The analysis failed.";
+
+        // Server-side too: when the consumer has gone there is nobody left to
+        // show this to, and the row below is the only record of what happened.
+        console.error(
+          `[analyze] ${analysis.id} failed after ` +
+            `${Date.now() - startedAt}ms: ${message}`,
+          error,
+        );
+
         await prisma.analysis
           .update({
             where: { id: analysis.id },
@@ -218,8 +274,23 @@ export async function POST(request: Request) {
           });
         send({ type: "error", message });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // Already closed by a cancel. Nothing to do, and throwing here would
+          // replace the real error with a second controller complaint.
+        }
       }
+    },
+
+    cancel() {
+      // The consumer went away. Stop writing to a stream nobody is reading,
+      // but let the run finish so its result is still recorded.
+      consumerGone = true;
+      console.warn(
+        `[analyze] ${analysis.id} client disconnected after ` +
+          `${Date.now() - startedAt}ms; run continues so the result is kept`,
+      );
     },
   });
 
