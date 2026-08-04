@@ -16,7 +16,8 @@
     "dev:seed": "tsx scripts/dev/seed-fixture-htsus.ts",
     "dev:pdf": "tsx scripts/dev/render-sample-pdf.tsx",
     "import:htsus": "tsx scripts/import-htsus.ts",
-    "eval": "tsx scripts/eval.ts"
+    "eval": "tsx scripts/eval.ts",
+    "try": "tsx scripts/dev/try-classify.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
