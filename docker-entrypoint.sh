@@ -18,7 +18,17 @@
 set -e
 
 echo "==> applying database schema"
-npx prisma db push --skip-generate --accept-data-loss
+# No --skip-generate: Prisma 7 removed the flag, because `db push` no longer
+# triggers a client generation for it to skip. Passing it exits 1, and under
+# `set -e` that kills the container before it ever serves — which looks like a
+# machine that boots and dies rather than a configuration error. See the flag
+# regression test in src/lib/deploy/entrypoint.test.ts.
+if ! npx prisma db push --accept-data-loss; then
+  echo "==> FATAL: could not apply the database schema."
+  echo "    Refusing to serve: /api/health does not touch the database, so a"
+  echo "    schema-less app would report healthy while failing every request."
+  exit 1
+fi
 
 if [ -z "$(ls -A "${HTSUS_DATA_DIR}" 2>/dev/null)" ]; then
   echo "==> no tariff snapshot found at ${HTSUS_DATA_DIR}"
