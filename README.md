@@ -73,7 +73,7 @@ General Notes and every Section and Chapter Note, and the complete Schedule B
 export schedule from Census. It writes a snapshot directory and a manifest:
 
 ```
-data/htsus/2026-hts-revision-14/
+data/htsus/2026-hts-revision-15/
   htsus.db          SQLite + FTS5 index
   manifest.json     revision label, publication date, retrieval time,
                     SHA-256 of the raw payloads, counts, warnings
@@ -122,7 +122,7 @@ Two behaviours worth knowing:
 - **The script will not guess the revision label.** If it cannot discover the
   active revision from USITC it aborts with instructions rather than stamping
   determinations with the wrong edition. Override explicitly when needed:
-  `npm run sync:htsus -- --revision "2026 HTS Revision 14"`.
+  `npm run sync:htsus -- --revision "2026 HTS Revision 15"`.
 - **Per-source failures degrade to warnings.** A snapshot missing Schedule B is
   still useful. Warnings are recorded in the manifest and shown in the masthead
   and on the analyze page, so an analyst can see what is incomplete before

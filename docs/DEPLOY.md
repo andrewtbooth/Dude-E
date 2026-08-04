@@ -3,12 +3,12 @@
 Standalone deployment for trialling functionality. Written for Fly.io, with
 notes for Render and Railway at the end.
 
-> **This configuration has no access control.** Sign-in records who made a
-> determination; it gates nothing. Anyone who reaches the URL can run analyses
-> against your Anthropic budget and read every part number in
-> `/history?scope=all`. That is a deliberate choice for a trial and it is the
-> right thing to revisit before real product data goes through it — see
-> [Exposure](#exposure).
+> **This configuration has no access control, by design.** Sign-in records who
+> made a determination; it gates nothing. That is the right trade for a
+> capability trial running on non-production data, which is what this is for.
+> The one line not to cross: no real customer part numbers or unreleased
+> product descriptions until the app moves into a controlled environment. See
+> [Exposure](#exposure) for what is and is not protected in the meantime.
 
 ---
 
@@ -120,7 +120,8 @@ volume snapshots are a useful second line but are retained for days, not years.
 
 ## Exposure
 
-With a public URL and no gate, the controls that exist are:
+The trial runs on a public URL with no gate and non-production data, so the
+only thing genuinely at risk is spend. The controls that exist are:
 
 - **Rate limiting** on `/api/analyze` — 10 analyses per client per 15 minutes,
   tunable via `ANALYZE_RATE_LIMIT` and `ANALYZE_RATE_WINDOW_MINUTES`. This is a
@@ -132,13 +133,13 @@ With a public URL and no gate, the controls that exist are:
   bound.
 
 What is *not* protected: the URL itself, the history view listing every
-analysed part number and description, and the ability to export any
-determination PDF by id. If the goods being classified are covered by supplier
-NDAs, put the app behind Cloudflare Access, Tailscale, or your VPN before the
-trial widens. That is a platform change and needs no code.
+analysed input, and the ability to export any determination PDF by id. None of
+that matters while the inputs are test goods. All three become real the moment
+production data is entered, and closing them is a platform change needing no
+code — Cloudflare Access, Tailscale, or your VPN in front.
 
-Lowering `CLASSIFIER_EFFORT` to `high` reduces both cost and exposure per
-request — measure the accuracy cost first with `npm run eval -- --effort high`.
+Lowering `CLASSIFIER_EFFORT` to `high` cuts cost per request materially;
+measure what it costs in accuracy first with `npm run eval -- --effort high`.
 
 ---
 
@@ -167,14 +168,26 @@ Caddy handles `text/event-stream` correctly without configuration.
 
 ## What was verified, and what was not
 
-Verified here: the production build serves, `/api/health` returns live snapshot
-data, the degraded path returns 200 with `status: "degraded"`, the entrypoint
-is valid shell, the full test suite passes, and nothing shipped at runtime
-imports a dev-only package.
+The container's runtime stage was simulated directly — a clean
+`npm ci --omit=dev` against the exact file set the Dockerfile copies — and in
+that pruned tree:
 
-**Not verified: the container image build.** The environment this was written
-in has the Docker CLI but no daemon, so `docker build` could not be run. Build
-it once locally before the first deploy —
+- `better-sqlite3` compiled and loaded, and `prisma generate` produced a client;
+- `next start` served the splash page and `/api/health` with live snapshot data;
+- `/api/analyze` correctly returned 401 without a session;
+- a real `npm run sync:htsus -- --chapters 96` completed: network fetch, PDF
+  extraction, Chapter 99 coverage parse, SQLite write, partial labelling.
+
+That covers the failure this image was most likely to have — a runtime tree
+missing something the app or the sync needs, which is exactly why `tsx`,
+`prisma` and `typescript` are dependencies rather than devDependencies.
+
+Also verified: the degraded health path returns 200 with `status: "degraded"`,
+the entrypoint is valid shell, nothing shipped at runtime imports a dev-only
+package, and the full test suite passes.
+
+**Still not verified: `docker build` itself.** The environment this was written
+in has the Docker CLI but no daemon. Run it once before the first deploy:
 
 ```bash
 docker build -t dude-e:trial .
@@ -182,5 +195,13 @@ docker run --rm -p 3000:3000 -v dude-e-data:/data \
   -e ANTHROPIC_API_KEY=... -e SESSION_SECRET=... dude-e:trial
 ```
 
-— and expect the native `better-sqlite3` compile to be the step that fails if
-anything does.
+What remains untested is Docker's own layer mechanics, not the dependency set.
+
+### Revisions really do ship this often
+
+While writing this, USITC published **2026 HTS Revision 15** — days after
+Revision 14. Re-running the sync picked it up automatically, wrote it to its
+own directory beside the old one, and the app switched to it without a restart
+or a config change. That is the version-stamp machinery working, and it is also
+the reason the weekly sync is not optional: a snapshot left alone quietly
+becomes a superseded edition stamped on real determinations.
