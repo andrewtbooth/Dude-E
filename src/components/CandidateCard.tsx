@@ -53,27 +53,27 @@ export function CandidateCard({
           <Breadcrumb path={candidate.description_path} />
 
           <p className="mt-2.5 text-sm leading-relaxed text-[var(--text-secondary)]">
-            {candidate.justification}
+            {candidate.reasoning.justification}
           </p>
 
-          {candidate.why_not_selected && (
+          {candidate.reasoning.why_not_selected && (
             <p className="mt-2 border-l-2 border-[var(--warn)] pl-3 text-sm text-[var(--text-secondary)]">
               <span className="font-medium text-[var(--warn)]">
                 Why it loses:{" "}
               </span>
-              {candidate.why_not_selected}
+              {candidate.reasoning.why_not_selected}
             </p>
           )}
 
           <DutyRow candidate={candidate} />
 
-          {candidate.chapter_99.length > 0 && (
+          {candidate.tariff.chapter_99.length > 0 && (
             <div className="mt-3 rounded-md bg-[var(--warn-subtle)] px-3 py-2">
               <p className="text-xs font-medium text-[var(--warn)]">
                 Additional duties may apply
               </p>
               <ul className="mt-1 space-y-1">
-                {candidate.chapter_99.map((entry) => (
+                {candidate.tariff.chapter_99.map((entry) => (
                   <li
                     key={entry.hts_code}
                     className="text-xs text-[var(--text-secondary)]"
@@ -104,8 +104,8 @@ export function CandidateCard({
             className="mt-3 text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
           >
             {showReasoning ? "Hide" : "Show"} GRI analysis
-            {candidate.notes_applied.length > 0 &&
-              `, notes (${candidate.notes_applied.length})`}
+            {candidate.reasoning.notes_applied.length > 0 &&
+              `, notes (${candidate.reasoning.notes_applied.length})`}
             {candidate.cross_rulings.length > 0 &&
               `, rulings (${candidate.cross_rulings.length})`}
           </button>
@@ -168,17 +168,17 @@ function ConfidenceBadge({ value }: { value: number }) {
 function DutyRow({ candidate }: { candidate: Candidate }) {
   return (
     <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-xs">
-      <Duty label="General" value={candidate.duty.general || "—"} />
-      <Duty label="Special" value={candidate.duty.special || "—"} />
-      <Duty label="Column 2" value={candidate.duty.column_2 || "—"} />
+      <Duty label="General" value={candidate.tariff.duty.general || "—"} />
+      <Duty label="Special" value={candidate.tariff.duty.special || "—"} />
+      <Duty label="Column 2" value={candidate.tariff.duty.column_2 || "—"} />
       <Duty
         label="Unit"
-        value={candidate.unit_of_quantity.join(", ") || "—"}
+        value={candidate.tariff.unit_of_quantity.join(", ") || "—"}
       />
-      {candidate.duty.rates_published_on && (
+      {candidate.tariff.duty.rates_published_on && (
         <div className="basis-full text-[11px] text-[var(--text-muted)]">
           Rates published on{" "}
-          <span className="hts-code">{candidate.duty.rates_published_on}</span>{" "}
+          <span className="hts-code">{candidate.tariff.duty.rates_published_on}</span>{" "}
           and inherited by this statistical line.
         </div>
       )}
@@ -197,7 +197,7 @@ function Duty({ label, value }: { label: string; value: string }) {
   );
 }
 
-const GRI_LABELS: [keyof Candidate["gri_analysis"], string][] = [
+const GRI_LABELS: [keyof Candidate["reasoning"]["gri_analysis"], string][] = [
   ["gri_1", "GRI 1 — heading terms and relative notes"],
   ["gri_2", "GRI 2 — incomplete articles, mixtures"],
   ["gri_3", "GRI 3 — specificity, essential character, last in order"],
@@ -215,7 +215,7 @@ function GriAnalysis({ candidate }: { candidate: Candidate }) {
       </h4>
       <dl className="mt-2 space-y-2.5">
         {GRI_LABELS.map(([key, label]) => {
-          const value = candidate.gri_analysis[key];
+          const value = candidate.reasoning.gri_analysis[key];
           return (
             <div key={key}>
               <dt className="text-xs font-medium text-[var(--text-primary)]">
@@ -239,14 +239,14 @@ function GriAnalysis({ candidate }: { candidate: Candidate }) {
 }
 
 function NotesApplied({ candidate }: { candidate: Candidate }) {
-  if (candidate.notes_applied.length === 0) return null;
+  if (candidate.reasoning.notes_applied.length === 0) return null;
   return (
     <div>
       <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
         Section and Chapter notes relied on
       </h4>
       <ul className="mt-2 space-y-1.5">
-        {candidate.notes_applied.map((note, index) => (
+        {candidate.reasoning.notes_applied.map((note, index) => (
           <li key={index} className="text-xs text-[var(--text-secondary)]">
             <span className="font-medium text-[var(--text-primary)]">
               {note.reference}

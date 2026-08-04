@@ -137,7 +137,7 @@ classify on stated assumptions and put them in
 
 Return the plausible candidates ranked, not just the winner. For a genuinely
 contestable good, four to six is right; for an unambiguous one, fewer is
-honest. Every candidate below rank 1 needs a \`why_not_selected\` that names
+honest. Every candidate below rank 1 needs a \`reasoning.why_not_selected\` that names
 the specific reason it loses — the note that excludes it, the more specific
 heading that beats it, the essential-character finding that goes the other
 way. "Less appropriate" is not a reason. This text is printed in the exported

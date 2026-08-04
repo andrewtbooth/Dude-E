@@ -148,6 +148,40 @@ export const crossRulingSchema = z.object({
     .describe("Why it does or does not control the good under analysis."),
 });
 
+/**
+ * Everything that argues *for* (or against) the code, grouped.
+ *
+ * The grouping is not cosmetic. Structured outputs compile the schema into a
+ * decoding grammar, and an object's cost in that grammar grows with how many
+ * properties sit side by side on it — a candidate carrying all thirteen fields
+ * flat was ~89% of the whole schema's grammar surface and pushed the request
+ * over the API's limit ("the compiled grammar is too large"). Nesting is far
+ * cheaper than width, so the fields are gathered into the two groups a reader
+ * would draw anyway: the argument, and the tariff treatment.
+ */
+export const candidateReasoningSchema = z.object({
+  gri_analysis: griAnalysisSchema,
+  notes_applied: z.array(noteAppliedSchema),
+  justification: z
+    .string()
+    .describe(
+      "The argument for this code in plain prose, readable by someone who was not part of the analysis.",
+    ),
+  why_not_selected: z
+    .string()
+    .nullable()
+    .describe(
+      "For candidates below rank 1: the specific reason this one loses. Null for rank 1. This text is what appears in the exported determination's alternates section, so make it stand alone.",
+    ),
+});
+
+/** What the importer actually owes, and in what units they declare it. */
+export const candidateTariffSchema = z.object({
+  duty: dutySchema,
+  unit_of_quantity: z.array(z.string()),
+  chapter_99: z.array(chapter99Schema),
+});
+
 export const candidateSchema = z.object({
   rank: z.number().int().describe("1 is the best-supported candidate."),
   hts_code: z
@@ -161,28 +195,14 @@ export const candidateSchema = z.object({
   confidence: z
     .number()
     .describe("0 to 1. Calibrated: reserve >0.9 for codes you would defend to CBP unaided."),
-  gri_analysis: griAnalysisSchema,
-  notes_applied: z.array(noteAppliedSchema),
-  justification: z
-    .string()
-    .describe(
-      "The argument for this code in plain prose, readable by someone who was not part of the analysis.",
-    ),
-  duty: dutySchema,
-  unit_of_quantity: z.array(z.string()),
-  chapter_99: z.array(chapter99Schema),
+  reasoning: candidateReasoningSchema,
+  tariff: candidateTariffSchema,
   schedule_b: scheduleBSchema
     .nullable()
     .describe(
       "The export determination, or null when no export code could be established. Null is an acceptable answer; a guessed code is not.",
     ),
   cross_rulings: z.array(crossRulingSchema),
-  why_not_selected: z
-    .string()
-    .nullable()
-    .describe(
-      "For candidates below rank 1: the specific reason this one loses. Null for rank 1. This text is what appears in the exported determination's alternates section, so make it stand alone.",
-    ),
 });
 
 export const clarifyingQuestionSchema = z.object({
@@ -257,7 +277,30 @@ export const classificationResultSchema = z.object({
     ),
 });
 
+/**
+ * The description-mode contract.
+ *
+ * `researched_product` describes what web research turned up about a part
+ * number, so in description mode it is null by construction — the analyst
+ * supplied the product, nothing was researched. Sending its shape anyway costs
+ * roughly a quarter of the schema's grammar for a field that can only come
+ * back empty. `parseFinalAnswer` restores the null after parsing, so the rest
+ * of the app still sees one uniform `ClassificationResult`.
+ */
+export const descriptionResultSchema = classificationResultSchema.omit({
+  researched_product: true,
+});
+
+/** The schema to constrain a run with, given how the analyst started it. */
+export function resultSchemaFor(mode: AnalysisMode) {
+  return mode === "PART_NUMBER"
+    ? classificationResultSchema
+    : descriptionResultSchema;
+}
+
 export type GriAnalysis = z.infer<typeof griAnalysisSchema>;
+export type CandidateReasoning = z.infer<typeof candidateReasoningSchema>;
+export type CandidateTariff = z.infer<typeof candidateTariffSchema>;
 export type NoteApplied = z.infer<typeof noteAppliedSchema>;
 export type Duty = z.infer<typeof dutySchema>;
 export type Chapter99 = z.infer<typeof chapter99Schema>;

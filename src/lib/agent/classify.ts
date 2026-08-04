@@ -18,7 +18,7 @@ import {
   type Candidate,
   type ClassificationResult,
   type Refinement,
-  classificationResultSchema,
+  resultSchemaFor,
 } from "./schema";
 import { classificationTools } from "./tools";
 
@@ -143,7 +143,7 @@ export async function* classify(
     thinking: { type: "adaptive", display: "summarized" },
     output_config: {
       effort,
-      format: betaZodOutputFormat(classificationResultSchema),
+      format: betaZodOutputFormat(resultSchemaFor(input.mode)),
     },
     system: [
       {
@@ -303,7 +303,7 @@ export async function* classify(
 
   let parsed: ClassificationResult;
   try {
-    parsed = parseResult(finalMessage);
+    parsed = parseResult(finalMessage, input.mode);
   } catch (error) {
     yield {
       type: "error",
@@ -353,7 +353,10 @@ export async function* classify(
 // Parsing
 // ---------------------------------------------------------------------------
 
-function parseResult(message: BetaMessage): ClassificationResult {
+function parseResult(
+  message: BetaMessage,
+  mode: AnalysisMode,
+): ClassificationResult {
   const text = message.content
     .filter((block): block is { type: "text"; text: string } & typeof block =>
       block.type === "text",
@@ -377,7 +380,7 @@ function parseResult(message: BetaMessage): ClassificationResult {
     );
   }
 
-  const validated = classificationResultSchema.safeParse(json);
+  const validated = resultSchemaFor(mode).safeParse(json);
   if (!validated.success) {
     throw new ClassificationError(
       `The model's answer did not match the expected shape: ${validated.error.issues
@@ -386,7 +389,9 @@ function parseResult(message: BetaMessage): ClassificationResult {
         .join("; ")}`,
     );
   }
-  return validated.data;
+  // Description mode omits `researched_product` from the schema entirely —
+  // nothing was researched — so restore the null the rest of the app expects.
+  return { researched_product: null, ...validated.data };
 }
 
 // ---------------------------------------------------------------------------
@@ -433,10 +438,10 @@ function verifyChapter99(
     rejectedCodes: { code: string; reason: string }[];
     corrections: CodeCorrection[];
   },
-): Candidate["chapter_99"] {
-  const kept: Candidate["chapter_99"] = [];
+): Candidate["tariff"]["chapter_99"] {
+  const kept: Candidate["tariff"]["chapter_99"] = [];
 
-  for (const entry of candidate.chapter_99) {
+  for (const entry of candidate.tariff.chapter_99) {
     const line = lookupExact(entry.hts_code);
     if (!line) {
       sink.rejectedCodes.push({
@@ -629,11 +634,11 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         indexValue: authoritativePath.join(" > "),
       });
     }
-    if (candidate.duty.general !== line.general) {
+    if (candidate.tariff.duty.general !== line.general) {
       corrections.push({
         htsCode: line.htsNo,
         field: "duty.general",
-        modelValue: candidate.duty.general,
+        modelValue: candidate.tariff.duty.general,
         indexValue: line.general,
       });
     }
@@ -642,18 +647,20 @@ export function verifyAgainstTariff(result: ClassificationResult): {
       ...candidate,
       hts_code: line.htsNo,
       description_path: authoritativePath,
-      duty: {
-        general: line.general,
-        special: line.special,
-        column_2: line.other,
-        rates_published_on: line.ratesInheritedFrom,
+      tariff: {
+        duty: {
+          general: line.general,
+          special: line.special,
+          column_2: line.other,
+          rates_published_on: line.ratesInheritedFrom,
+        },
+        unit_of_quantity: line.units,
+        chapter_99: verifyChapter99(candidate, line.htsNo, {
+          rejectedCodes,
+          corrections,
+        }),
       },
-      unit_of_quantity: line.units,
       schedule_b: verifyScheduleB(candidate, line.htsNo, {
-        rejectedCodes,
-        corrections,
-      }),
-      chapter_99: verifyChapter99(candidate, line.htsNo, {
         rejectedCodes,
         corrections,
       }),
@@ -666,7 +673,11 @@ export function verifyAgainstTariff(result: ClassificationResult): {
   const reRanked = kept.map((candidate, index) => ({
     ...candidate,
     rank: index + 1,
-    why_not_selected: index === 0 ? null : candidate.why_not_selected,
+    reasoning: {
+      ...candidate.reasoning,
+      why_not_selected:
+        index === 0 ? null : candidate.reasoning.why_not_selected,
+    },
   }));
 
   // A null recommendation is a deliberate answer, not a missing one: the schema

@@ -86,9 +86,15 @@ describe("DeterminationDoc", () => {
           selected: {
             ...sampleSelectedCandidate(),
             cross_rulings: [],
-            chapter_99: [],
             schedule_b: null,
-            notes_applied: [],
+            reasoning: {
+              ...sampleSelectedCandidate().reasoning,
+              notes_applied: [],
+            },
+            tariff: {
+              ...sampleSelectedCandidate().tariff,
+              chapter_99: [],
+            },
           },
           subject: {
             mode: "DESCRIPTION",

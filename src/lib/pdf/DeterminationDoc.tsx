@@ -319,18 +319,18 @@ function FinalDetermination({ view }: { view: DeterminationView }) {
       </View>
 
       <View style={styles.dutyTable}>
-        <DutyCell label="GENERAL (COL. 1)" value={candidate.duty.general || "—"} />
-        <DutyCell label="SPECIAL" value={candidate.duty.special || "—"} />
-        <DutyCell label="COLUMN 2" value={candidate.duty.column_2 || "—"} />
+        <DutyCell label="GENERAL (COL. 1)" value={candidate.tariff.duty.general || "—"} />
+        <DutyCell label="SPECIAL" value={candidate.tariff.duty.special || "—"} />
+        <DutyCell label="COLUMN 2" value={candidate.tariff.duty.column_2 || "—"} />
         <DutyCell
           label="UNIT OF QUANTITY"
-          value={candidate.unit_of_quantity.join(", ") || "—"}
+          value={candidate.tariff.unit_of_quantity.join(", ") || "—"}
         />
       </View>
 
-      {candidate.duty.rates_published_on && (
+      {candidate.tariff.duty.rates_published_on && (
         <Text style={{ fontSize: 7.5, color: COLORS.muted }}>
-          Rates are published on {candidate.duty.rates_published_on} and
+          Rates are published on {candidate.tariff.duty.rates_published_on} and
           inherited by this statistical reporting number.
         </Text>
       )}
@@ -372,10 +372,10 @@ function FinalDetermination({ view }: { view: DeterminationView }) {
         </Text>
       )}
 
-      {candidate.chapter_99.length > 0 && (
+      {candidate.tariff.chapter_99.length > 0 && (
         <View style={styles.callout}>
           <Text style={styles.calloutTitle}>ADDITIONAL DUTIES MAY APPLY</Text>
-          {candidate.chapter_99.map((entry) => (
+          {candidate.tariff.chapter_99.map((entry) => (
             <Text key={entry.hts_code} style={{ fontSize: 8, marginBottom: 2 }}>
               <Text style={styles.codeInline}>{entry.hts_code}</Text> ·{" "}
               {entry.program} — {entry.additional_duty}. {entry.applies_when}
@@ -428,7 +428,7 @@ function DutyCell({ label, value }: { label: string; value: string }) {
 
 // --- 4. GRI analysis --------------------------------------------------------
 
-const GRI_ROWS: [keyof Candidate["gri_analysis"], string][] = [
+const GRI_ROWS: [keyof Candidate["reasoning"]["gri_analysis"], string][] = [
   ["gri_1", "GRI 1 — Terms of the headings and relative Section or Chapter Notes"],
   ["gri_2", "GRI 2 — Incomplete or unassembled articles; mixtures"],
   ["gri_3", "GRI 3 — Specificity, essential character, last in numerical order"],
@@ -442,10 +442,10 @@ function GriSection({ candidate }: { candidate: Candidate }) {
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>BASIS OF CLASSIFICATION</Text>
-      <Text style={styles.para}>{candidate.justification}</Text>
+      <Text style={styles.para}>{candidate.reasoning.justification}</Text>
 
       {GRI_ROWS.map(([key, label]) => {
-        const value = candidate.gri_analysis[key];
+        const value = candidate.reasoning.gri_analysis[key];
         if (!value) return null;
         return (
           <View key={key} wrap={false}>
@@ -455,10 +455,10 @@ function GriSection({ candidate }: { candidate: Candidate }) {
         );
       })}
 
-      {candidate.notes_applied.length > 0 && (
+      {candidate.reasoning.notes_applied.length > 0 && (
         <View>
           <Text style={styles.subhead}>Section and Chapter Notes relied on</Text>
-          {candidate.notes_applied.map((note, index) => (
+          {candidate.reasoning.notes_applied.map((note, index) => (
             <View key={index} style={styles.bulletRow}>
               <Text style={styles.bulletMark}>—</Text>
               <Text style={styles.bulletText}>
@@ -574,7 +574,7 @@ function AlternatesSection({ view }: { view: DeterminationView }) {
             </Text>
           </View>
           <Text style={{ marginTop: 3 }}>
-            {candidate.why_not_selected ??
+            {candidate.reasoning.why_not_selected ??
               "Ranked lower; no specific rejection rationale was recorded."}
           </Text>
         </View>

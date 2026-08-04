@@ -16,28 +16,32 @@ function candidate(rank: number, code: string): Candidate {
     hts_code: code,
     description_path: ["Heading", "Subheading", "Statistical"],
     confidence: 0.7,
-    gri_analysis: {
-      gri_1: "GRI 1 reasoning.",
-      gri_2: null,
-      gri_3: null,
-      gri_4: null,
-      gri_5: null,
-      gri_6: "GRI 6 reasoning.",
-      additional_us_rules: null,
+    reasoning: {
+      gri_analysis: {
+        gri_1: "GRI 1 reasoning.",
+        gri_2: null,
+        gri_3: null,
+        gri_4: null,
+        gri_5: null,
+        gri_6: "GRI 6 reasoning.",
+        additional_us_rules: null,
+      },
+      notes_applied: [],
+      justification: `Justification for ${code}.`,
+      why_not_selected: rank === 1 ? null : `Loses because of rank ${rank}.`,
     },
-    notes_applied: [],
-    justification: `Justification for ${code}.`,
-    duty: {
-      general: "3.4%",
-      special: "",
-      column_2: "35%",
-      rates_published_on: null,
+    tariff: {
+      duty: {
+        general: "3.4%",
+        special: "",
+        column_2: "35%",
+        rates_published_on: null,
+      },
+      unit_of_quantity: ["No."],
+      chapter_99: [],
     },
-    unit_of_quantity: ["No."],
-    chapter_99: [],
     schedule_b: null,
     cross_rulings: [],
-    why_not_selected: rank === 1 ? null : `Loses because of rank ${rank}.`,
   };
 }
 

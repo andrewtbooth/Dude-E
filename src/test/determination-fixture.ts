@@ -22,49 +22,54 @@ export function sampleSelectedCandidate(): Candidate {
       "Vacuum flasks and other vacuum vessels, complete with cases",
     ],
     confidence: 0.88,
-    gri_analysis: {
-      gri_1:
-        "Heading 9617 provides eo nomine for vacuum flasks and other vacuum vessels, complete with cases. The merchandise is a double-walled stainless steel vessel evacuated between the walls and imported complete with its outer case, so it answers the terms of the heading directly. Heading 7323, covering table, kitchen or other household articles of iron or steel, was read alongside it because the vessel is undeniably an article of stainless steel.",
-      gri_2: null,
-      gri_3:
-        "Were both headings to remain in play, GRI 3(a) would prefer the heading providing the most specific description. Heading 9617 describes the article by its defining construction and function; heading 7323 describes it only by material and general domestic use. 9617 prevails.",
-      gri_4: null,
-      gri_5:
-        "The screw cap and lid are imported with the vessel and are of a kind normally sold with it, so GRI 5(b) treats them as part of the article rather than as separate goods.",
-      gri_6:
-        "Heading 9617 breaks out at the eight-digit level between complete vessels and parts. The merchandise is a complete vessel with its case, so 9617.00.10 applies, and the single statistical breakout beneath it gives 9617.00.10.00.",
-      additional_us_rules: null,
+    reasoning: {
+        gri_analysis: {
+        gri_1:
+          "Heading 9617 provides eo nomine for vacuum flasks and other vacuum vessels, complete with cases. The merchandise is a double-walled stainless steel vessel evacuated between the walls and imported complete with its outer case, so it answers the terms of the heading directly. Heading 7323, covering table, kitchen or other household articles of iron or steel, was read alongside it because the vessel is undeniably an article of stainless steel.",
+        gri_2: null,
+        gri_3:
+          "Were both headings to remain in play, GRI 3(a) would prefer the heading providing the most specific description. Heading 9617 describes the article by its defining construction and function; heading 7323 describes it only by material and general domestic use. 9617 prevails.",
+        gri_4: null,
+        gri_5:
+          "The screw cap and lid are imported with the vessel and are of a kind normally sold with it, so GRI 5(b) treats them as part of the article rather than as separate goods.",
+        gri_6:
+          "Heading 9617 breaks out at the eight-digit level between complete vessels and parts. The merchandise is a complete vessel with its case, so 9617.00.10 applies, and the single statistical breakout beneath it gives 9617.00.10.00.",
+        additional_us_rules: null,
+      },
+      notes_applied: [
+        {
+          reference: "Section XV Note 1(k)",
+          effect:
+            "Excludes articles of Chapter 96 from Section XV. Once the merchandise answers heading 9617, this note removes heading 7323 from contention rather than leaving a GRI 3 contest to resolve.",
+        },
+        {
+          reference: "Chapter 96 Note 1",
+          effect:
+            "Reviewed for exclusions; none reaches vacuum vessels of heading 9617.",
+        },
+      ],
+      justification:
+        "A stainless steel vacuum-insulated bottle is a vacuum vessel complete with its case, which heading 9617 provides for by name. Classification is resolved at GRI 1 by the heading text read together with Section XV Note 1(k), which excludes Chapter 96 articles from the base metal section and forecloses the competing steel-article heading.",
+      why_not_selected: null,
     },
-    notes_applied: [
-      {
-        reference: "Section XV Note 1(k)",
-        effect:
-          "Excludes articles of Chapter 96 from Section XV. Once the merchandise answers heading 9617, this note removes heading 7323 from contention rather than leaving a GRI 3 contest to resolve.",
+    tariff: {
+      duty: {
+        general: "7.2%",
+        special: "Free (AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
+        column_2: "55%",
+        rates_published_on: "9617.00.10",
       },
-      {
-        reference: "Chapter 96 Note 1",
-        effect:
-          "Reviewed for exclusions; none reaches vacuum vessels of heading 9617.",
-      },
-    ],
-    justification:
-      "A stainless steel vacuum-insulated bottle is a vacuum vessel complete with its case, which heading 9617 provides for by name. Classification is resolved at GRI 1 by the heading text read together with Section XV Note 1(k), which excludes Chapter 96 articles from the base metal section and forecloses the competing steel-article heading.",
-    duty: {
-      general: "7.2%",
-      special: "Free (AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)",
-      column_2: "55%",
-      rates_published_on: "9617.00.10",
+      unit_of_quantity: ["No."],
+      chapter_99: [
+        {
+          hts_code: "9903.88.03",
+          program: "Section 301 (China)",
+          additional_duty: "The duty provided in the applicable subheading + 25%",
+          applies_when:
+            "Applies only if the country of origin is China. Origin was not stated by the analyst, so this is presented conditionally.",
+        },
+      ],
     },
-    unit_of_quantity: ["No."],
-    chapter_99: [
-      {
-        hts_code: "9903.88.03",
-        program: "Section 301 (China)",
-        additional_duty: "The duty provided in the applicable subheading + 25%",
-        applies_when:
-          "Applies only if the country of origin is China. Origin was not stated by the analyst, so this is presented conditionally.",
-      },
-    ],
     schedule_b: {
       code: "9617.00.20.00",
       description: "FLASK AND OTHER VESSELS, COMPLETE WITH CASES",
@@ -90,7 +95,6 @@ export function sampleSelectedCandidate(): Candidate {
           "Materially similar construction, materials and function. Directly supports this classification.",
       },
     ],
-    why_not_selected: null,
   };
 }
 
@@ -106,11 +110,14 @@ function sampleAlternate(
     hts_code: htsCode,
     confidence: 0.35,
     description_path: [description, description],
-    notes_applied: [],
+    reasoning: {
+      ...sampleSelectedCandidate().reasoning,
+      notes_applied: [],
+      why_not_selected: reason,
+    },
+    tariff: { ...sampleSelectedCandidate().tariff, chapter_99: [] },
     cross_rulings: [],
-    chapter_99: [],
     schedule_b: null,
-    why_not_selected: reason,
   };
 }
 

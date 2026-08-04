@@ -6,35 +6,81 @@ import type { Candidate, ClassificationResult } from "./schema";
 beforeAll(() => setupFixtureIndex());
 afterAll(() => teardownFixtureIndex());
 
-function candidate(overrides: Partial<Candidate> = {}): Candidate {
-  return {
+/**
+ * `duty`, `unit_of_quantity`, `chapter_99` and `why_not_selected` live inside
+ * `tariff` / `reasoning` on the real type — they are grouped there to keep the
+ * structured-output grammar under the API's size limit. These tests override
+ * them by their own names so each case still reads as the one fact it is
+ * about; the builder puts them back where they belong.
+ */
+type CandidateOverrides = Omit<Partial<Candidate>, "tariff" | "reasoning"> & {
+  tariff?: Partial<Candidate["tariff"]>;
+  reasoning?: Partial<Candidate["reasoning"]>;
+  duty?: Candidate["tariff"]["duty"];
+  unit_of_quantity?: Candidate["tariff"]["unit_of_quantity"];
+  chapter_99?: Candidate["tariff"]["chapter_99"];
+  why_not_selected?: Candidate["reasoning"]["why_not_selected"];
+};
+
+function candidate(overrides: CandidateOverrides = {}): Candidate {
+  const {
+    duty,
+    unit_of_quantity,
+    chapter_99,
+    why_not_selected,
+    tariff,
+    reasoning,
+    ...rest
+  } = overrides;
+  const base = {
     rank: 1,
     hts_code: "8507.60.00.20",
     description_path: ["Electric storage batteries", "Lithium-ion", "Other"],
     confidence: 0.8,
-    gri_analysis: {
-      gri_1: "Heading 8507 covers electric storage batteries eo nomine.",
-      gri_2: null,
-      gri_3: null,
-      gri_4: null,
-      gri_5: null,
-      gri_6: "Not of a kind used as primary power for EVs, so the residual applies.",
-      additional_us_rules: null,
+    reasoning: {
+      gri_analysis: {
+        gri_1: "Heading 8507 covers electric storage batteries eo nomine.",
+        gri_2: null,
+        gri_3: null,
+        gri_4: null,
+        gri_5: null,
+        gri_6:
+          "Not of a kind used as primary power for EVs, so the residual applies.",
+        additional_us_rules: null,
+      },
+      notes_applied: [],
+      justification: "A lithium-ion cell is provided for by name in 8507.60.",
+      why_not_selected: null,
     },
-    notes_applied: [],
-    justification: "A lithium-ion cell is provided for by name in 8507.60.",
-    duty: {
-      general: "3.4%",
-      special: "",
-      column_2: "35%",
-      rates_published_on: null,
+    tariff: {
+      duty: {
+        general: "3.4%",
+        special: "",
+        column_2: "35%",
+        rates_published_on: null,
+      },
+      unit_of_quantity: ["No."],
+      chapter_99: [],
     },
-    unit_of_quantity: ["No."],
-    chapter_99: [],
     schedule_b: null,
     cross_rulings: [],
-    why_not_selected: null,
-    ...overrides,
+  } satisfies Candidate;
+
+  return {
+    ...base,
+    ...rest,
+    reasoning: {
+      ...base.reasoning,
+      ...reasoning,
+      ...(why_not_selected !== undefined ? { why_not_selected } : {}),
+    },
+    tariff: {
+      ...base.tariff,
+      ...tariff,
+      ...(duty !== undefined ? { duty } : {}),
+      ...(unit_of_quantity !== undefined ? { unit_of_quantity } : {}),
+      ...(chapter_99 !== undefined ? { chapter_99 } : {}),
+    },
   };
 }
 
@@ -102,10 +148,10 @@ describe("verifyAgainstTariff", () => {
       ]),
     );
 
-    expect(verified.candidates[0].duty.general).toBe("3.4%");
-    expect(verified.candidates[0].duty.column_2).toBe("35%");
+    expect(verified.candidates[0].tariff.duty.general).toBe("3.4%");
+    expect(verified.candidates[0].tariff.duty.column_2).toBe("35%");
     // Inherited rates keep their provenance so the PDF can say so.
-    expect(verified.candidates[0].duty.rates_published_on).toBe("8507.60.00");
+    expect(verified.candidates[0].tariff.duty.rates_published_on).toBe("8507.60.00");
   });
 
   it("records the disagreement when it corrects a rate", () => {
@@ -150,7 +196,7 @@ describe("verifyAgainstTariff", () => {
     const { result: verified } = verifyAgainstTariff(
       result([candidate({ unit_of_quantity: ["kg only"] })]),
     );
-    expect(verified.candidates[0].unit_of_quantity).toEqual(["No.", "kg"]);
+    expect(verified.candidates[0].tariff.unit_of_quantity).toEqual(["No.", "kg"]);
   });
 
   it("re-ranks contiguously after a drop", () => {
@@ -177,7 +223,7 @@ describe("verifyAgainstTariff", () => {
       ]),
     );
 
-    expect(verified.candidates[0].why_not_selected).toBeNull();
+    expect(verified.candidates[0].reasoning.why_not_selected).toBeNull();
   });
 
   it("promotes the recommendation when the recommended code was dropped", () => {
@@ -335,7 +381,7 @@ describe("verifyAgainstTariff — recommendation handling", () => {
 });
 
 describe("verifyAgainstTariff — Chapter 99 and rulings", () => {
-  const ch99 = (overrides: Partial<Candidate["chapter_99"][number]> = {}) => ({
+  const ch99 = (overrides: Partial<Candidate["tariff"]["chapter_99"][number]> = {}) => ({
     hts_code: "9903.88.03",
     program: "Section 301 (China)",
     additional_duty: "The duty provided in the applicable subheading + 25%",
@@ -357,7 +403,7 @@ describe("verifyAgainstTariff — Chapter 99 and rulings", () => {
     const { result: verified, verification } = verifyAgainstTariff(
       result([candidate({ chapter_99: [ch99({ hts_code: "9903.99.99" })] })]),
     );
-    expect(verified.candidates[0].chapter_99).toEqual([]);
+    expect(verified.candidates[0].tariff.chapter_99).toEqual([]);
     expect(verification.rejectedCodes[0].reason).toMatch(/not present/);
   });
 
@@ -365,7 +411,7 @@ describe("verifyAgainstTariff — Chapter 99 and rulings", () => {
     const { result: verified, verification } = verifyAgainstTariff(
       result([candidate({ chapter_99: [ch99({ hts_code: "8507.60.00.20" })] })]),
     );
-    expect(verified.candidates[0].chapter_99).toEqual([]);
+    expect(verified.candidates[0].tariff.chapter_99).toEqual([]);
     expect(verification.rejectedCodes[0].reason).toMatch(/not a Chapter 99/);
   });
 
@@ -375,7 +421,7 @@ describe("verifyAgainstTariff — Chapter 99 and rulings", () => {
         candidate({ chapter_99: [ch99({ additional_duty: "plus 10 percent" })] }),
       ]),
     );
-    expect(verified.candidates[0].chapter_99[0].additional_duty).toBe(
+    expect(verified.candidates[0].tariff.chapter_99[0].additional_duty).toBe(
       "The duty provided in the applicable subheading + 25%",
     );
   });
