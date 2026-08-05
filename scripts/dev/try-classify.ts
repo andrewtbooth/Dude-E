@@ -135,6 +135,26 @@ async function main(): Promise<void> {
           `  tokens:      ${run.usage.inputTokens} in / ${run.usage.outputTokens} out`,
         );
         console.log(`  verified:    ${run.verification.verifiedCodes.join(", ") || "none"}`);
+        if (run.result.clarifying_questions.length) {
+          console.log(`\n  CLARIFYING QUESTIONS (${run.result.clarifying_questions.length}):`);
+          for (const q of run.result.clarifying_questions) {
+            console.log(`    - ${q.question}`);
+            console.log(`      why: ${q.why_it_matters}`);
+            if (q.options.length) console.log(`      options: ${q.options.join(" | ")}`);
+          }
+        }
+        if (run.result.researched_product) {
+          const rp = run.result.researched_product;
+          console.log(`\n  RESEARCHED PRODUCT:`);
+          console.log(`    manufacturer: ${rp.manufacturer ?? "(not found)"}`);
+          console.log(`    product:      ${rp.product_name ?? "(not found)"}`);
+          console.log(`    materials:    ${rp.materials.join(", ") || "(none)"}`);
+          console.log(`    summary:      ${rp.summary.slice(0, 160)}`);
+          for (const v of rp.vendor_published_codes) {
+            console.log(`    vendor code:  ${v.code} (${v.kind}) via ${v.source.slice(0, 60)}`);
+          }
+          console.log(`    sources:      ${rp.sources.length}`);
+        }
         if (run.verification.rejectedCodes.length) {
           console.log("  REJECTED CODES (fabricated or absent from this revision):");
           for (const rejected of run.verification.rejectedCodes) {
