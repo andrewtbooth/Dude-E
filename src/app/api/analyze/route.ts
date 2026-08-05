@@ -148,7 +148,7 @@ export async function POST(request: Request) {
           refinementsJson: JSON.stringify(refinements),
           status: "RUNNING",
           model: config.model,
-          effort: config.effort,
+          effort: config.effortLabel,
           htsusRevision: revision.revision,
           scheduleBEdition: revision.scheduleBEdition,
           appVersion: APP_VERSION,

@@ -8,6 +8,7 @@ import {
   MAX_OUTPUT_TOKENS,
   MAX_PAUSE_RESUMES,
   MAX_TOOL_ITERATIONS,
+  THINKING_BUDGET_TOKENS,
   config,
 } from "../config";
 import {
@@ -168,10 +169,26 @@ export async function* classify(
 
   const client = new Anthropic({ apiKey: config.anthropicApiKey });
   const effort = config.effort;
+  const capabilities = config.modelCapabilities;
+
+  // Depth is set by an effort level on some models and a thinking budget on
+  // others; the two are mutually exclusive and each is a 400 on the wrong
+  // model. Build both fragments once here so the request below reads as one
+  // shape rather than a pile of conditionals.
+  const thinking =
+    capabilities.thinking === "adaptive"
+      ? // `summarized` is requested explicitly because the default omits the
+        // text and the analyst is watching a multi-minute run.
+        ({ type: "adaptive", display: "summarized" } as const)
+      : ({ type: "enabled", budget_tokens: THINKING_BUDGET_TOKENS } as const);
+
+  const depth = effort
+    ? `${effort} effort`
+    : `a ${THINKING_BUDGET_TOKENS.toLocaleString()}-token thinking budget`;
 
   yield {
     type: "status",
-    message: `Classifying against ${revision.revision} at ${effort} effort.`,
+    message: `Classifying against ${revision.revision} using ${config.model} at ${depth}.`,
   };
 
   /**
@@ -186,12 +203,10 @@ export async function* classify(
     client.beta.messages.toolRunner({
       model: config.model,
       max_tokens: MAX_OUTPUT_TOKENS,
-      // Thinking is on by default on Opus 5; `summarized` is requested
-      // explicitly because the default omits the text and the analyst is
-      // watching a multi-minute run.
-      thinking: { type: "adaptive", display: "summarized" },
+      thinking,
       output_config: {
-        effort,
+        // Omitted entirely, not set to a default, on models that reject it.
+        ...(effort ? { effort } : {}),
         ...(structuredOutput
           ? { format: betaZodOutputFormat(resultSchemaFor(input.mode)) }
           : {}),
@@ -240,7 +255,13 @@ export async function* classify(
           allowed_domains: WEB_FETCH_ALLOWED_DOMAINS,
           // A fetched datasheet can otherwise add five figures of tokens to the
           // history, which is then re-billed on every subsequent tool iteration.
-          max_content_tokens: 30_000,
+          // Scaled to the model's context: 30k is 3% of a 1M window and 15% of
+          // a 200k one, and two such fetches plus the chapter notes a GRI walk
+          // pulls will crowd a small window before the analysis is finished.
+          max_content_tokens: Math.min(
+            30_000,
+            Math.floor(capabilities.contextTokens * 0.03),
+          ),
         },
       ],
       messages: [
@@ -492,7 +513,7 @@ export async function* classify(
       verification,
       usage: { inputTokens, outputTokens },
       model: config.model,
-      effort,
+      effort: config.effortLabel,
       htsusRevision: revision.revision,
       durationMs: Date.now() - startedAt,
     },

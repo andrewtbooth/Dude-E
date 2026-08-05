@@ -18,13 +18,25 @@
  *
  *   npx tsx scripts/dev/try-classify.ts --mode PART_NUMBER --effort medium 3M-8210
  *
+ *   npx tsx scripts/dev/try-classify.ts --model claude-haiku-4-5 "steel water bottle"
+ *
  * Start at --effort low. It exercises the same plumbing for a fraction of the
  * cost, and if the loop is broken it is broken there too.
+ *
+ * `--model claude-haiku-4-5` is cheaper still, but note it changes the request
+ * shape rather than just the price: Haiku takes no effort level and no adaptive
+ * thinking, so a green run there does not prove the production request works.
+ * `--model claude-sonnet-5 --effort low` keeps the shape identical.
  */
 
 import fs from "node:fs";
 import path from "node:path";
-import { EFFORT_LEVELS } from "../../src/lib/config";
+import {
+  CLASSIFIER_MODELS,
+  EFFORT_LEVELS,
+  config,
+  type ClassifierModel,
+} from "../../src/lib/config";
 import { classify } from "../../src/lib/agent/classify";
 import type { AnalysisMode } from "../../src/lib/agent/schema";
 
@@ -42,12 +54,14 @@ function loadDotEnvLocal(): void {
 interface Args {
   mode: AnalysisMode;
   effort: string | null;
+  model: string | null;
   input: string;
 }
 
 function parseArgs(argv: string[]): Args {
   let mode: AnalysisMode = "DESCRIPTION";
   let effort: string | null = null;
+  let model: string | null = null;
   const rest: string[] = [];
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -55,11 +69,13 @@ function parseArgs(argv: string[]): Args {
       mode = argv[++i] === "PART_NUMBER" ? "PART_NUMBER" : "DESCRIPTION";
     } else if (argv[i] === "--effort") {
       effort = argv[++i] ?? null;
+    } else if (argv[i] === "--model") {
+      model = argv[++i] ?? null;
     } else {
       rest.push(argv[i]);
     }
   }
-  return { mode, effort, input: rest.join(" ").trim() };
+  return { mode, effort, model, input: rest.join(" ").trim() };
 }
 
 async function main(): Promise<void> {
@@ -72,11 +88,25 @@ async function main(): Promise<void> {
         '  npx tsx scripts/dev/try-classify.ts --effort low "steel water bottle"',
     );
   }
+  // Both are read through config at call time, so setting the environment is
+  // the whole of it. Set the model first: config validates effort against the
+  // model's capabilities, and a model that takes no effort level rejects a
+  // stale CLASSIFIER_EFFORT inherited from .env.local rather than ignoring it.
+  if (args.model) {
+    if (!(args.model in CLASSIFIER_MODELS)) {
+      throw new Error(
+        `--model must be one of ${Object.keys(CLASSIFIER_MODELS).join(", ")}.`,
+      );
+    }
+    process.env.CLASSIFIER_MODEL = args.model;
+    if (!CLASSIFIER_MODELS[args.model as ClassifierModel].effort) {
+      delete process.env.CLASSIFIER_EFFORT;
+    }
+  }
   if (args.effort) {
     if (!(EFFORT_LEVELS as readonly string[]).includes(args.effort)) {
       throw new Error(`--effort must be one of ${EFFORT_LEVELS.join(", ")}.`);
     }
-    // classify() reads this through config at call time.
     process.env.CLASSIFIER_EFFORT = args.effort;
   }
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -93,7 +123,9 @@ async function main(): Promise<void> {
   const elapsed = () =>
     `${String(Math.round((Date.now() - startedAt) / 1000)).padStart(4)}s`;
 
-  console.log(`mode=${args.mode} effort=${process.env.CLASSIFIER_EFFORT ?? "max"}`);
+  console.log(
+    `mode=${args.mode} model=${config.model} effort=${config.effortLabel}`,
+  );
   console.log(`input: ${args.input}\n`);
 
   for await (const event of classify({
