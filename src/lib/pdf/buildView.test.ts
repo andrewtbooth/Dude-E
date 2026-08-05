@@ -62,7 +62,12 @@ function run(
       info_that_would_raise_confidence: [],
     },
     verification: { verifiedCodes: [], rejectedCodes: [], corrections: [] },
-    usage: { inputTokens: 1000, outputTokens: 500 },
+    usage: {
+      inputTokens: 1000,
+      cacheWriteTokens: 2000,
+      cacheReadTokens: 18000,
+      outputTokens: 500,
+    },
     model: "claude-opus-5",
     effort: "max",
     htsusRevision: "2026 HTS Revision 13",

@@ -38,6 +38,8 @@ import {
   type ClassifierModel,
 } from "../../src/lib/config";
 import { classify } from "../../src/lib/agent/classify";
+import type { ProgressEvent } from "../../src/lib/agent/classify";
+import { writeCassette } from "../../src/lib/agent/replay";
 import type { AnalysisMode } from "../../src/lib/agent/schema";
 
 function loadDotEnvLocal(): void {
@@ -55,6 +57,8 @@ interface Args {
   mode: AnalysisMode;
   effort: string | null;
   model: string | null;
+  record: string | null;
+  replay: string | null;
   input: string;
 }
 
@@ -62,6 +66,8 @@ function parseArgs(argv: string[]): Args {
   let mode: AnalysisMode = "DESCRIPTION";
   let effort: string | null = null;
   let model: string | null = null;
+  let record: string | null = null;
+  let replay: string | null = null;
   const rest: string[] = [];
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -71,18 +77,22 @@ function parseArgs(argv: string[]): Args {
       effort = argv[++i] ?? null;
     } else if (argv[i] === "--model") {
       model = argv[++i] ?? null;
+    } else if (argv[i] === "--record") {
+      record = argv[++i] ?? null;
+    } else if (argv[i] === "--replay") {
+      replay = argv[++i] ?? null;
     } else {
       rest.push(argv[i]);
     }
   }
-  return { mode, effort, model, input: rest.join(" ").trim() };
+  return { mode, effort, model, record, replay, input: rest.join(" ").trim() };
 }
 
 async function main(): Promise<void> {
   loadDotEnvLocal();
   const args = parseArgs(process.argv.slice(2));
 
-  if (!args.input) {
+  if (!args.input && !args.replay) {
     throw new Error(
       "Give it something to classify, e.g.\n" +
         '  npx tsx scripts/dev/try-classify.ts --effort low "steel water bottle"',
@@ -109,14 +119,20 @@ async function main(): Promise<void> {
     }
     process.env.CLASSIFIER_EFFORT = args.effort;
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (args.replay) process.env.CLASSIFIER_REPLAY = args.replay;
+
+  // A replay needs no credentials — that is most of the point of it.
+  if (!config.replayCassette && !process.env.ANTHROPIC_API_KEY) {
     throw new Error(
-      "ANTHROPIC_API_KEY is not set. Put it in the environment or .env.local.",
+      "ANTHROPIC_API_KEY is not set. Put it in the environment or .env.local.\n" +
+        "To exercise the app without one, replay a recorded run:\n" +
+        "  npx tsx scripts/dev/try-classify.ts --replay data/cassettes/<name>.json",
     );
   }
 
   const startedAt = Date.now();
   const toolCalls: string[] = [];
+  const recorded: ProgressEvent[] = [];
   let warnings = 0;
   let lastStatus = "";
 
@@ -133,6 +149,7 @@ async function main(): Promise<void> {
     input: args.input,
     refinements: [],
   })) {
+    if (args.record) recorded.push(event);
     switch (event.type) {
       case "status":
         lastStatus = event.message;
@@ -152,6 +169,9 @@ async function main(): Promise<void> {
         console.log(`\n  tool steps: ${toolCalls.length}`);
         console.log(`  tools used: ${[...new Set(toolCalls)].join(", ") || "none"}`);
         console.log(`  last status: ${lastStatus || "(none)"}`);
+        // Recorded even on failure: a cassette of a run that went wrong is
+        // exactly what you want when fixing how the app reports it.
+        saveRecording(args, recorded);
         process.exitCode = 1;
         return;
       case "done": {
@@ -164,7 +184,22 @@ async function main(): Promise<void> {
         console.log(`  tools used:  ${[...new Set(toolCalls)].join(", ") || "none"}`);
         console.log(`  warnings:    ${warnings}`);
         console.log(
-          `  tokens:      ${run.usage.inputTokens} in / ${run.usage.outputTokens} out`,
+          `  tokens:      ${run.usage.inputTokens} uncached in / ` +
+            `${run.usage.outputTokens} out`,
+        );
+        // The lever that matters for spend on a tool loop. `cached` is the
+        // history that would otherwise have been re-billed at full rate on
+        // every iteration; if it is near zero on a multi-step run, caching is
+        // not working and the run costs several times what it should.
+        const prompt =
+          run.usage.inputTokens +
+          run.usage.cacheWriteTokens +
+          run.usage.cacheReadTokens;
+        console.log(
+          `  cache:       ${run.usage.cacheWriteTokens} written / ` +
+            `${run.usage.cacheReadTokens} read ` +
+            `(${prompt ? Math.round((run.usage.cacheReadTokens / prompt) * 100) : 0}% ` +
+            `of ${prompt} prompt tokens served from cache)`,
         );
         console.log(`  verified:    ${run.verification.verifiedCodes.join(", ") || "none"}`);
         if (run.result.clarifying_questions.length) {
@@ -200,12 +235,26 @@ async function main(): Promise<void> {
           );
           console.log(`     ${candidate.reasoning.justification.slice(0, 200)}`);
         }
+        saveRecording(args, recorded);
         return;
       }
       default:
         break;
     }
   }
+}
+
+function saveRecording(args: Args, events: ProgressEvent[]): void {
+  if (!args.record) return;
+  writeCassette(
+    args.record,
+    { mode: args.mode, input: args.input, refinements: 0 },
+    events,
+  );
+  console.log(
+    `\n  recorded ${events.length} event(s) to ${args.record}\n` +
+      `  replay it for free: npx tsx scripts/dev/try-classify.ts --replay ${args.record}`,
+  );
 }
 
 main().catch((error) => {

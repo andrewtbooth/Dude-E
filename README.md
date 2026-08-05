@@ -410,6 +410,50 @@ against wall clock and tokens; `max` can overthink routine goods. It is one
 config value and nothing else changes, but change it on measurement rather than
 on impression — that is what the harness is for.
 
+### The three levers, in the order they pay off
+
+**1. Caching does the heavy lifting, and it is already on.** The dominant cost
+of an agent loop is not the model tier — it is that every iteration resends the
+whole accumulated history. A top-level cache breakpoint moves that history to
+cache reads at about a tenth of the rate. On a measured description-mode run,
+uncached input fell from ~23,000 tokens to 18, with 96% of a 97,000-token prompt
+served from cache. If `npm run try` reports a low cache-read share on a
+multi-step run, something has invalidated the prefix — that is the first thing
+to look at, well before the model.
+
+**2. Replay the rest.** Most of this application is not the model: sign-in, the
+question loop, selection, determination recording, the PDF, history and the SSE
+transport all sit downstream of a finished run. Record one real run and drive
+them from it, indefinitely, for nothing:
+
+```bash
+npx tsx scripts/dev/try-classify.ts --record data/cassettes/bottle.json "steel water bottle"
+npx tsx scripts/dev/try-classify.ts --replay data/cassettes/bottle.json    # free, ~2s
+CLASSIFIER_REPLAY=data/cassettes/bottle.json npm run dev                   # whole UI, free
+npx tsx scripts/dev/verify-e2e.tsx --replay data/cassettes/bottle.json     # PDF path
+```
+
+Replay is refused in production builds, and every run it produces is stamped
+`replay:<model>` — that string reaches the PDF provenance block, so a document
+built from a recorded run says so permanently. A cassette proves the plumbing
+carries a result; only a live run proves the result is any good. Cassettes are
+gitignored: they contain whatever was classified.
+
+**3. Model and effort last.** `CLASSIFIER_MODEL` takes `claude-opus-5`,
+`claude-sonnet-5` or `claude-haiku-4-5`. Prefer Sonnet 5 for trials: it keeps
+the request shape identical to production, so a green run there means something.
+Haiku accepts neither an effort level nor adaptive thinking, so it takes a
+different request shape *and* — measured — it drops required fields from the
+output contract, because the schema is too large for the API to enforce as a
+grammar and nothing then compels a smaller model to fill every field.
+
+Lower effort also buys fewer alternates: on the same subject, `low` returned one
+to two candidates and `medium` three. The brief asks for a determination plus
+three to five rejected alternates, so a cheap setting can produce a
+structurally-valid determination that is thinner than the deliverable wants.
+`verify-e2e` reports that as a warning rather than a failure, because it is a
+property of the run and not of the export path.
+
 ---
 
 ## Deploying

@@ -228,14 +228,24 @@ export async function POST(request: Request) {
                 resultJson: JSON.stringify(run),
                 completedAt: new Date(),
                 durationMs: run.durationMs,
-                inputTokens: run.usage.inputTokens,
+                // The whole prompt, not just the uncached remainder. A reader
+                // asking "what did this run cost" wants every token that was
+                // sent; splitting cached ones out of the recorded figure makes
+                // a heavily-cached run look almost free.
+                inputTokens:
+                  run.usage.inputTokens +
+                  run.usage.cacheWriteTokens +
+                  run.usage.cacheReadTokens,
                 outputTokens: run.usage.outputTokens,
               },
             });
             console.log(
               `[analyze] ${analysis.id} complete in ${run.durationMs}ms — ` +
                 `${run.result.candidates.length} candidate(s), ` +
-                `${run.usage.inputTokens} in / ${run.usage.outputTokens} out`,
+                `${run.usage.inputTokens} uncached + ` +
+                `${run.usage.cacheWriteTokens} written + ` +
+                `${run.usage.cacheReadTokens} cached in / ` +
+                `${run.usage.outputTokens} out`,
             );
             send({ type: "done", analysisId: analysis.id, run });
           } else if (event.type === "error") {

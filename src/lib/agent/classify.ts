@@ -18,6 +18,7 @@ import {
 } from "../hts/store";
 import * as z from "zod/v4";
 import { buildOutputContract, buildSystemPrompt, buildUserTurn } from "./prompt";
+import { replayCassette } from "./replay";
 import {
   type AnalysisMode,
   type Candidate,
@@ -57,7 +58,12 @@ export interface ClassificationRun {
     corrections: CodeCorrection[];
   };
   usage: {
+    /** Uncached prompt tokens, billed at full rate. */
     inputTokens: number;
+    /** Prompt tokens written to cache this run, billed at ~1.25x. */
+    cacheWriteTokens: number;
+    /** Prompt tokens served from cache, billed at ~0.1x. */
+    cacheReadTokens: number;
     outputTokens: number;
   };
   model: string;
@@ -153,6 +159,19 @@ export async function* classify(
 ): AsyncGenerator<ProgressEvent, void, undefined> {
   const startedAt = Date.now();
 
+  // Checked before anything else, including the API key, so a replay session
+  // needs no credentials at all. Every event the rest of the app sees is the
+  // one a real run produced, and the run it ends on is stamped as replayed.
+  const cassette = config.replayCassette;
+  if (cassette) {
+    yield {
+      type: "status",
+      message: `Replaying a recorded run from ${cassette}. No API call is being made.`,
+    };
+    yield* replayCassette(cassette, config.replayStepDelayMs);
+    return;
+  }
+
   let revision;
   try {
     revision = getActiveRevision();
@@ -203,6 +222,24 @@ export async function* classify(
     client.beta.messages.toolRunner({
       model: config.model,
       max_tokens: MAX_OUTPUT_TOKENS,
+      // The dominant cost of this app is not the model tier — it is that a
+      // tool loop resends its whole accumulated history on every iteration.
+      // A run that reads chapter notes and fetches a datasheet is re-billing
+      // tens of thousands of tokens per step, so spend grows with the square
+      // of the tool count. The static breakpoint on the system prompt below
+      // does nothing for that: the growing part is the messages.
+      //
+      // Top-level cache control places a marker on the last cacheable block of
+      // each request, which during the loop is the tool result just appended.
+      // Every iteration therefore reads back the prior turn's prefix at ~0.1x
+      // instead of paying full rate for it again.
+      //
+      // Done this way rather than by marking blocks through the runner
+      // deliberately: `setMessagesParams` sets the runner's internal `mutated`
+      // flag, which stops it appending the assistant turn, which is what sent
+      // an earlier version of this loop into a 41-iteration spin. Passing a
+      // parameter the runner forwards untouched cannot reach that code path.
+      cache_control: { type: "ephemeral" },
       thinking,
       output_config: {
         // Omitted entirely, not set to a default, on models that reject it.
@@ -287,6 +324,8 @@ export async function* classify(
 
   let finalMessage: BetaMessage | null = null;
   let inputTokens = 0;
+  let cacheWriteTokens = 0;
+  let cacheReadTokens = 0;
   let outputTokens = 0;
   let pauseResumes = 0;
   let structuredOutput = true;
@@ -359,7 +398,14 @@ export async function* classify(
 
         const message = await stream.finalMessage();
         finalMessage = message;
+        // `input_tokens` is the *uncached remainder* only. Counting it alone
+        // undercounts a cached run badly and — worse for a spend decision —
+        // makes caching look like it did nothing, because the tokens it moved
+        // simply vanish from the total. Track all three so the figure shown to
+        // the analyst is the whole prompt and the saving is legible.
         inputTokens += message.usage?.input_tokens ?? 0;
+        cacheWriteTokens += message.usage?.cache_creation_input_tokens ?? 0;
+        cacheReadTokens += message.usage?.cache_read_input_tokens ?? 0;
         outputTokens += message.usage?.output_tokens ?? 0;
 
         // Server-side tools can pause a long turn. The runner only continues
@@ -511,7 +557,7 @@ export async function* classify(
     run: {
       result,
       verification,
-      usage: { inputTokens, outputTokens },
+      usage: { inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens },
       model: config.model,
       effort: config.effortLabel,
       htsusRevision: revision.revision,

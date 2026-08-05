@@ -25,6 +25,13 @@ prisma/*.db-shm
 # Generated determination PDFs
 /data/pdf/
 
+# Recorded classification runs, replayed to exercise the app without API spend.
+# A cassette contains whatever was classified — a part-number recording carries
+# the part number and everything the web research turned up about it — so it
+# inherits the sensitivity of its input and cannot go in a public repository.
+/data/cassettes/
+verify-e2e.pdf
+
 # === BUILD ===================================================================
 node_modules/
 .next/

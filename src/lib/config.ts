@@ -180,6 +180,27 @@ export const config = {
     return this.effort ?? "n/a";
   },
 
+  /**
+   * Path to a recorded run to serve instead of calling the API, or null.
+   *
+   * A development affordance for exercising everything downstream of the model
+   * — the question loop, selection, determination recording, the PDF, history —
+   * without paying for an agent run each time. Ignored outside development, and
+   * every run it produces is stamped `replay:` so an artifact built from one is
+   * self-identifying. See src/lib/agent/replay.ts.
+   */
+  get replayCassette(): string | null {
+    const value = process.env.CLASSIFIER_REPLAY;
+    if (!value || value.trim() === "") return null;
+    if (process.env.NODE_ENV === "production") return null;
+    return value.trim();
+  },
+
+  /** Per-event pacing for a replay, so the SSE path is exercised too. */
+  get replayStepDelayMs(): number {
+    return optionalInt("CLASSIFIER_REPLAY_DELAY_MS", 120);
+  },
+
   get anthropicApiKey(): string {
     return required("ANTHROPIC_API_KEY");
   },
