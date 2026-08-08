@@ -43,6 +43,15 @@ export interface DeterminationView {
    * they have to be dated on the artifact rather than left to read as live.
    */
   tariffRetrievedAt: Date | null;
+  /**
+   * How far Chapter 99 screening reached in the snapshot behind this document,
+   * or null when it could not be established.
+   *
+   * Printed so the reader can size the claim rather than infer one. A
+   * determination that shows no additional duties is making a statement about
+   * the screening as much as about the goods.
+   */
+  chapter99Scope: { subheadingsWithAdditionalDuty: number; declarableLines: number } | null;
   model: string;
   effort: string;
   appVersion: string;

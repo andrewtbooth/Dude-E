@@ -5,6 +5,7 @@ import type { Candidate } from "@/lib/agent/schema";
 import { UnauthenticatedError, requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { DeterminationDoc } from "@/lib/pdf/DeterminationDoc";
+import { getChapter99ScreeningScope } from "@/lib/hts/store";
 import {
   buildDeterminationView,
   parseRefinements,
@@ -90,6 +91,11 @@ export async function GET(
     htsusRevision: determination.htsusRevision,
     scheduleBEdition: determination.scheduleBEdition,
     tariffRetrievedAt: determination.tariffRetrievedAt,
+    // Read from the snapshot at render time, not frozen on the row: it
+    // describes the screening this document's reader should trust, and the
+    // honest answer is what the deployment can screen now. A stale figure
+    // would understate or overstate a limitation, and both directions mislead.
+    chapter99Scope: getChapter99ScreeningScope(),
     model: determination.model,
     effort: determination.effort,
     appVersion: determination.appVersion,

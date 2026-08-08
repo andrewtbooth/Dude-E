@@ -400,26 +400,7 @@ function FinalDetermination({ view }: { view: DeterminationView }) {
         </Text>
       )}
 
-      {candidate.tariff.chapter_99.length > 0 && (
-        <View style={styles.callout}>
-          <Text style={styles.calloutTitle}>ADDITIONAL DUTIES MAY APPLY</Text>
-          {candidate.tariff.chapter_99.map((entry) => (
-            <Text key={entry.hts_code} style={{ fontSize: 8, marginBottom: 2 }}>
-              <Text style={styles.codeInline}>{entry.hts_code}</Text> ·{" "}
-              {entry.program} — {entry.additional_duty}. {entry.applies_when}
-            </Text>
-          ))}
-          <Text style={{ fontSize: 7.5, marginTop: 2 }}>
-            These provisions are as published in {view.htsusRevision}
-            {view.tariffRetrievedAt
-              ? `, retrieved ${formatTimestamp(view.tariffRetrievedAt)}`
-              : ""}
-            . Chapter 99 actions change more often than the HTSUS is revised,
-            so treat them as current only as of that date and confirm against
-            the live schedule before filing.
-          </Text>
-        </View>
-      )}
+      <Chapter99Section view={view} candidate={candidate} />
 
       {view.overrodeRecommendation && (
         <View style={styles.callout}>
@@ -450,6 +431,89 @@ function DutyCell({ label, value }: { label: string; value: string }) {
     <View style={styles.dutyCell}>
       <Text style={styles.dutyLabel}>{label}</Text>
       <Text style={styles.dutyValue}>{value}</Text>
+    </View>
+  );
+}
+
+/**
+ * Chapter 99 exposure — stated either way, never left as silence.
+ *
+ * This block used to render only when additional duties were found, which
+ * meant the highest-exposure outcome produced the cleanest-looking page. A
+ * Chinese-origin laptop that the screening missed came out reading
+ * `GENERAL (COL. 1): Free` with no additional-duty section at all, on a
+ * document whose footer implied Chapter 99 had been considered. A reader has
+ * no way to distinguish "screened, nothing applies" from "not covered by the
+ * screening", and those carry opposite consequences at entry.
+ *
+ * So the negative is now printed, with the reach of the screening attached.
+ * The number is not decoration: coverage in this snapshot is derived from the
+ * Chapter 99 notes as parsed, and it reaches a few hundred subheadings out of
+ * roughly nineteen thousand declarable lines. Section 301 List 3 resolves to
+ * thirteen. Saying so in the document is the difference between a caveat and a
+ * measurement.
+ */
+function Chapter99Section({
+  view,
+  candidate,
+}: {
+  view: DeterminationView;
+  candidate: Candidate;
+}) {
+  const asPublished =
+    `as published in ${view.htsusRevision}` +
+    (view.tariffRetrievedAt
+      ? `, retrieved ${formatTimestamp(view.tariffRetrievedAt)}`
+      : "") +
+    ". Chapter 99 actions change more often than the HTSUS is revised, so " +
+    "treat them as current only as of that date and confirm against the live " +
+    "schedule before filing.";
+
+  if (candidate.tariff.chapter_99.length > 0) {
+    return (
+      <View style={styles.callout}>
+        <Text style={styles.calloutTitle}>ADDITIONAL DUTIES MAY APPLY</Text>
+        {candidate.tariff.chapter_99.map((entry) => (
+          <Text key={entry.hts_code} style={{ fontSize: 8, marginBottom: 2 }}>
+            <Text style={styles.codeInline}>{entry.hts_code}</Text> ·{" "}
+            {entry.program} — {entry.additional_duty}. {entry.applies_when}
+          </Text>
+        ))}
+        <Text style={{ fontSize: 7.5, marginTop: 2 }}>
+          These provisions are {asPublished}
+        </Text>
+      </View>
+    );
+  }
+
+  const scope = view.chapter99Scope;
+
+  return (
+    <View style={styles.callout}>
+      <Text style={styles.calloutTitle}>
+        CHAPTER 99 — NO ADDITIONAL DUTY MATCHED, SCREENING IS INCOMPLETE
+      </Text>
+      <Text style={{ fontSize: 8, marginBottom: 2 }}>
+        No Section 301, Section 232 or other Chapter 99 provision was matched to{" "}
+        <Text style={styles.codeInline}>{candidate.hts_code}</Text> in this
+        edition. That is not a finding that none applies.
+      </Text>
+      <Text style={{ fontSize: 7.5 }}>
+        {scope
+          ? `Screening is derived from the Chapter 99 notes as published, and in ` +
+            `this snapshot reaches ${scope.subheadingsWithAdditionalDuty.toLocaleString()} ` +
+            `of ${scope.declarableLines.toLocaleString()} declarable subheadings. ` +
+            `Coverage of the Section 301 lists in particular is known to be ` +
+            `partial. Screen origin-based additional duties independently before ` +
+            `filing — for Chinese-origin goods especially, absence here should be ` +
+            `read as unscreened rather than as clear.`
+          : `Screening is derived from the Chapter 99 notes as published and its ` +
+            `reach could not be established for this document. Screen ` +
+            `origin-based additional duties independently before filing.`}
+      </Text>
+      <Text style={{ fontSize: 7.5, marginTop: 2 }}>
+        Provisions are {asPublished}
+      </Text>
     </View>
   );
 }
@@ -678,10 +742,12 @@ function Footer() {
         binding on U.S. Customs and Border Protection. Scope is tariff
         classification only — country of origin, valuation, free trade agreement
         eligibility, antidumping and countervailing duty scope, quota, and
-        partner government agency requirements were not analysed. For
-        high-value, high-volume, or genuinely ambiguous merchandise, request a
-        binding ruling under 19 CFR Part 177 before entry. Duty rates and
-        Chapter 99 provisions are as published in the tariff edition named
+        partner government agency requirements were not analysed. Chapter 99
+        additional duties, including Section 301 and Section 232, are screened
+        only partially and must be verified independently; this document does
+        not establish that none apply. For high-value, high-volume, or genuinely
+        ambiguous merchandise, request a binding ruling under 19 CFR Part 177
+        before entry. Duty rates are as published in the tariff edition named
         above and change frequently; confirm currency before filing.
       </Text>
       <Text

@@ -811,9 +811,36 @@ export interface IndexStats {
   scheduleBCount: number;
   /** Distinct HS-6 subheadings the export schedule covers. */
   scheduleBHs6Count: number;
-  /** Distinct subheadings a Chapter 99 note enumerates. */
+  /** Distinct subheadings a Chapter 99 note enumerates, of any kind. */
   chapter99CoverageCount: number;
+  /**
+   * Distinct subheadings for which a Chapter 99 note actually *imposes* an
+   * additional duty.
+   *
+   * Much smaller than the figure above, and it is the honest one. Most rows in
+   * the coverage table come from notes that exempt goods from additional duties
+   * or grant a trade-agreement preference — note 33(a) and 33(b) are exemption
+   * lists, note 14(b) is DR-CAFTA apparel — so counting every row overstates
+   * screening reach by roughly four times. Anything shown to an analyst or
+   * printed on a determination should use this one.
+   */
+  chapter99AdditionalDutyCount: number;
 }
+
+/**
+ * Rows whose note text imposes rather than relieves.
+ *
+ * Crude on purpose: the notes are prose, and the alternative to a text test is
+ * a parser that would itself need to be trusted. Erring toward *excluding*
+ * ambiguous rows is the safe direction here, because this number is published
+ * as the extent of screening — understating it invites a second look, while
+ * overstating it invites reliance the data does not support.
+ */
+const IMPOSING_COVERAGE_SQL = `
+  FROM chapter99_coverage
+  WHERE excerpt NOT LIKE '%shall not apply%'
+    AND note_ref NOT LIKE '14(%'
+`;
 
 export function getIndexStats(): IndexStats {
   const { db } = open();
@@ -830,5 +857,36 @@ export function getIndexStats(): IndexStats {
     chapter99CoverageCount: one(
       "SELECT COUNT(DISTINCT base_digits) AS n FROM chapter99_coverage",
     ),
+    chapter99AdditionalDutyCount: one(
+      `SELECT COUNT(DISTINCT base_digits) AS n ${IMPOSING_COVERAGE_SQL}`,
+    ),
   };
+}
+
+/**
+ * How far Chapter 99 screening actually reaches in the loaded snapshot.
+ *
+ * Read from the index rather than written down, for the same reason the tariff
+ * revision is: a number stated on a determination has to be a fact about the
+ * data that produced it, not a claim someone typed once and stopped
+ * maintaining. Returns null when no snapshot is loaded.
+ */
+export function getChapter99ScreeningScope(): {
+  subheadingsWithAdditionalDuty: number;
+  declarableLines: number;
+} | null {
+  try {
+    const { db } = open();
+    const one = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
+    return {
+      subheadingsWithAdditionalDuty: one(
+        `SELECT COUNT(DISTINCT base_digits) AS n ${IMPOSING_COVERAGE_SQL}`,
+      ),
+      declarableLines: one(
+        "SELECT COUNT(*) AS n FROM lines WHERE is_reportable = 1",
+      ),
+    };
+  } catch {
+    return null;
+  }
 }

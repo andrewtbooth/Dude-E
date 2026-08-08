@@ -18,7 +18,10 @@ import { classify } from "../../src/lib/agent/classify";
 import type { ClassificationRun } from "../../src/lib/agent/classify";
 import type { Refinement } from "../../src/lib/agent/schema";
 import { APP_VERSION } from "../../src/lib/config";
-import { getActiveRevision } from "../../src/lib/hts/store";
+import {
+  getActiveRevision,
+  getChapter99ScreeningScope,
+} from "../../src/lib/hts/store";
 import { DeterminationDoc } from "../../src/lib/pdf/DeterminationDoc";
 import { buildDeterminationView, selectAlternates } from "../../src/lib/pdf/buildView";
 
@@ -66,6 +69,7 @@ async function renderAndCheck(
     htsusRevision: revision.revision,
     scheduleBEdition: revision.scheduleBEdition,
     tariffRetrievedAt: new Date(revision.retrievedAt),
+    chapter99Scope: getChapter99ScreeningScope(),
     model: second.model,
     effort: second.effort,
     appVersion: APP_VERSION,
