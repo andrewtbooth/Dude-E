@@ -1,14 +1,31 @@
 /**
- * End-to-end check of the two paths the deployment has never exercised:
- * the clarifying-question refinement loop, and PDF export from a real run.
- *
- * Both were only ever covered by fixtures. A fixture proves the document
- * renders; it does not prove that what a live model returns can be turned into
- * one. This drives the real sequence an analyst does:
+ * End-to-end check of the clarifying-question refinement loop and PDF export
+ * from a real run — the sequence an analyst actually performs:
  *
  *   vague input -> questions -> answers -> re-run -> select a code -> PDF
  *
- *   npx tsx scripts/dev/verify-e2e.tsx
+ *   npx tsx scripts/dev/verify-e2e.tsx                    # both, live, ~3 min
+ *   npx tsx scripts/dev/verify-e2e.tsx --replay <file>    # PDF only, free
+ *
+ * Both paths were fixture-only for a long time, and a fixture proves the
+ * document renders rather than that what a live model returns can be turned
+ * into one. The `--replay` form closes the PDF half permanently for nothing.
+ *
+ * The refinement half is the one thing here that genuinely needs live credit,
+ * and the reason is worth stating: replaying a recorded answer to a question
+ * the model did not ask this time proves nothing about refinement. What has to
+ * be shown is that answering changes the outcome.
+ *
+ * Last run against claude-sonnet-5 at low effort:
+ *
+ *   step 1  "plastic housing"          -> needs_more_info, 3 questions, no pick
+ *   step 2  same analysis + answers    -> complete, 8538.90.60.00, 3 candidates
+ *
+ * That movement is the point. Unrefined, the model lands on the Chapter 39
+ * residual for plastic articles; told the housing is used solely as the body of
+ * a heading-8536 wall switch, it moves to parts of switches under Section XVI
+ * Note 2(b), which is the right answer and a different duty treatment. A loop
+ * that returned the same code either way would be running but not working.
  */
 
 import fs from "node:fs";
