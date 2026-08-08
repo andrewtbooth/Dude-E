@@ -17,6 +17,14 @@
 # which is the behaviour the app already had for a missing snapshot.
 set -e
 
+# Checked before the push, not after it fails. Adding a unique index over data
+# that already violates it is the one schema change here that can break an
+# existing volume, and `db push` reports it as an index error rather than as
+# the data problem it is. See the script for why nothing is deleted.
+if ! npx tsx scripts/deploy/check-determination-uniqueness.ts; then
+  exit 1
+fi
+
 echo "==> applying database schema"
 # No --skip-generate: Prisma 7 removed the flag, because `db push` no longer
 # triggers a client generation for it to skip. Passing it exits 1, and under
