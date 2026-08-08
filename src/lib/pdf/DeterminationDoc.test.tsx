@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { describe, expect, it } from "vitest";
 import {
@@ -10,6 +11,51 @@ import { DeterminationDoc } from "./DeterminationDoc";
 function isPdf(buffer: Buffer): boolean {
   return buffer.subarray(0, 5).toString("latin1") === "%PDF-";
 }
+
+/**
+ * The document must be a pure function of the determination row.
+ *
+ * `Determination.pdfSha256` is written once, on first issue, so a PDF in
+ * circulation can be tied back to the row that produced it; the export route
+ * alarms when a later render disagrees with the stored hash. That check is only
+ * worth having if identical inputs render identical bytes. They did not: the
+ * renderer stamps wall-clock time into /CreationDate and derives the /ID
+ * trailer from it, so every re-issue tripped the alarm on a document that had
+ * not changed. Pinning both dates to `decidedAt` fixed it, and this test is
+ * what keeps it fixed — the failure mode is silent, and its cost is that
+ * whoever reads the logs learns to ignore the alarm.
+ */
+describe("byte reproducibility", () => {
+  it("renders identical bytes from identical inputs, across a clock tick", async () => {
+    const view = sampleDeterminationView();
+
+    const first = await renderToBuffer(<DeterminationDoc view={view} />);
+    // The bug was a wall-clock read, so a same-millisecond comparison would
+    // have passed while the real re-issue — minutes or months later — failed.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const second = await renderToBuffer(<DeterminationDoc view={view} />);
+
+    const hash = (buffer: Buffer) =>
+      crypto.createHash("sha256").update(buffer).digest("hex");
+
+    expect(hash(second)).toBe(hash(first));
+  }, 30_000);
+
+  it("moves the hash when something on the row actually changes", async () => {
+    // The mirror of the above: a check that never fires is as useless as one
+    // that always does, so confirm the bytes still track the inputs.
+    const a = await renderToBuffer(
+      <DeterminationDoc view={sampleDeterminationView()} />,
+    );
+    const b = await renderToBuffer(
+      <DeterminationDoc
+        view={sampleDeterminationView({ analystNote: "Reviewed with counsel." })}
+      />,
+    );
+
+    expect(a.equals(b)).toBe(false);
+  }, 30_000);
+});
 
 describe("DeterminationDoc", () => {
   it("renders a valid PDF", async () => {

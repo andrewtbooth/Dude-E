@@ -723,8 +723,30 @@ function verifyChapter99(
   return kept;
 }
 
-/** CBP ruling number formats: N123456, NY N123456, HQ H289712, HQ 967890. */
-const RULING_NUMBER = /^(?:HQ|NY)?\s*[HN]?\d{6}$/i;
+/**
+ * CBP ruling number formats.
+ *
+ * CBP has changed this scheme several times and every generation is still live
+ * in CROSS and still cited in current practice, so the pattern has to admit all
+ * of them:
+ *
+ *   HQ 967890      six digits, no letter — the older HQ series
+ *   HQ H289712     H + six digits — current HQ
+ *   HQ W968156     W + six digits — pre-classification rulings
+ *   NY N123456     N + six digits — current NY
+ *   NY J80123      letter + five digits — the 2002-2005 NY series, where the
+ *                  letter advanced roughly yearly (I, J, K, L, R and others)
+ *
+ * The previous pattern accepted only `[HN]?\d{6}`, which rejected the entire
+ * letter-plus-five-digit generation and W-prefixed HQ rulings. That mattered
+ * more than a missed citation: a rejection here is written into the
+ * determination's discarded list as "not a CBP ruling number format", so the
+ * document told a reader, in writing, that a genuine CBP citation was malformed.
+ *
+ * Still deliberately structural. A well-formed number is not a real ruling, and
+ * only fetching it from CROSS would establish that — see verifyCrossRulings.
+ */
+const RULING_NUMBER = /^(?:HQ|NY)?\s*(?:[A-Z]\d{5,6}|\d{6})$/i;
 
 /**
  * Structural screening for cited rulings.

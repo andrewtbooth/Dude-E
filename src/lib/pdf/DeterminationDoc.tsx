@@ -149,6 +149,20 @@ export function DeterminationDoc({ view }: { view: DeterminationView }) {
       author={view.analyst.name}
       subject={`Classification of ${truncate(view.subject.input, 120)}`}
       creator="Dude-E Tariff Classification"
+      // Pinned to the decision, not to the render, so the document is a pure
+      // function of the frozen inputs.
+      //
+      // Left to itself the renderer stamps wall-clock time into /CreationDate
+      // and derives the /ID trailer from it, which made every re-issue produce
+      // different bytes: three renders of identical inputs gave three hashes,
+      // differing in exactly those 61 bytes. The PDF route records a write-once
+      // sha256 on first issue and alarms when a later render disagrees — an
+      // alarm which, until now, fired every single time, on documents that were
+      // in fact identical. An integrity check that always cries wolf is worse
+      // than none: it trains whoever reads the logs to ignore the one case it
+      // exists to catch.
+      creationDate={view.decidedAt}
+      modificationDate={view.decidedAt}
     >
       <Page size="LETTER" style={styles.page}>
         <Header view={view} />
@@ -182,7 +196,21 @@ function Header({ view }: { view: DeterminationView }) {
           value={`${view.analyst.name} <${view.analyst.email}>`}
         />
         <ProvenanceRow label="Decided" value={formatTimestamp(view.decidedAt)} />
-        <ProvenanceRow label="Tariff edition" value={view.htsusRevision} />
+        <ProvenanceRow
+          label="Tariff edition"
+          // Dated here rather than only in the Chapter 99 callout. That callout
+          // renders only when additional duties were found, so on the common
+          // document — and on precisely the document where a missed Section 301
+          // matters most — the reader previously had no way to tell whether the
+          // schedule behind it was pulled last week or last quarter. "How
+          // current is this data" is the first question asked of a
+          // machine-generated tariff document.
+          value={
+            view.tariffRetrievedAt
+              ? `${view.htsusRevision} · retrieved ${formatTimestamp(view.tariffRetrievedAt)}`
+              : `${view.htsusRevision} · retrieval date not recorded`
+          }
+        />
         <ProvenanceRow
           label="Export schedule"
           value={
