@@ -55,3 +55,6 @@ prisma/generated/
 # which is constructed from published tariff text, is committed.
 /eval/runs/
 /eval/*.local.jsonl
+
+# Throwaway SQLite files created by scripts/dev/browser-e2e.sh
+dev-e2e*.db

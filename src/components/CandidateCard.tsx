@@ -8,12 +8,22 @@ export function CandidateCard({
   selected,
   onSelect,
   tariffRetrievedAt,
+  recommendedCode,
 }: {
   candidate: Candidate;
   selected: boolean;
   onSelect: () => void;
   /** When the snapshot was pulled, for dating Chapter 99 duties. */
   tariffRetrievedAt: string | null;
+  /**
+   * The code the run actually recommends, or null when it declined to.
+   *
+   * Read here rather than inferred from rank. Verification can reject the
+   * model's own recommendation and leave a different candidate at rank 1, and
+   * `needs_more_info` sets the recommendation to null deliberately — in both
+   * cases a rank-derived badge labels something the model did not pick.
+   */
+  recommendedCode: string | null;
 }) {
   const [showReasoning, setShowReasoning] = useState(false);
   const inputId = useId();
@@ -43,11 +53,13 @@ export function CandidateCard({
               {candidate.hts_code}
             </span>
             <ConfidenceBadge value={candidate.confidence} />
-            {candidate.rank === 1 && (
-              <span className="rounded bg-[var(--accent-subtle)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--accent)]">
-                Model&rsquo;s pick
-              </span>
-            )}
+            {recommendedCode !== null &&
+              candidate.hts_code.replace(/\D/g, "") ===
+                recommendedCode.replace(/\D/g, "") && (
+                <span className="rounded bg-[var(--accent-subtle)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--accent)]">
+                  Model&rsquo;s pick
+                </span>
+              )}
           </label>
 
           <Breadcrumb path={candidate.description_path} />
