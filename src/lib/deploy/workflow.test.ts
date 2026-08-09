@@ -56,6 +56,25 @@ describe("deploy workflow", () => {
 
     expect(check).toBeLessThan(flyctl);
   });
+
+  it("checks the Fly token before any command that needs it", () => {
+    // Without this, the first flyctl call is `flyctl status` inside the
+    // app-creation step. It fails for want of credentials, the step concludes
+    // the app does not exist, and the error blames a name collision or a
+    // scoped token — sending you to look at Fly rather than at this
+    // repository's settings. That happened, and cost a deploy.
+    const tokenCheck = deploy.indexOf("Check the Fly token is present");
+    const firstFlyctlCall = deploy.indexOf("flyctl status");
+
+    expect(tokenCheck).toBeGreaterThan(-1);
+    expect(tokenCheck).toBeLessThan(firstFlyctlCall);
+  });
+
+  it("does not demand the Anthropic key when the app already has it", () => {
+    // Requiring it in GitHub too would mean the same credential in two places.
+    // The deploy should only insist when it is genuinely set nowhere.
+    expect(deploy).toContain("already set on the app; leaving it alone");
+  });
 });
 
 describe("ops workflow", () => {
