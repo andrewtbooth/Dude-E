@@ -83,6 +83,14 @@ The names must match exactly, including capitals and underscores. GitHub hides
 the values once saved — that is expected, and it is why you copied them
 somewhere first.
 
+`FLY_API_TOKEN` is always required: without it nothing here can talk to Fly,
+and every command fails with `no access token available`.
+
+`ANTHROPIC_API_KEY` is only required if the app does not already have it. If
+you set the app up through Fly's own interface, the key is already there and
+the deploy will leave it alone — one copy of a credential is better than two.
+Put it here when you want to rotate it from GitHub, or when the app is new.
+
 > If **Settings** is not visible, you do not have admin rights on the
 > repository. Whoever owns it can add the two secrets for you; they never need
 > to touch anything else.

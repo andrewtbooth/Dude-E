@@ -60,6 +60,36 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
+      # Checked here, before anything uses it, because every flyctl command
+      # fails the same unhelpful way without it: "no access token available".
+      # Read from inside a step that has already decided the app is missing,
+      # that reads as a name collision or a permissions problem, and sends you
+      # looking at Fly rather than at this repository's settings.
+      - name: Check the Fly token is present
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            {
+              echo "## FLY_API_TOKEN is not set"
+              echo ""
+              echo "This repository has no \`FLY_API_TOKEN\` secret, so nothing here"
+              echo "can talk to Fly. Nothing was changed and your app is untouched."
+              echo ""
+              echo "To fix it:"
+              echo ""
+              echo "1. Fly dashboard → your app → **Tokens** → create a deploy token"
+              echo "2. Copy the whole value (it starts with \`FlyV1\`)"
+              echo "3. GitHub → this repo → **Settings** → **Secrets and variables** →"
+              echo "   **Actions** → **New repository secret**"
+              echo "4. Name it exactly \`FLY_API_TOKEN\`, paste the value, save"
+              echo "5. Run this workflow again"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::FLY_API_TOKEN is not set in this repository's secrets. See the run summary."
+            exit 1
+          fi
+          echo "Fly token present."
+
       - name: Resolve app name
         id: app
         run: |
@@ -85,10 +115,12 @@ jobs:
           fi
           echo "Creating app…"
           if ! flyctl apps create "$APP" --org personal; then
-            echo "::error::Could not create the app '$APP'. Either the name is"
-            echo "::error::already taken globally — re-run with a different Fly"
-            echo "::error::app name — or your token is app-scoped, in which case"
-            echo "::error::create the app in the Fly dashboard first, named exactly '$APP'."
+            echo "::error::Could not create the app '$APP'. Most likely your Fly"
+            echo "::error::token is app-scoped — a deploy token can manage an app"
+            echo "::error::but cannot create one. If so, create it in the Fly"
+            echo "::error::dashboard named exactly '$APP' and re-run."
+            echo "::error::Failing that, the name may be taken globally: re-run"
+            echo "::error::with a different name in the app_name box."
             exit 1
           fi
 
@@ -118,24 +150,59 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           APP="${{ steps.app.outputs.name }}"
+          EXISTING=$(flyctl secrets list --app "$APP" 2>/dev/null || true)
 
-          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
-            echo "::error::ANTHROPIC_API_KEY is not set in this repository's secrets. See docs/SETUP.md."
+          # Both of these follow the same rule: set what is genuinely missing,
+          # leave alone what is already there.
+          #
+          # SESSION_SECRET signs the analyst cookie — rotating it on every
+          # deploy would sign everyone out mid-run.
+          #
+          # ANTHROPIC_API_KEY is treated the same way rather than being pushed
+          # from GitHub every time. An app set up through Fly's own UI already
+          # has the key on Fly, and demanding a second copy in GitHub means the
+          # same credential in two places, either of which can leak or drift.
+          # Providing it here is still supported and is how you rotate it.
+          ARGS=""
+
+          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "ANTHROPIC_API_KEY supplied by this repository; setting it."
+            ARGS="$ARGS ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
+          elif echo "$EXISTING" | grep -q ANTHROPIC_API_KEY; then
+            echo "ANTHROPIC_API_KEY already set on the app; leaving it alone."
+          else
+            {
+              echo "## ANTHROPIC_API_KEY is not set anywhere"
+              echo ""
+              echo "It is not a secret in this repository and it is not set on the"
+              echo "Fly app either, so the deployed app could not classify anything."
+              echo ""
+              echo "Set it in **either** place:"
+              echo ""
+              echo "- Fly dashboard → your app → **Secrets** → add \`ANTHROPIC_API_KEY\`, or"
+              echo "- GitHub → **Settings** → **Secrets and variables** → **Actions**"
+              echo ""
+              echo "One is enough. Nothing was deployed."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::ANTHROPIC_API_KEY is set neither in this repository nor on the Fly app. See the run summary."
             exit 1
           fi
 
-          # SESSION_SECRET signs the analyst cookie. Generated once and left
-          # alone: rotating it on every deploy would sign everyone out mid-run,
-          # so it is only created when genuinely absent.
-          if flyctl secrets list --app "$APP" | grep -q SESSION_SECRET; then
+          if echo "$EXISTING" | grep -q SESSION_SECRET; then
             echo "SESSION_SECRET already set; leaving it alone."
-            flyctl secrets set --app "$APP" --stage \
-              ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
           else
             echo "Generating SESSION_SECRET…"
-            flyctl secrets set --app "$APP" --stage \
-              ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
-              SESSION_SECRET="$(openssl rand -base64 48)"
+            ARGS="$ARGS SESSION_SECRET=$(openssl rand -base64 48)"
+          fi
+
+          if [ -n "$ARGS" ]; then
+            # Unquoted on purpose: ARGS holds whole KEY=VALUE pairs that must
+            # split into separate arguments. Neither value contains a space —
+            # an Anthropic key has none, and base64 emits none.
+            # shellcheck disable=SC2086
+            flyctl secrets set --app "$APP" --stage $ARGS
+          else
+            echo "Both secrets already present; nothing to change."
           fi
 
       # --remote-only builds the image on Fly's builders, which is what makes
