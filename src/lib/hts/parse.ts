@@ -191,7 +191,10 @@ export function parseUsitcRows(
       additionalDuties:
         clean(row.additionalDuties) || clean(row.addiitionalDuties) || null,
       parentId,
-      isReportable: level === 10,
+      // Provisional. Whether a line can be declared depends on whether
+      // anything sits beneath it, which is not known until every row has been
+      // read — see resolveReportable below.
+      isReportable: false,
     };
 
     lines.push(line);
@@ -202,7 +205,48 @@ export function parseUsitcRows(
   });
 
   resolveRates(lines, byId);
+  resolveReportable(lines);
   return { lines, warnings };
+}
+
+/**
+ * Mark the lines that can actually appear on an entry.
+ *
+ * The rule is "nothing is published beneath it", not "it has ten digits".
+ *
+ * Ten digits is right for almost the whole schedule, and was the rule here
+ * until it turned out to be wrong in exactly the places that matter most.
+ * 3,564 subheadings in the 2026 Rev 15 snapshot terminate at eight digits:
+ *
+ *   3,095 in Chapter 99 — Section 301 and 232 provisions
+ *     374 in Chapter 98 — 9801 American goods returned, 9802 outward
+ *                         processing, 9804 personal exemptions, and most of
+ *                         the 9813 temporary-importation-under-bond series
+ *      95 in Chapter 91 — watch provisions with no statistical breakout
+ *
+ * These are not lines whose ten-digit children were lost in parsing. USITC
+ * publishes an explicit `.00` reporting number wherever an eight-digit
+ * subheading has no breakout — 8,080 of the 19,949 ten-digit lines end that
+ * way — so a subheading with no child is terminal as published.
+ *
+ * Chapter 99 is excluded regardless. Its provisions are additional duties
+ * declared *alongside* a Chapter 1-97 classification, never instead of one, and
+ * they are checked on their own path (see verifyChapter99). Letting them
+ * through here would allow a run to answer "9903.88.03" to "what is this
+ * product", which is not a classification at all.
+ */
+function resolveReportable(lines: HtsLine[]): void {
+  const hasChildren = new Set<number>();
+  for (const line of lines) {
+    if (line.parentId !== null) hasChildren.add(line.parentId);
+  }
+
+  for (const line of lines) {
+    line.isReportable =
+      line.digits.length >= 8 &&
+      line.chapter !== "99" &&
+      !hasChildren.has(line.id);
+  }
 }
 
 function coerceFootnotes(raw: unknown): string[] {

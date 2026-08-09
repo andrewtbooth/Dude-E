@@ -123,10 +123,55 @@ describe("parseUsitcRows", () => {
     expect(rateLine?.ratesInheritedFrom).toBeNull();
   });
 
-  it("marks only 10-digit lines as reportable", () => {
+  it("marks the deepest published lines as reportable", () => {
     const { lines } = parseUsitcRows(battery);
     const reportable = lines.filter((l) => l.isReportable).map((l) => l.htsNo);
     expect(reportable).toEqual(["8507.60.00.10", "8507.60.00.20"]);
+  });
+
+  /**
+   * Declarability is "nothing is published beneath it", not "it has ten digits".
+   *
+   * The ten-digit rule is right across most of the schedule and wrong exactly
+   * where it costs most: 3,564 subheadings in the 2026 Rev 15 snapshot end at
+   * eight digits, including 374 in Chapter 98 — 9801 American goods returned,
+   * 9802 outward processing, 9813 temporary importation under bond. Every one
+   * was rejected, with a message denying it could be declared at all, printed
+   * into the determination.
+   */
+  describe("provisions that terminate above ten digits", () => {
+    /** 9813.00.20 — TIB, samples for taking orders. No breakout beneath it. */
+    const tib = [
+      { htsno: "9813.00", indent: 0, description: "Articles admitted temporarily free of duty under bond:" },
+      { htsno: "9813.00.20", indent: 1, description: "Samples solely for use in taking orders", general: "Free" },
+      { htsno: "9813.00.25", indent: 1, description: "Articles solely for examination", general: "Free" },
+    ];
+
+    it("treats an 8-digit Chapter 98 leaf as declarable", () => {
+      const { lines } = parseUsitcRows(tib);
+      const reportable = lines.filter((l) => l.isReportable).map((l) => l.htsNo);
+      expect(reportable).toEqual(["9813.00.20", "9813.00.25"]);
+    });
+
+    it("still refuses a line the schedule breaks out further", () => {
+      const { lines } = parseUsitcRows(tib);
+      expect(lines.find((l) => l.htsNo === "9813.00")?.isReportable).toBe(false);
+    });
+
+    /**
+     * Chapter 99 is excluded whatever its shape. Its provisions are additional
+     * duties declared *alongside* a Chapter 1-97 classification, never instead
+     * of one, and they are checked on their own path. Admitting them here would
+     * let a run answer "9903.88.03" to "what is this product", which is not a
+     * classification at all.
+     */
+    it("never treats a Chapter 99 provision as a classification", () => {
+      const { lines } = parseUsitcRows([
+        { htsno: "9903.88", indent: 0, description: "Section 301 provisions:" },
+        { htsno: "9903.88.03", indent: 1, description: "Articles of China", general: "The duty provided + 25%" },
+      ]);
+      expect(lines.every((l) => !l.isReportable)).toBe(true);
+    });
   });
 
   it("carries chapter and heading down to descendants", () => {

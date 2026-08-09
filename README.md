@@ -80,7 +80,7 @@ data/htsus/2026-hts-revision-15/
 ```
 
 A full run takes roughly a minute and a half and produces about 35,800 tariff
-lines, near 20,000 of them 10-digit reportable numbers, across 98 chapters,
+lines, some 20,400 of them declarable reporting numbers, across 98 chapters,
 plus 121 note documents — 98 chapter, 22 section, 1 general — and 9,779
 Schedule B export codes. (Chapter 77 is reserved and correctly returns
 nothing.)
@@ -127,6 +127,35 @@ Two behaviours worth knowing:
   still useful. Warnings are recorded in the manifest and shown in the masthead
   and on the analyze page, so an analyst can see what is incomplete before
   relying on it.
+- **Which lines are declarable is decided at sync time**, not at query time, so
+  a change to that rule only reaches a deployment when the tariff is re-synced.
+  An existing snapshot keeps whatever the parser decided when it was built.
+
+### What counts as declarable
+
+A line can be declared when the schedule publishes nothing beneath it — not
+when it has ten digits. Ten digits is right for most of the schedule and wrong
+where it matters: **3,564 subheadings terminate at eight**, and treating those
+as undeclarable rejected them outright.
+
+| | |
+|---|---|
+| 3,095 in Chapter 99 | Section 301 and 232 provisions |
+| 374 in Chapter 98 | 9801 American goods returned, 9802 outward processing, 9804 personal exemptions, most of the 9813 temporary-importation-under-bond series |
+| 95 in Chapter 91 | watch provisions with no statistical breakout |
+
+These are terminal as published rather than lines whose children were lost:
+USITC emits an explicit `.00` reporting number wherever an eight-digit
+subheading has no breakout, which accounts for 8,080 of the 19,949 ten-digit
+lines.
+
+Chapter 99 is excluded anyway. Its provisions are additional duties declared
+*alongside* a Chapter 1–97 classification, never instead of one, and they are
+verified on their own path — admitting them here would let a run answer
+`9903.88.03` to "what is this product", which is not a classification.
+
+Net effect on the 2026 Revision 15 snapshot: 19,949 → **20,418** declarable
+lines, with nothing that was declarable becoming undeclarable.
 
 ### Chapter 99 exposure
 
@@ -302,8 +331,8 @@ code that has not been verified.
 
 **Nothing is accepted on the model's word.** After the run, every returned code
 is re-checked against the snapshot (`verifyAgainstTariff` in `classify.ts`).
-Codes that do not exist, or that resolve to a non-declarable 8-digit line, are
-dropped and the candidates re-ranked; if everything fails, the analysis fails
+Codes that do not exist, or that resolve to a line the schedule breaks out
+further, are dropped and the candidates re-ranked; if everything fails, the analysis fails
 rather than presenting something unverifiable. A fluent, well-formed,
 nonexistent 10-digit code is the highest-consequence failure mode in this
 domain, and the one a language model is most prone to.

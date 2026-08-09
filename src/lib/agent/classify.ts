@@ -880,10 +880,18 @@ export function verifyAgainstTariff(result: ClassificationResult): {
     }
 
     if (!line.isReportable) {
-      rejectedCodes.push({
-        code: candidate.hts_code,
-        reason: `resolves to a ${line.digits.length}-digit line, which cannot be declared on an entry`,
-      });
+      // Say why *this* line is not declarable rather than asserting a digit
+      // rule. Chapter 98 and the watch provisions of Chapter 91 terminate at
+      // eight digits, so "an 8-digit line cannot be declared" was simply false
+      // for them — and it was printed into the determination's discarded list,
+      // telling a reader that 9813.00.20 is not a code you can enter.
+      const reason =
+        line.chapter === "99"
+          ? "is a Chapter 99 provision, which is declared alongside a " +
+            "Chapter 1-97 classification rather than instead of one"
+          : `is not the deepest published line under ${line.htsNo} — the ` +
+            `schedule breaks it out further, so a more specific code applies`;
+      rejectedCodes.push({ code: candidate.hts_code, reason });
       continue;
     }
 

@@ -122,16 +122,22 @@ describe("verifyAgainstTariff", () => {
     ]);
   });
 
-  it("drops a code that is real but not declarable", () => {
-    // 8-digit rate lines exist, but you cannot put one on an entry.
+  it("drops a code the schedule breaks out further", () => {
+    // 8507.60.00 publishes statistical breakouts beneath it, so it is a rate
+    // line rather than something you can put on an entry. The rejection says
+    // that, rather than asserting a rule about digit counts — Chapter 98 and
+    // the Chapter 91 watch provisions terminate at eight digits and are
+    // perfectly declarable, and the old message called them undeclarable in
+    // writing, inside the determination.
     const { verification } = verifyAgainstTariff(
       result([candidate({ hts_code: "8507.60.00" })]),
     );
 
     expect(verification.verifiedCodes).toEqual([]);
     expect(verification.rejectedCodes[0].reason).toMatch(
-      /8-digit line, which cannot be declared/,
+      /not the deepest published line/,
     );
+    expect(verification.rejectedCodes[0].reason).not.toMatch(/8-digit/);
   });
 
   it("overwrites duty rates with the tariff's own values", () => {
