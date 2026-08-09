@@ -46,6 +46,14 @@ jobs:
       - name: Check the code is sound
         run: |
           npm ci
+          # The Prisma client is generated code, and prisma/generated/ is
+          # gitignored — so a fresh checkout does not have it and every type
+          # that comes from the database is missing. That surfaces as a module
+          # error in src/lib/db.ts plus a scatter of implicit-any errors in
+          # unrelated files, which reads like several problems rather than one.
+          # The Dockerfile already does this before `next build`; the check
+          # needs it for the same reason.
+          npx prisma generate
           npx tsc --noEmit
           npx eslint .
           npx vitest run

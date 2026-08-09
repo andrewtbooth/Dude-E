@@ -83,7 +83,14 @@ model Analysis {
 /// The analyst's final call on an analysis. This is what the PDF renders.
 model Determination {
   id         String   @id @default(cuid())
-  analysisId String
+  /// One analysis yields at most one determination.
+  ///
+  /// Enforced in the database rather than only in the route, because the
+  /// failure is a race: two in-flight POSTs both pass an application-level
+  /// check and both insert. What that produces is two separately-numbered
+  /// signed conclusions for one piece of work, each with its own timestamp and
+  /// PDF hash, with nothing downstream able to say which was the decision.
+  analysisId String   @unique
   analysis   Analysis @relation(fields: [analysisId], references: [id])
   analystId  String
   analyst    Analyst  @relation(fields: [analystId], references: [id])

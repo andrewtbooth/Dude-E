@@ -155,23 +155,28 @@ export default async function HistoryPage({
             </p>
             <ul className="mt-3 space-y-1.5">
               {unresolved.map((analysis) => (
-                <li
-                  key={analysis.id}
-                  className="flex flex-wrap items-baseline gap-x-3 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs"
-                >
-                  <StatusTag status={analysis.status} />
-                  <span className="text-[var(--text-muted)]">
-                    {formatTimestamp(analysis.createdAt)}
-                  </span>
-                  <span className="text-[var(--text-muted)]">
-                    {analysis.analyst.name}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">
-                    {analysis.input}
-                  </span>
-                  {analysis.error && (
-                    <span className="text-[var(--danger)]">{analysis.error}</span>
-                  )}
+                <li key={analysis.id}>
+                  {/* Linked, so "worth closing out" is something the analyst
+                      can act on from here. Until /analyze/[id] existed this
+                      list named work with no way to reach it. */}
+                  <Link
+                    href={`/analyze/${analysis.id}`}
+                    className="flex flex-wrap items-baseline gap-x-3 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs transition-colors hover:border-[var(--accent)]"
+                  >
+                    <StatusTag status={analysis.status} />
+                    <span className="text-[var(--text-muted)]">
+                      {formatTimestamp(analysis.createdAt)}
+                    </span>
+                    <span className="text-[var(--text-muted)]">
+                      {analysis.analyst.name}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">
+                      {analysis.input}
+                    </span>
+                    {analysis.error && (
+                      <span className="text-[var(--danger)]">{analysis.error}</span>
+                    )}
+                  </Link>
                 </li>
               ))}
             </ul>

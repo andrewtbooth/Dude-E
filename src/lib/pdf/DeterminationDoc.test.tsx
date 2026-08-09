@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { describe, expect, it } from "vitest";
 import {
@@ -10,6 +11,117 @@ import { DeterminationDoc } from "./DeterminationDoc";
 function isPdf(buffer: Buffer): boolean {
   return buffer.subarray(0, 5).toString("latin1") === "%PDF-";
 }
+
+/**
+ * The document must be a pure function of the determination row.
+ *
+ * `Determination.pdfSha256` is written once, on first issue, so a PDF in
+ * circulation can be tied back to the row that produced it; the export route
+ * alarms when a later render disagrees with the stored hash. That check is only
+ * worth having if identical inputs render identical bytes. They did not: the
+ * renderer stamps wall-clock time into /CreationDate and derives the /ID
+ * trailer from it, so every re-issue tripped the alarm on a document that had
+ * not changed. Pinning both dates to `decidedAt` fixed it, and this test is
+ * what keeps it fixed — the failure mode is silent, and its cost is that
+ * whoever reads the logs learns to ignore the alarm.
+ */
+describe("byte reproducibility", () => {
+  it("renders identical bytes from identical inputs, across a clock tick", async () => {
+    const view = sampleDeterminationView();
+
+    const first = await renderToBuffer(<DeterminationDoc view={view} />);
+    // The bug was a wall-clock read, so a same-millisecond comparison would
+    // have passed while the real re-issue — minutes or months later — failed.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const second = await renderToBuffer(<DeterminationDoc view={view} />);
+
+    const hash = (buffer: Buffer) =>
+      crypto.createHash("sha256").update(buffer).digest("hex");
+
+    expect(hash(second)).toBe(hash(first));
+  }, 30_000);
+
+  it("moves the hash when something on the row actually changes", async () => {
+    // The mirror of the above: a check that never fires is as useless as one
+    // that always does, so confirm the bytes still track the inputs.
+    const a = await renderToBuffer(
+      <DeterminationDoc view={sampleDeterminationView()} />,
+    );
+    const b = await renderToBuffer(
+      <DeterminationDoc
+        view={sampleDeterminationView({ analystNote: "Reviewed with counsel." })}
+      />,
+    );
+
+    expect(a.equals(b)).toBe(false);
+  }, 30_000);
+});
+
+/**
+ * Chapter 99 must be answered on the page, either way.
+ *
+ * The failure this guards is not a crash — it is a document that looks clean
+ * precisely when it is least trustworthy. A code the screening does not cover
+ * produced a determination with no additional-duty section at all, under a
+ * footer implying Chapter 99 had been considered, and a reader could not tell
+ * that from "screened, nothing applies".
+ */
+describe("Chapter 99 disclosure", () => {
+  async function textOf(view: Parameters<typeof DeterminationDoc>[0]["view"]) {
+    const { getDocumentProxy, extractText } = await import("unpdf");
+    const buffer = await renderToBuffer(<DeterminationDoc view={view} />);
+    const doc = await getDocumentProxy(new Uint8Array(buffer), { verbosity: 0 });
+    return (await extractText(doc, { mergePages: true })).text;
+  }
+
+  /** Callout titles are letter-spaced for display; compare without whitespace. */
+  const squashed = (text: string) => text.replace(/\s+/g, "");
+
+  /** The same fixture with nothing matched — the case that used to render blank. */
+  function withNoChapter99() {
+    const view = sampleDeterminationView();
+    return {
+      ...view,
+      selected: {
+        ...view.selected,
+        tariff: { ...view.selected.tariff, chapter_99: [] },
+      },
+    };
+  }
+
+  it("states the negative when nothing was matched", async () => {
+    const text = await textOf(withNoChapter99());
+    expect(squashed(text)).toContain(squashed("SCREENING IS INCOMPLETE"));
+    expect(squashed(text)).toContain(squashed("not a finding that none applies"));
+  }, 30_000);
+
+  it("says how far the screening actually reaches", async () => {
+    // The count is what separates a caveat from a measurement: a reader can
+    // size 267 of 19,949 for themselves, where "may be incomplete" tells them
+    // nothing they can act on.
+    const text = await textOf(withNoChapter99());
+    expect(squashed(text)).toContain("267");
+    expect(squashed(text)).toContain(squashed("19,949"));
+  }, 30_000);
+
+  it("singles out Chinese-origin goods, where the gap actually bites", async () => {
+    const text = await textOf(withNoChapter99());
+    expect(squashed(text)).toContain(squashed("unscreened rather than as clear"));
+  }, 30_000);
+
+  it("still lists the provisions when duties were matched", async () => {
+    const text = await textOf(sampleDeterminationView());
+    expect(squashed(text)).toContain(squashed("ADDITIONAL DUTIES MAY APPLY"));
+  }, 30_000);
+
+  it("puts Chapter 99 in the footer's excluded scope, not merely 'stale'", async () => {
+    const text = await textOf(sampleDeterminationView());
+    expect(squashed(text)).toContain(squashed("screened only partially"));
+    expect(squashed(text)).toContain(
+      squashed("does not establish that none apply"),
+    );
+  }, 30_000);
+});
 
 describe("DeterminationDoc", () => {
   it("renders a valid PDF", async () => {

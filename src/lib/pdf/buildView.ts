@@ -58,6 +58,10 @@ export interface BuildViewInput {
   scheduleBEdition: string | null;
   /** When the tariff snapshot was pulled, for dating Chapter 99 duties. */
   tariffRetrievedAt: Date | null;
+  chapter99Scope?: {
+    subheadingsWithAdditionalDuty: number;
+    declarableLines: number;
+  } | null;
   model: string;
   effort: string;
   appVersion: string;
@@ -86,6 +90,7 @@ export function buildDeterminationView(
     htsusRevision: input.htsusRevision,
     scheduleBEdition: input.scheduleBEdition,
     tariffRetrievedAt: input.tariffRetrievedAt,
+    chapter99Scope: input.chapter99Scope ?? null,
     verification: {
       rejectedCodes: input.run.verification.rejectedCodes,
       corrections: input.run.verification.corrections,

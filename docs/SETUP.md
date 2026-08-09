@@ -146,6 +146,36 @@ the tariff edition in use and how old it is.
 
 ---
 
+## Looking at the running app
+
+Most Fly diagnostics are done with `flyctl`, a program you type commands into
+on a computer. If you are working from a phone there is no terminal to put it
+in — so the **Ops** workflow does it for you. A GitHub Actions runner is a
+temporary Linux machine, it installs `flyctl` the same way the deploy does, and
+the result comes back as a readable page rather than a wall of log text.
+
+Actions → **Ops** → *Run workflow* → pick one:
+
+| Action | Answers |
+|---|---|
+| `status` | Is the app up? Which release is live? |
+| `health` | Which tariff edition is being stamped on determinations, how old it is, which build is serving |
+| `logs` | The last few hundred lines — the first place to look when a machine boots and dies |
+| `check-duplicates` | Whether two determinations exist for one analysis, which blocks a deploy at the uniqueness pre-check |
+| `disk` | How full the volume is. The tariff snapshot and the audit database both live there |
+| `restart` | Bounce the machine. Type the app name in the confirm box or nothing happens |
+
+Everything except `restart` is read-only — running them cannot change anything.
+Each run explains what the output means, so you do not have to know the tools
+to read the answer.
+
+Fly's own dashboard covers some of this too: **Monitoring** for live logs,
+**Machines** for status, **Secrets** for keys. Use whichever is easier on the
+screen you have. The workflow exists for the things the dashboard cannot do,
+which is anything that needs to run a command *inside* the machine.
+
+---
+
 ## Cost
 
 Two separate bills:

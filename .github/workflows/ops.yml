@@ -1,0 +1,229 @@
+# Look at the running deployment from a phone.
+#
+# Most Fly diagnostics are flyctl commands, and flyctl is a terminal program.
+# There is no terminal on a phone — but a GitHub Actions runner is a Linux
+# machine that already installs flyctl for the deploy workflow, so anything you
+# would type at a laptop can be a button here instead.
+#
+# Everything is read-only except `restart`, which asks you to type the app name
+# first. Results are written to the run summary rather than left in the log,
+# because the summary renders as a readable page and the raw log does not
+# scroll well on a small screen.
+
+name: Ops
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to check"
+        type: choice
+        default: status
+        options:
+          - status
+          - health
+          - logs
+          - check-duplicates
+          - disk
+          - restart
+      confirm:
+        description: "Only for restart — type the app name to confirm"
+        type: string
+        default: ""
+
+concurrency:
+  # Shares the deploy group: reading state while a deploy rewrites it produces
+  # a confusing answer, and a restart during one is worse.
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  ops:
+    name: ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Resolve app name
+        id: app
+        run: echo "name=$(grep -m1 '^app = ' fly.toml | cut -d'\"' -f2)" >> "$GITHUB_OUTPUT"
+
+      # ---------------------------------------------------------------- status
+      - name: Machine status
+        if: inputs.action == 'status'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP="${{ steps.app.outputs.name }}"
+          {
+            echo "## Machines for \`$APP\`"
+            echo ""
+            echo '```'
+            flyctl status --app "$APP" 2>&1 || echo "Could not reach Fly."
+            echo '```'
+            echo ""
+            echo "**Reading this:** every machine should say \`started\`, and the"
+            echo "health check should be \`passing\`. A machine cycling between"
+            echo "\`starting\` and \`stopped\` is crashing on boot — run **logs** next."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------- health
+      - name: Application health
+        if: inputs.action == 'health'
+        run: |
+          APP="${{ steps.app.outputs.name }}"
+          BODY=$(curl -fsS --max-time 20 "https://$APP.fly.dev/api/health" || echo "")
+          {
+            echo "## Health of \`$APP\`"
+            echo ""
+            if [ -z "$BODY" ]; then
+              echo "The app did not answer. It is down, still booting, or the"
+              echo "hostname differs from the app name. Run **status**, then **logs**."
+            else
+              echo '```json'
+              echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+              echo '```'
+              echo ""
+              echo "**Reading this:**"
+              echo ""
+              echo "- \`status: ok\` — serving, tariff snapshot loaded."
+              echo "- \`status: degraded\` — serving, but no snapshot yet. Normal for a"
+              echo "  minute or two after a first deploy; classification is refused"
+              echo "  until it lands."
+              echo "- \`snapshot.revision\` — the tariff edition every determination"
+              echo "  exported right now will be stamped with."
+              echo "- \`snapshot.ageDays\` — how long since that edition was pulled."
+              echo "  USITC ships revisions every few weeks, and a stale snapshot"
+              echo "  does not announce itself; it keeps stamping determinations"
+              echo "  with a superseded edition. The weekly sync should hold this"
+              echo "  under about 7."
+              echo "- \`snapshot.warnings\` — parser warnings from the last sync."
+              echo "  A non-zero count is not automatically a problem, but a jump"
+              echo "  after a sync is worth reading the sync log for."
+              echo "- \`build\` — which build is live. Compare it after a deploy to"
+              echo "  confirm the new one actually took."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ------------------------------------------------------------------ logs
+      - name: Recent logs
+        if: inputs.action == 'logs'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP="${{ steps.app.outputs.name }}"
+          # `flyctl logs` tails by default and would never exit. --no-tail asks
+          # it to print and stop; the timeout is a belt-and-braces guard in case
+          # the installed flyctl does not know that flag.
+          timeout 60 flyctl logs --app "$APP" --no-tail > logs.txt 2>&1 || true
+          {
+            echo "## Last log lines for \`$APP\`"
+            echo ""
+            echo '```'
+            tail -n 200 logs.txt
+            echo '```'
+            echo ""
+            echo "**Reading this:** boot messages start \`==>\`. In order you should"
+            echo "see the uniqueness pre-check pass, the schema apply, the tariff"
+            echo "snapshot report present or downloading, then Next.js start."
+            echo "A \`FATAL\` line says why the machine refused to serve."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ------------------------------------------------------- check-duplicates
+      - name: Duplicate determinations
+        if: inputs.action == 'check-duplicates'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP="${{ steps.app.outputs.name }}"
+          if flyctl ssh console --app "$APP" \
+               -C "npx tsx scripts/deploy/list-duplicate-determinations.ts" \
+               > dupes.txt 2>&1; then
+            OK=1
+          else
+            OK=0
+          fi
+          {
+            echo "## Duplicate determinations in \`$APP\`"
+            echo ""
+            echo '```'
+            cat dupes.txt
+            echo '```'
+            echo ""
+            if [ "$OK" = "0" ]; then
+              echo "The command did not complete. If the app is not running, this"
+              echo "cannot work — it runs inside the machine. Check **status** first."
+            else
+              echo "**Reading this:** one analysis should produce one determination."
+              echo "If any are listed, the deploy will stop at the uniqueness"
+              echo "pre-check until they are resolved. A row marked"
+              echo "\`PDF issued: yes\` has been rendered at least once and a copy"
+              echo "may be with someone; a row marked \`no\` never left the app and"
+              echo "is the safer one to remove. Nothing is deleted automatically —"
+              echo "which is the real decision is a judgement about the work."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ------------------------------------------------------------------ disk
+      - name: Volume space
+        if: inputs.action == 'disk'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP="${{ steps.app.outputs.name }}"
+          flyctl ssh console --app "$APP" -C "df -h /data" > disk.txt 2>&1 || true
+          {
+            echo "## Volume usage for \`$APP\`"
+            echo ""
+            echo '```'
+            cat disk.txt
+            echo '```'
+            echo ""
+            echo "**Reading this:** \`/data\` holds the tariff snapshot and the audit"
+            echo "database — the two things that survive a deploy. Each tariff"
+            echo "revision is a few hundred MB and old ones are not pruned"
+            echo "automatically, so this is the number that creeps up over months."
+            echo "Past about 80% full, plan to grow the volume or clear old"
+            echo "revisions."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # --------------------------------------------------------------- restart
+      - name: Confirm restart
+        if: inputs.action == 'restart'
+        run: |
+          APP="${{ steps.app.outputs.name }}"
+          if [ "${{ inputs.confirm }}" != "$APP" ]; then
+            {
+              echo "## Restart not confirmed"
+              echo ""
+              echo "Nothing was done. To restart, run this again with the confirm"
+              echo "box set to exactly \`$APP\`."
+              echo ""
+              echo "A restart drops any analysis in flight. Runs take minutes, so"
+              echo "check with anyone using the app first."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Confirmation did not match the app name. Nothing was restarted."
+            exit 1
+          fi
+
+      - name: Restart machines
+        if: inputs.action == 'restart'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP="${{ steps.app.outputs.name }}"
+          flyctl apps restart "$APP" 2>&1 | tee restart.txt || true
+          sleep 15
+          {
+            echo "## Restarted \`$APP\`"
+            echo ""
+            echo '```'
+            cat restart.txt
+            echo '```'
+            echo ""
+            echo "Give it a minute, then run **health** to confirm it came back."
+            echo "The tariff snapshot is on the volume and is not re-downloaded."
+          } >> "$GITHUB_STEP_SUMMARY"

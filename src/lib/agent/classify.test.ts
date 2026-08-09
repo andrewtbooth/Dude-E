@@ -434,6 +434,41 @@ describe("verifyAgainstTariff — Chapter 99 and rulings", () => {
     expect(verification.rejectedCodes[0].reason).toMatch(/ruling number format/);
   });
 
+  /**
+   * CBP has renumbered its rulings several times and every generation is still
+   * live in CROSS. Rejecting one is not a quiet no-op: the number is written
+   * into the determination's discarded list as "not a CBP ruling number
+   * format", so a too-narrow pattern has the document assert to an auditor that
+   * a real citation is malformed. These are the shapes that were being refused.
+   */
+  it.each([
+    ["NY J80123", "the 2002-2005 NY letter series"],
+    ["NY I89765", "the 2002-2005 NY letter series"],
+    ["NY R02345", "the 2002-2005 NY letter series"],
+    ["HQ W968156", "a pre-classification ruling"],
+    ["HQ 967890", "the older six-digit HQ series"],
+    ["HQ H289712", "current HQ"],
+    ["NY N123456", "current NY"],
+  ])("accepts %s (%s)", (rulingNumber) => {
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([
+        candidate({
+          cross_rulings: [
+            ruling({
+              ruling_number: rulingNumber,
+              // The URL check is separate and matches on the bare number.
+              url: `https://rulings.cbp.gov/ruling/${rulingNumber.split(/\s+/).pop()}`,
+            }),
+          ],
+        }),
+      ]),
+    );
+    expect(verified.candidates[0].cross_rulings).toHaveLength(1);
+    expect(
+      verification.rejectedCodes.some((r) => /ruling number format/.test(r.reason)),
+    ).toBe(false);
+  });
+
   it("rejects a citation that links somewhere other than CBP", () => {
     const { result: verified, verification } = verifyAgainstTariff(
       result([

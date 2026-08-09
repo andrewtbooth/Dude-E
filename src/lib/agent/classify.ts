@@ -8,6 +8,7 @@ import {
   MAX_OUTPUT_TOKENS,
   MAX_PAUSE_RESUMES,
   MAX_TOOL_ITERATIONS,
+  THINKING_BUDGET_TOKENS,
   config,
 } from "../config";
 import {
@@ -17,6 +18,7 @@ import {
 } from "../hts/store";
 import * as z from "zod/v4";
 import { buildOutputContract, buildSystemPrompt, buildUserTurn } from "./prompt";
+import { replayCassette } from "./replay";
 import {
   type AnalysisMode,
   type Candidate,
@@ -56,7 +58,12 @@ export interface ClassificationRun {
     corrections: CodeCorrection[];
   };
   usage: {
+    /** Uncached prompt tokens, billed at full rate. */
     inputTokens: number;
+    /** Prompt tokens written to cache this run, billed at ~1.25x. */
+    cacheWriteTokens: number;
+    /** Prompt tokens served from cache, billed at ~0.1x. */
+    cacheReadTokens: number;
     outputTokens: number;
   };
   model: string;
@@ -152,6 +159,19 @@ export async function* classify(
 ): AsyncGenerator<ProgressEvent, void, undefined> {
   const startedAt = Date.now();
 
+  // Checked before anything else, including the API key, so a replay session
+  // needs no credentials at all. Every event the rest of the app sees is the
+  // one a real run produced, and the run it ends on is stamped as replayed.
+  const cassette = config.replayCassette;
+  if (cassette) {
+    yield {
+      type: "status",
+      message: `Replaying a recorded run from ${cassette}. No API call is being made.`,
+    };
+    yield* replayCassette(cassette, config.replayStepDelayMs);
+    return;
+  }
+
   let revision;
   try {
     revision = getActiveRevision();
@@ -168,10 +188,26 @@ export async function* classify(
 
   const client = new Anthropic({ apiKey: config.anthropicApiKey });
   const effort = config.effort;
+  const capabilities = config.modelCapabilities;
+
+  // Depth is set by an effort level on some models and a thinking budget on
+  // others; the two are mutually exclusive and each is a 400 on the wrong
+  // model. Build both fragments once here so the request below reads as one
+  // shape rather than a pile of conditionals.
+  const thinking =
+    capabilities.thinking === "adaptive"
+      ? // `summarized` is requested explicitly because the default omits the
+        // text and the analyst is watching a multi-minute run.
+        ({ type: "adaptive", display: "summarized" } as const)
+      : ({ type: "enabled", budget_tokens: THINKING_BUDGET_TOKENS } as const);
+
+  const depth = effort
+    ? `${effort} effort`
+    : `a ${THINKING_BUDGET_TOKENS.toLocaleString()}-token thinking budget`;
 
   yield {
     type: "status",
-    message: `Classifying against ${revision.revision} at ${effort} effort.`,
+    message: `Classifying against ${revision.revision} using ${config.model} at ${depth}.`,
   };
 
   /**
@@ -186,12 +222,28 @@ export async function* classify(
     client.beta.messages.toolRunner({
       model: config.model,
       max_tokens: MAX_OUTPUT_TOKENS,
-      // Thinking is on by default on Opus 5; `summarized` is requested
-      // explicitly because the default omits the text and the analyst is
-      // watching a multi-minute run.
-      thinking: { type: "adaptive", display: "summarized" },
+      // The dominant cost of this app is not the model tier — it is that a
+      // tool loop resends its whole accumulated history on every iteration.
+      // A run that reads chapter notes and fetches a datasheet is re-billing
+      // tens of thousands of tokens per step, so spend grows with the square
+      // of the tool count. The static breakpoint on the system prompt below
+      // does nothing for that: the growing part is the messages.
+      //
+      // Top-level cache control places a marker on the last cacheable block of
+      // each request, which during the loop is the tool result just appended.
+      // Every iteration therefore reads back the prior turn's prefix at ~0.1x
+      // instead of paying full rate for it again.
+      //
+      // Done this way rather than by marking blocks through the runner
+      // deliberately: `setMessagesParams` sets the runner's internal `mutated`
+      // flag, which stops it appending the assistant turn, which is what sent
+      // an earlier version of this loop into a 41-iteration spin. Passing a
+      // parameter the runner forwards untouched cannot reach that code path.
+      cache_control: { type: "ephemeral" },
+      thinking,
       output_config: {
-        effort,
+        // Omitted entirely, not set to a default, on models that reject it.
+        ...(effort ? { effort } : {}),
         ...(structuredOutput
           ? { format: betaZodOutputFormat(resultSchemaFor(input.mode)) }
           : {}),
@@ -240,7 +292,13 @@ export async function* classify(
           allowed_domains: WEB_FETCH_ALLOWED_DOMAINS,
           // A fetched datasheet can otherwise add five figures of tokens to the
           // history, which is then re-billed on every subsequent tool iteration.
-          max_content_tokens: 30_000,
+          // Scaled to the model's context: 30k is 3% of a 1M window and 15% of
+          // a 200k one, and two such fetches plus the chapter notes a GRI walk
+          // pulls will crowd a small window before the analysis is finished.
+          max_content_tokens: Math.min(
+            30_000,
+            Math.floor(capabilities.contextTokens * 0.03),
+          ),
         },
       ],
       messages: [
@@ -266,6 +324,8 @@ export async function* classify(
 
   let finalMessage: BetaMessage | null = null;
   let inputTokens = 0;
+  let cacheWriteTokens = 0;
+  let cacheReadTokens = 0;
   let outputTokens = 0;
   let pauseResumes = 0;
   let structuredOutput = true;
@@ -338,7 +398,14 @@ export async function* classify(
 
         const message = await stream.finalMessage();
         finalMessage = message;
+        // `input_tokens` is the *uncached remainder* only. Counting it alone
+        // undercounts a cached run badly and — worse for a spend decision —
+        // makes caching look like it did nothing, because the tokens it moved
+        // simply vanish from the total. Track all three so the figure shown to
+        // the analyst is the whole prompt and the saving is legible.
         inputTokens += message.usage?.input_tokens ?? 0;
+        cacheWriteTokens += message.usage?.cache_creation_input_tokens ?? 0;
+        cacheReadTokens += message.usage?.cache_read_input_tokens ?? 0;
         outputTokens += message.usage?.output_tokens ?? 0;
 
         // Server-side tools can pause a long turn. The runner only continues
@@ -490,9 +557,9 @@ export async function* classify(
     run: {
       result,
       verification,
-      usage: { inputTokens, outputTokens },
+      usage: { inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens },
       model: config.model,
-      effort,
+      effort: config.effortLabel,
       htsusRevision: revision.revision,
       durationMs: Date.now() - startedAt,
     },
@@ -656,8 +723,30 @@ function verifyChapter99(
   return kept;
 }
 
-/** CBP ruling number formats: N123456, NY N123456, HQ H289712, HQ 967890. */
-const RULING_NUMBER = /^(?:HQ|NY)?\s*[HN]?\d{6}$/i;
+/**
+ * CBP ruling number formats.
+ *
+ * CBP has changed this scheme several times and every generation is still live
+ * in CROSS and still cited in current practice, so the pattern has to admit all
+ * of them:
+ *
+ *   HQ 967890      six digits, no letter — the older HQ series
+ *   HQ H289712     H + six digits — current HQ
+ *   HQ W968156     W + six digits — pre-classification rulings
+ *   NY N123456     N + six digits — current NY
+ *   NY J80123      letter + five digits — the 2002-2005 NY series, where the
+ *                  letter advanced roughly yearly (I, J, K, L, R and others)
+ *
+ * The previous pattern accepted only `[HN]?\d{6}`, which rejected the entire
+ * letter-plus-five-digit generation and W-prefixed HQ rulings. That mattered
+ * more than a missed citation: a rejection here is written into the
+ * determination's discarded list as "not a CBP ruling number format", so the
+ * document told a reader, in writing, that a genuine CBP citation was malformed.
+ *
+ * Still deliberately structural. A well-formed number is not a real ruling, and
+ * only fetching it from CROSS would establish that — see verifyCrossRulings.
+ */
+const RULING_NUMBER = /^(?:HQ|NY)?\s*(?:[A-Z]\d{5,6}|\d{6})$/i;
 
 /**
  * Structural screening for cited rulings.

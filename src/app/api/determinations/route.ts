@@ -111,6 +111,32 @@ export async function POST(request: Request) {
     );
   }
 
+  // One analysis, one determination.
+  //
+  // Recording is not idempotent and the button that triggers it is reachable
+  // more than once: a slow POST, an impatient second click, a retried request.
+  // Every duplicate is a separately-numbered signed conclusion for a single
+  // piece of work, each with its own id, timestamp and PDF hash — and nothing
+  // downstream can tell which one was the decision. The unique index on
+  // `analysisId` is what actually prevents that; this check exists to answer
+  // with something an analyst can act on rather than a constraint violation.
+  const existing = await prisma.determination.findUnique({
+    where: { analysisId: analysis.id },
+    select: { id: true, selectedHtsCode: true, decidedAt: true },
+  });
+  if (existing) {
+    return NextResponse.json(
+      {
+        error:
+          `A determination was already recorded for this analysis on ` +
+          `${existing.decidedAt.toISOString()} (${existing.selectedHtsCode}). ` +
+          `Re-issue that document rather than recording a second one.`,
+        determinationId: existing.id,
+      },
+      { status: 409 },
+    );
+  }
+
   const determination = await prisma.determination.create({
     data: {
       analysisId: analysis.id,

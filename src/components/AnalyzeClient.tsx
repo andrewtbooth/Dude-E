@@ -4,10 +4,8 @@ import { useCallback, useRef, useState } from "react";
 import type { ClassificationRun, ProgressEvent } from "@/lib/agent/classify";
 import type { AnalysisMode, Refinement } from "@/lib/agent/schema";
 import { readSseStream } from "@/lib/sse";
-import { CandidateCard } from "./CandidateCard";
-import { ClarifyingQuestions } from "./ClarifyingQuestions";
 import { ProgressLog, type ProgressEntry } from "./ProgressLog";
-import { ResultSummary } from "./ResultSummary";
+import { RunResult } from "./RunResult";
 
 /**
  * What the SSE route emits. The agent's own `done` event is replaced by the
@@ -51,7 +49,7 @@ export function AnalyzeClient({
   const [run, setRun] = useState<ClassificationRun | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [droppedAnalysisId, setDroppedAnalysisId] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const activeMode = MODES.find((entry) => entry.value === mode)!;
@@ -65,8 +63,14 @@ export function AnalyzeClient({
       setRunning(true);
       setError(null);
       setRun(null);
-      setSelectedCode(null);
+      setDroppedAnalysisId(null);
       if (!continuingAnalysisId) setEntries([]);
+
+      // Tracks whether the stream reached a terminal event. A dropped
+      // connection ends the loop without one, and the run keeps going on the
+      // server -- so the result exists, it just is not here.
+      let settled = false;
+      let startedId: string | null = continuingAnalysisId;
 
       try {
         const response = await fetch("/api/analyze", {
@@ -95,6 +99,7 @@ export function AnalyzeClient({
         )) {
           switch (event.type) {
             case "analysis_started":
+              startedId = event.analysisId;
               setAnalysisId(event.analysisId);
               break;
             case "status":
@@ -122,17 +127,31 @@ export function AnalyzeClient({
               ]);
               break;
             case "done":
+              // Deliberately not pre-selecting the recommendation. The next
+              // click after this one records a determination under the
+              // analyst's name, and when verification rejects the model's own
+              // pick the runner falls back to the best surviving candidate --
+              // a code the model never actually recommended. The card marks
+              // the model's pick; choosing it is the analyst's action.
+              settled = true;
               setAnalysisId(event.analysisId);
               setRun(event.run);
-              setSelectedCode(event.run.result.recommended_hts_code);
               break;
             case "error":
+              settled = true;
               setError(event.message);
               break;
             default:
               break;
           }
         }
+        // Falling out of the loop without a `done` or `error` frame means the
+        // connection went away mid-run. The analysis itself keeps going on the
+        // server and completes into a row — the result exists, it just is not
+        // here. Previously the page showed nothing at all in this case: no
+        // result, no error, no explanation, and no link to the row that was
+        // still being written.
+        if (!settled && startedId) setDroppedAnalysisId(startedId);
       } catch (caught) {
         if ((caught as Error).name !== "AbortError") {
           setError(
@@ -140,6 +159,8 @@ export function AnalyzeClient({
               ? caught.message
               : "The analysis could not be completed.",
           );
+          // Same reasoning as above: a transport failure does not stop the run.
+          if (startedId) setDroppedAnalysisId(startedId);
         }
       } finally {
         setRunning(false);
@@ -249,146 +270,38 @@ export function AnalyzeClient({
         </div>
       )}
 
+      {droppedAnalysisId && !run && (
+        <div
+          role="status"
+          className="rounded-lg border border-[var(--warn)] bg-[var(--warn-subtle)] px-4 py-3"
+        >
+          <p className="text-sm text-[var(--text-primary)]">
+            The connection to this run dropped before it finished reporting.
+          </p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            The analysis kept running on the server. Nothing has been lost and
+            nothing needs re-running — open it once it settles.
+          </p>
+          <a
+            href={`/analyze/${droppedAnalysisId}`}
+            className="mt-2 inline-block text-xs font-medium text-[var(--accent)] underline underline-offset-2"
+          >
+            Open this analysis
+          </a>
+        </div>
+      )}
+
       <ProgressLog entries={entries} running={running} />
 
       {run && (
-        <>
-          <ResultSummary run={run} />
-
-          {run.result.clarifying_questions.length > 0 && (
-            <ClarifyingQuestions
-              questions={run.result.clarifying_questions}
-              busy={running}
-              onSubmit={(refinements) => void startRun(refinements, analysisId)}
-            />
-          )}
-
-          {run.result.candidates.length > 0 && (
-            <section>
-              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-                  Candidate classifications
-                </h2>
-                <p className="text-xs text-[var(--text-muted)]">
-                  Select the code you are prepared to stand behind — it does not
-                  have to be the model&rsquo;s pick.
-                </p>
-              </div>
-
-              <ul className="space-y-3">
-                {run.result.candidates.map((candidate) => (
-                  <CandidateCard
-                    key={candidate.hts_code}
-                    candidate={candidate}
-                    selected={selectedCode === candidate.hts_code}
-                    onSelect={() => setSelectedCode(candidate.hts_code)}
-                    tariffRetrievedAt={tariffRetrievedAt}
-                  />
-                ))}
-              </ul>
-
-              <ExportBar
-                analysisId={analysisId}
-                selectedCode={selectedCode}
-                disabled={running}
-              />
-            </section>
-          )}
-        </>
+        <RunResult
+          run={run}
+          analysisId={analysisId}
+          tariffRetrievedAt={tariffRetrievedAt}
+          busy={running}
+          onRefine={(refinements) => void startRun(refinements, analysisId)}
+        />
       )}
-    </div>
-  );
-}
-
-function ExportBar({
-  analysisId,
-  selectedCode,
-  disabled,
-}: {
-  analysisId: string | null;
-  selectedCode: string | null;
-  disabled: boolean;
-}) {
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function exportDetermination() {
-    if (!analysisId || !selectedCode) return;
-    setBusy(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/determinations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ analysisId, selectedHtsCode: selectedCode, analystNote: note }),
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        setError(payload?.error ?? "Could not record the determination.");
-        return;
-      }
-
-      const { determinationId } = (await response.json()) as {
-        determinationId: string;
-      };
-      window.open(`/api/determinations/${determinationId}/pdf`, "_blank");
-    } catch {
-      setError("Could not reach the server.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="mt-5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-4">
-      <label
-        htmlFor="analyst-note"
-        className="block text-sm font-medium text-[var(--text-primary)]"
-      >
-        Analyst note <span className="font-normal text-[var(--text-muted)]">(optional)</span>
-      </label>
-      <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-        Worth filling in if you are overriding the model&rsquo;s pick — the
-        reason belongs in the record, not in someone&rsquo;s memory.
-      </p>
-      <textarea
-        id="analyst-note"
-        value={note}
-        onChange={(event) => setNote(event.target.value)}
-        rows={2}
-        className="mt-2 w-full resize-y rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
-      />
-
-      {error && (
-        <p role="alert" className="mt-2 text-xs text-[var(--danger)]">
-          {error}
-        </p>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={exportDetermination}
-          disabled={disabled || busy || !selectedCode || !analysisId}
-          className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
-        >
-          {busy ? "Recording…" : "Record determination and export PDF"}
-        </button>
-        {selectedCode ? (
-          <span className="text-xs text-[var(--text-muted)]">
-            Selected <span className="hts-code">{selectedCode}</span>
-          </span>
-        ) : (
-          <span className="text-xs text-[var(--text-muted)]">
-            Select a code first.
-          </span>
-        )}
-      </div>
     </div>
   );
 }
