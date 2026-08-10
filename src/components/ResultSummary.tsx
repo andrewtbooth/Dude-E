@@ -126,15 +126,19 @@ export function ResultSummary({ run }: { run: ClassificationRun }) {
   );
 }
 
+/**
+ * The run's outcome as a struck mark rather than a filled pill.
+ *
+ * A filled chip in a semantic colour is what every dashboard uses for
+ * everything, and it reads as decoration. An outlined mark reads as something
+ * applied to a document — which is what this is: a statement about whether the
+ * analysis reached a conclusion, on a page that becomes a record.
+ */
 function StatusPill({ status }: { status: "needs_more_info" | "complete" }) {
   return status === "complete" ? (
-    <span className="rounded bg-[var(--ok-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--ok)]">
-      Analysis complete
-    </span>
+    <span className="stamp text-[var(--ok)]">Analysis complete</span>
   ) : (
-    <span className="rounded bg-[var(--info-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--info)]">
-      More information needed
-    </span>
+    <span className="stamp text-[var(--info)]">More information needed</span>
   );
 }
 

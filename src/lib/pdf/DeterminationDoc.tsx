@@ -6,6 +6,7 @@ import {
   View,
 } from "@react-pdf/renderer";
 import type { Candidate } from "../agent/schema";
+import { BRAND } from "../brand";
 import type { DeterminationView } from "./types";
 
 /**
@@ -18,20 +19,42 @@ import type { DeterminationView } from "./types";
  * this application.
  */
 
+/**
+ * Named for the roles this document uses, valued from the shared palette.
+ *
+ * The indirection is the point: these were literal hex codes, which meant the
+ * exported determination kept the palette it was written with while the screen
+ * moved on. `brand.test.ts` fails if a hex code reappears here.
+ */
 const COLORS = {
-  ink: "#14130f",
-  body: "#2f2e2a",
-  muted: "#6b6962",
-  rule: "#d4d1c8",
-  accent: "#1f5fa8",
-  warn: "#8a5208",
-  panel: "#f4f3ef",
+  ink: BRAND.ink,
+  body: BRAND.body,
+  muted: BRAND.muted,
+  rule: BRAND.rule,
+  accent: BRAND.accent,
+  warn: BRAND.warn,
+  panel: BRAND.surface2,
 };
 
 const styles = StyleSheet.create({
   page: {
     paddingTop: 44,
-    paddingBottom: 60,
+    /**
+     * Must clear the fixed footer, which is taller than it looks.
+     *
+     * The footer is absolutely positioned, so the page reserves its space by
+     * arithmetic rather than by layout — nothing pushes back if the number is
+     * too small. It was 60 against a footer that ran to eight lines, and body
+     * text descended straight through: on the sample determination the last
+     * line of the Chapter 99 note printed on top of the disclaimer, both
+     * illegible. No test catches it, because the text extractor reads
+     * overlapping strings perfectly happily.
+     *
+     * 54 = 26 (offset from the page edge) + ~18 (two lines at 7pt) + 10 clear.
+     * If the footer text grows, this has to grow with it, and the rendered
+     * page has to be looked at — `npm run dev:pdf`.
+     */
+    paddingBottom: 54,
     paddingHorizontal: 48,
     fontSize: 9.5,
     lineHeight: 1.5,
@@ -173,6 +196,7 @@ export function DeterminationDoc({ view }: { view: DeterminationView }) {
         <VerificationSection view={view} />
         <AlternatesSection view={view} />
         <AuthoritiesSection view={view} />
+        <ScopeSection />
         <Footer />
       </Page>
     </Document>
@@ -760,24 +784,57 @@ function AuthoritiesSection({ view }: { view: DeterminationView }) {
 
 // --- 8. Disclaimer ----------------------------------------------------------
 
-function Footer() {
+/**
+ * The limitations, stated once and in full.
+ *
+ * These used to be set at 7pt in a fixed footer repeated on every page. That
+ * had two costs and no benefit. The footer ran to eight lines, so it consumed
+ * roughly the bottom fifth of every page — which is what pushed the
+ * determination itself onto page two with a hand's width of white space above
+ * it. And nobody reads eight lines of 7pt grey type printed identically four
+ * times; repetition at that size is how a real limitation becomes wallpaper.
+ *
+ * So it is a section now, at the end, at a size a person can actually read,
+ * and every page carries a one-line pointer to it. The text is unchanged.
+ */
+function ScopeSection() {
   return (
-    <View style={styles.footer} fixed>
-      <Text style={styles.footerText}>
+    // Flows rather than forcing a page: on the sample it otherwise claimed a
+    // fourth page to hold three paragraphs, and the footer on every page
+    // already points here, so it does not need to announce itself.
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>SCOPE AND LIMITATIONS</Text>
+      <Text style={styles.para}>
         Advisory work product, machine-generated. The named analyst selected the
         classification from the candidates presented; this document does not
         evidence any further review, and the identity above is self-asserted at
         sign-in and not authenticated. It is not a ruling letter and is not
-        binding on U.S. Customs and Border Protection. Scope is tariff
-        classification only — country of origin, valuation, free trade agreement
-        eligibility, antidumping and countervailing duty scope, quota, and
-        partner government agency requirements were not analysed. Chapter 99
-        additional duties, including Section 301 and Section 232, are screened
-        only partially and must be verified independently; this document does
-        not establish that none apply. For high-value, high-volume, or genuinely
-        ambiguous merchandise, request a binding ruling under 19 CFR Part 177
-        before entry. Duty rates are as published in the tariff edition named
-        above and change frequently; confirm currency before filing.
+        binding on U.S. Customs and Border Protection.
+      </Text>
+      <Text style={styles.para}>
+        Scope is tariff classification only — country of origin, valuation, free
+        trade agreement eligibility, antidumping and countervailing duty scope,
+        quota, and partner government agency requirements were not analysed.
+        Chapter 99 additional duties, including Section 301 and Section 232, are
+        screened only partially and must be verified independently; this
+        document does not establish that none apply.
+      </Text>
+      <Text style={styles.para}>
+        For high-value, high-volume, or genuinely ambiguous merchandise, request
+        a binding ruling under 19 CFR Part 177 before entry. Duty rates are as
+        published in the tariff edition named above and change frequently;
+        confirm currency before filing.
+      </Text>
+    </View>
+  );
+}
+
+function Footer() {
+  return (
+    <View style={styles.footer} fixed>
+      <Text style={styles.footerText}>
+        Advisory work product, machine-generated — not a ruling letter and not
+        binding on CBP. Full scope and limitations at the end of this document.
       </Text>
       <Text
         style={styles.pageNumber}

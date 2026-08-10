@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import type { Candidate } from "@/lib/agent/schema";
+import { HtsCode } from "./HtsCode";
 
 export function CandidateCard({
   candidate,
@@ -49,14 +50,15 @@ export function CandidateCard({
 
         <div className="min-w-0 flex-1">
           <label htmlFor={inputId} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="hts-code text-lg font-semibold text-[var(--text-primary)]">
-              {candidate.hts_code}
-            </span>
+            <HtsCode
+              code={candidate.hts_code}
+              className="text-[var(--text-primary)]"
+            />
             <ConfidenceBadge value={candidate.confidence} />
             {recommendedCode !== null &&
               candidate.hts_code.replace(/\D/g, "") ===
                 recommendedCode.replace(/\D/g, "") && (
-                <span className="rounded bg-[var(--accent-subtle)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--accent)]">
+                <span className="stamp text-[var(--accent)]">
                   Model&rsquo;s pick
                 </span>
               )}
@@ -162,49 +164,71 @@ function ConfidenceBadge({ value }: { value: number }) {
   const pct = Math.round(Math.min(Math.max(value, 0), 1) * 100);
   const tone =
     pct >= 80
-      ? "bg-[var(--ok-subtle)] text-[var(--ok)]"
+      ? "text-[var(--ok)]"
       : pct >= 55
-        ? "bg-[var(--warn-subtle)] text-[var(--warn)]"
-        : "bg-[var(--danger-subtle)] text-[var(--danger)]";
+        ? "text-[var(--warn)]"
+        : "text-[var(--danger)]";
 
   return (
     <span
-      className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${tone}`}
+      className={`stamp ${tone}`}
       title="The model's own confidence. Treat anything below 80% as needing a second look."
     >
-      {pct}% confidence
+      <span className="hts-code font-semibold">{pct}%</span> confidence
     </span>
   );
 }
 
+/**
+ * The four rate columns as a ruled block, the way the schedule prints them.
+ *
+ * These are the numbers that get transcribed onto an entry, and they are read
+ * as a set — General against Column 2, rate against unit. Loose label/value
+ * pairs on a flex row let the eye pair a value with the wrong caption on a
+ * narrow screen; boxes sharing a rule do not.
+ */
 function DutyRow({ candidate }: { candidate: Candidate }) {
   return (
-    <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-xs">
-      <Duty label="General" value={candidate.tariff.duty.general || "—"} />
-      <Duty label="Special" value={candidate.tariff.duty.special || "—"} />
-      <Duty label="Column 2" value={candidate.tariff.duty.column_2 || "—"} />
-      <Duty
-        label="Unit"
-        value={candidate.tariff.unit_of_quantity.join(", ") || "—"}
-      />
+    <div className="mt-3">
+      <dl className="field-block text-xs">
+        <div className="field-grid">
+          <Duty label="General" value={candidate.tariff.duty.general || "—"} />
+          <Duty label="Column 2" value={candidate.tariff.duty.column_2 || "—"} />
+          <Duty
+            label="Unit of quantity"
+            value={candidate.tariff.unit_of_quantity.join(", ") || "—"}
+          />
+        </div>
+        {/* Special spans the full width, because it is not a figure. It is a
+            rate followed by the programs it applies under — "Free (A,AU,BH,CL,
+            CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)" — and a quarter-width tabular
+            column broke that across eight lines of monospace with the
+            parentheses orphaned. Set in the text face for the same reason. */}
+        <div className="field">
+          <dt className="caption">Special (program rates)</dt>
+          <dd className="field-value">
+            {candidate.tariff.duty.special || "—"}
+          </dd>
+        </div>
+      </dl>
       {candidate.tariff.duty.rates_published_on && (
-        <div className="basis-full text-[11px] text-[var(--text-muted)]">
+        <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">
           Rates published on{" "}
           <span className="hts-code">{candidate.tariff.duty.rates_published_on}</span>{" "}
           and inherited by this statistical line.
-        </div>
+        </p>
       )}
-    </dl>
+    </div>
   );
 }
 
 function Duty({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
-        {label}
-      </dt>
-      <dd className="text-[var(--text-primary)]">{value}</dd>
+    <div className="field">
+      <dt className="caption">{label}</dt>
+      {/* Rates are figures and get read as figures — mono, tabular, so a
+          column of them lines up decimal under decimal. */}
+      <dd className="field-value hts-code">{value}</dd>
     </div>
   );
 }

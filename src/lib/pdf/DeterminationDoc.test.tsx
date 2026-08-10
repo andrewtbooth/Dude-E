@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { describe, expect, it } from "vitest";
 import {
@@ -66,17 +68,18 @@ describe("byte reproducibility", () => {
  * footer implying Chapter 99 had been considered, and a reader could not tell
  * that from "screened, nothing applies".
  */
+/** Render a determination and read its text back out. */
+async function textOf(view: Parameters<typeof DeterminationDoc>[0]["view"]) {
+  const { getDocumentProxy, extractText } = await import("unpdf");
+  const buffer = await renderToBuffer(<DeterminationDoc view={view} />);
+  const doc = await getDocumentProxy(new Uint8Array(buffer), { verbosity: 0 });
+  return (await extractText(doc, { mergePages: true })).text;
+}
+
+/** Section and callout titles are letter-spaced for display; compare without whitespace. */
+const squashed = (text: string) => text.replace(/\s+/g, "");
+
 describe("Chapter 99 disclosure", () => {
-  async function textOf(view: Parameters<typeof DeterminationDoc>[0]["view"]) {
-    const { getDocumentProxy, extractText } = await import("unpdf");
-    const buffer = await renderToBuffer(<DeterminationDoc view={view} />);
-    const doc = await getDocumentProxy(new Uint8Array(buffer), { verbosity: 0 });
-    return (await extractText(doc, { mergePages: true })).text;
-  }
-
-  /** Callout titles are letter-spaced for display; compare without whitespace. */
-  const squashed = (text: string) => text.replace(/\s+/g, "");
-
   /** The same fixture with nothing matched — the case that used to render blank. */
   function withNoChapter99() {
     const view = sampleDeterminationView();
@@ -309,5 +312,54 @@ describe("automated checks section", () => {
     expect(flat).toContain("Wordingnormalised");
     expect(flat).not.toContain("Valuescorrectedfromthetariff");
     expect(flat).not.toContain("9617.00Vacuumflasks");
+  }, 30_000);
+});
+
+describe("the fixed footer and the space reserved for it", () => {
+  /**
+   * The footer is absolutely positioned, so the page reserves room for it by
+   * arithmetic — `paddingBottom` — and nothing pushes back when that number is
+   * too small. It was too small: an eight-line disclaimer at 7pt overlapped
+   * the last paragraph of body text on page one, printing both on top of each
+   * other. Every text assertion in this file passed throughout, because
+   * extracting text from a PDF does not care whether the glyphs collide.
+   *
+   * So this reads the source rather than the render. It cannot see overlap,
+   * but it can see the thing that caused it — a footer growing past the space
+   * set aside for it — and say so at the point where someone is editing the
+   * text.
+   */
+  const source = fs.readFileSync(
+    path.join(process.cwd(), "src/lib/pdf/DeterminationDoc.tsx"),
+    "utf8",
+  );
+
+  it("keeps the per-page footer to about two lines", () => {
+    const body = /<Text style={styles\.footerText}>([\s\S]*?)<\/Text>/.exec(
+      source,
+    )?.[1];
+    expect(body).toBeDefined();
+    const words = body!.trim().split(/\s+/).length;
+
+    // ~24 words fits two lines at 7pt across the reserved width. Well past
+    // that and `paddingBottom` on `styles.page` has to grow with it — and the
+    // rendered page has to be looked at, which no test here can do.
+    expect(words).toBeLessThan(40);
+  });
+
+  it("still says everything it used to, in a section", async () => {
+    // Moving the text out of the footer must not quietly drop any of it.
+    const text = squashed(await textOf(sampleDeterminationView()));
+    for (const clause of [
+      "SCOPE AND LIMITATIONS",
+      "not a ruling letter",
+      "self-asserted at sign-in and not authenticated",
+      "screened only partially",
+      "does not establish that none apply",
+      "19 CFR Part 177",
+      "confirm currency before filing",
+    ]) {
+      expect(text).toContain(squashed(clause));
+    }
   }, 30_000);
 });

@@ -543,13 +543,56 @@ reachable URL (default: 10 analyses per client per 15 minutes).
 
 ---
 
+## The look, and why it is that look
+
+Every artifact in this trade is a ruled form — an entry summary, a commercial
+invoice, the tariff schedule itself: boxes with small condensed captions above
+the values they hold. That is not decoration, it is how the people who use
+those documents find things, and it is the one visual language a compliance
+analyst already reads fluently. So the interface borrows it instead of
+inventing another card layout.
+
+- **Three typefaces, vendored** (`src/app/fonts/`). Archivo for prose, Archivo
+  Narrow for the captions a form puts above its boxes, IBM Plex Mono for
+  everything numeric — its figures are tabular by construction, so a column of
+  ten-digit codes aligns digit under digit, which is how codes get compared.
+  Checked in rather than fetched by `next/font/google`, so the build needs no
+  network. 84 KB, both OFL-1.1, licenses included.
+- **Ruled field blocks** (`.field`, `.field-grid`, `.field-block`, `.caption`)
+  for anything transcribed onto an entry — duty rates, units, the tariff
+  edition. Loose label/value pairs let the eye pair a value with the wrong
+  caption on a narrow screen; boxes sharing a rule do not.
+- **Struck marks, not filled pills** (`.stamp`). Status takes its colour from
+  `currentColor`, so one mark serves every state without a palette of variants.
+- **`<HtsCode>`** spaces a code at its segment boundaries — heading,
+  subheading, rate line, statistical suffix — because that structure is what an
+  analyst is comparing. The dots stay real characters, so a copy still pastes.
+
+### Keeping the screen and the document in step
+
+The determination is drawn twice, by engines that share nothing: CSS custom
+properties on screen, `@react-pdf` for the PDF, which has no cascade and cannot
+read a variable. The palette therefore lives in `src/lib/brand.ts`; the PDF
+imports it, `globals.css` mirrors it, and `brand.test.ts` parses the stylesheet
+and fails naming the pair that drifted. It also checks the `themeColor` in
+`layout.tsx` — the easiest value in the app to forget, since it lives in a
+`Viewport` export rather than the stylesheet.
+
+Design changes want looking at, not reasoning about. `node scripts/dev/shoot.mjs`
+drives a replayed run and captures every screen at phone width in both themes;
+`npm run dev:pdf` renders the sample determination.
+
+---
+
 ## Layout
 
 ```
 src/
   app/            routes: splash (/), /analyze, /history, API handlers
+    fonts/        vendored woff2 + OFL licenses
   components/     UI — analysis client, candidate cards, masthead, theme
   lib/
+    brand.ts      the palette both renderers agree on
     agent/        system prompt, tools, run loop, output schema, verification
     hts/          USITC parsing, SQLite index, query layer
     pdf/          determination document and view assembly
@@ -557,7 +600,7 @@ src/
   test/           shared fixtures
 scripts/
   sync-htsus.ts   the tariff sync
-  dev/            offline seed, sample PDF render
+  dev/            offline seed, sample PDF render, browser checks, screenshots
 ```
 
 ---
