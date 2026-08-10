@@ -404,3 +404,38 @@ describe("a recommendation the model did not actually make", () => {
     expect(text).not.toContain(squashed("did not recommend the code it appeared to"));
   }, 30_000);
 });
+
+describe("a determination on a code with no published reporting number", () => {
+  /**
+   * Louder on paper than on screen, and deliberately so. An entry is filed
+   * against a ten-digit reporting number; this document prints a code under a
+   * heading that says DETERMINATION, and whoever reads it months from now has
+   * no way to know the schedule stopped short unless the page says so.
+   */
+  const onWatchProvision = () => {
+    const view = sampleDeterminationView();
+    return {
+      ...view,
+      selected: { ...view.selected, hts_code: "9101.11.40" },
+    };
+  };
+
+  it("says the schedule publishes no ten-digit number for it", async () => {
+    const text = squashed(await textOf(onWatchProvision()));
+    expect(text).toContain(squashed("NO TEN-DIGIT REPORTING NUMBER IS PUBLISHED"));
+    expect(text).toContain(squashed("terminates this provision at 8 digits"));
+  }, 30_000);
+
+  it("does not answer the filing question either way", async () => {
+    // The application's job is to say the schedule stopped short. Asserting
+    // the provision is or is not enterable would be this tool ruling on CBP
+    // practice from tariff text that does not settle it.
+    const text = await textOf(onWatchProvision());
+    expect(text).toContain("Confirm the entry number with the filer");
+  }, 30_000);
+
+  it("stays silent on an ordinary ten-digit line", async () => {
+    const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).not.toContain(squashed("NO TEN-DIGIT REPORTING NUMBER"));
+  }, 30_000);
+});

@@ -11,6 +11,7 @@ import {
   THINKING_BUDGET_TOKENS,
   config,
 } from "../config";
+import { hasPublishedReportingNumber } from "../hts/parse";
 import {
   getActiveRevision,
   lookupExact,
@@ -111,6 +112,19 @@ export interface ClassificationRun {
      * analysis needs a second look, and it was being swallowed by the recovery.
      */
     substitutedRecommendation: { modelSaid: string; using: string } | null;
+    /**
+     * Verified codes for which the schedule publishes no ten-digit reporting
+     * number — see `hasPublishedReportingNumber`.
+     *
+     * Not a rejection. These are the deepest lines the schedule publishes, so
+     * they are the most specific classification available and they stay on
+     * offer. But an entry is filed against a ten-digit number, and printing
+     * one of these as a finished answer hands a filer something their broker
+     * may not be able to key. Whether these particular provisions are filable
+     * as published is a question about CBP practice; the application's job is
+     * to say that the schedule stopped short, not to decide the question.
+     */
+    incompleteReportingNumbers: { code: string; digits: number }[];
   };
   usage: {
     /** Uncached prompt tokens, billed at full rate. */
@@ -152,6 +166,16 @@ export function backfillRunFields(run: ClassificationRun): ClassificationRun {
     // code replaced it in place. `null` says "no substitution recorded", which
     // is the honest reading — it does not claim there was none.
     run.verification.substitutedRecommendation = null;
+  }
+  if (run.verification && !run.verification.incompleteReportingNumbers) {
+    // Recomputable, unlike the substitution above: the test is a property of
+    // the code itself, so a run stored before this existed can be told the
+    // truth about its own codes rather than assumed innocent.
+    run.verification.incompleteReportingNumbers = (
+      run.verification.verifiedCodes ?? []
+    )
+      .filter((code) => !hasPublishedReportingNumber(code))
+      .map((code) => ({ code, digits: code.replace(/\D/g, "").length }));
   }
   for (const correction of run.verification?.corrections ?? []) {
     if (correction.severity) continue;
@@ -961,6 +985,7 @@ export function verifyAgainstTariff(result: ClassificationResult): {
   const verifiedCodes: string[] = [];
   const rejectedCodes: { code: string; reason: string }[] = [];
   const corrections: CodeCorrection[] = [];
+  const incompleteReportingNumbers: { code: string; digits: number }[] = [];
 
   const kept: Candidate[] = [];
 
@@ -992,6 +1017,18 @@ export function verifyAgainstTariff(result: ClassificationResult): {
     }
 
     verifiedCodes.push(line.htsNo);
+
+    // Verified is not the same as filable. 469 lines outside Chapter 99 are the
+    // deepest thing the schedule publishes and still stop short of a ten-digit
+    // reporting number — see hasPublishedReportingNumber. They are kept as
+    // candidates, because they are the most specific classification available,
+    // and named here so nothing downstream prints one as a finished answer.
+    if (!hasPublishedReportingNumber(line.htsNo)) {
+      incompleteReportingNumbers.push({
+        code: line.htsNo,
+        digits: line.htsNo.replace(/\D/g, "").length,
+      });
+    }
 
     const authoritativePath = line.descriptionPath.filter(Boolean);
     // Compared normalised, still overwritten from the index below either way.
@@ -1105,6 +1142,7 @@ export function verifyAgainstTariff(result: ClassificationResult): {
       verifiedCodes,
       rejectedCodes,
       corrections,
+      incompleteReportingNumbers,
       substitutedRecommendation:
         !modelDeclinedToRecommend && !recommendedStillValid && recommended
           ? { modelSaid: result.recommended_hts_code!, using: recommended }

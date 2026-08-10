@@ -157,6 +157,35 @@ verified on their own path — admitting them here would let a run answer
 Net effect on the 2026 Revision 15 snapshot: 19,949 → **20,418** declarable
 lines, with nothing that was declarable becoming undeclarable.
 
+### Declarable is not the same as filable
+
+An entry is filed against a ten-digit statistical reporting number, and 469 of
+those newly-declarable lines are not one. The evidence is uniform:
+
+| | carries a unit of quantity |
+|---|---|
+| Every ten-digit leaf, Chapters 1–97 | **19,831 / 19,831** |
+| Chapter 91 ten-digit leaves | 82 / 82 |
+| **Chapter 91 eight-digit leaves** | **0 / 95** |
+| **Chapter 98 eight-digit leaves** | **0 / 374** |
+
+A reporting number reports a quantity, so a line with no unit is not one. And
+the schedule plainly *can* extend an eight-digit subheading when it wants to —
+8,019 of those 19,831 leaves are exactly that, an eight-digit subheading with
+`.00` appended because there is no statistical breakout. Where it declines to,
+it has published something that stops short.
+
+Whether such a provision can nonetheless be keyed on an entry as published is a
+question about CBP practice, not about this data, and this application does not
+answer it. `hasPublishedReportingNumber` marks the line; the verdict card, the
+candidate card and the determination PDF all say the schedule stopped short and
+tell the analyst to confirm the entry number with the filer. The code stays
+selectable, because it is the most specific classification available and
+blocking it would be answering the question by refusing to.
+
+If your filing practice settles it in either direction, that is a one-line
+change to the helper and the wording that surrounds it.
+
 ### Chapter 99 exposure
 
 Section 301 and 232 duties routinely exceed the base rate, and the app was

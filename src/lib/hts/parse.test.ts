@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatHtsNo, levelOf, parseUsitcRows, toDigits } from "./parse";
+import {
+  formatHtsNo,
+  hasPublishedReportingNumber,
+  levelOf,
+  parseUsitcRows,
+  toDigits,
+} from "./parse";
 import type { UsitcRawRow } from "./types";
 
 /**
@@ -367,5 +373,42 @@ describe("indent jumps", () => {
     const chlorides = lines.find((l) => l.htsNo === "2827");
     expect(calcium?.parentId).toBe(chlorides?.id);
     expect(calcium?.descriptionPath).toEqual(["Chlorides:", "Calcium chloride"]);
+  });
+});
+
+describe("hasPublishedReportingNumber", () => {
+  /**
+   * An entry is filed against a ten-digit statistical reporting number, and
+   * the schedule prints one for almost every classifiable line — including
+   * 8,019 that are an eight-digit subheading with `.00` appended precisely
+   * because there is no statistical breakout. So a line that stops at eight
+   * digits has not had its suffix omitted in parsing; the schedule published
+   * something that is not a reporting number.
+   *
+   * This does not decide whether such a line can be filed as published — that
+   * is a question about CBP practice. It decides only that the interface must
+   * not present one as though it were a complete reporting number.
+   */
+  it("accepts a ten-digit statistical line", () => {
+    expect(hasPublishedReportingNumber("8507.60.00.20")).toBe(true);
+  });
+
+  it("accepts an eight-digit subheading the schedule extended with .00", () => {
+    expect(hasPublishedReportingNumber("9617.00.10.00")).toBe(true);
+  });
+
+  it("rejects a watch provision that terminates at eight digits", () => {
+    // 9101.11.40 is a leaf in the 2026 snapshot: no children, no unit of
+    // quantity, and no `.00` appended, unlike the rest of the schedule.
+    expect(hasPublishedReportingNumber("9101.11.40")).toBe(false);
+  });
+
+  it("rejects a Chapter 98 provision that terminates at eight digits", () => {
+    expect(hasPublishedReportingNumber("9813.00.20")).toBe(false);
+  });
+
+  it("reads the digits, not the punctuation", () => {
+    expect(hasPublishedReportingNumber("8507600020")).toBe(true);
+    expect(hasPublishedReportingNumber("9101 11 40")).toBe(false);
   });
 });

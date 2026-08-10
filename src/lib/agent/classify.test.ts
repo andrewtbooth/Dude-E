@@ -671,3 +671,53 @@ describe("backfillRunFields", () => {
     expect(backfilled.verification.corrections[0].severity).toBe("material");
   });
 });
+
+describe("verifyAgainstTariff — codes with no published reporting number", () => {
+  /**
+   * 9101.11.40 is real: a watch provision that is the deepest line the
+   * schedule publishes, carries no unit of quantity, and never receives the
+   * `.00` the schedule appends to 8,019 other eight-digit subheadings. There
+   * are 95 like it in Chapter 91 and 374 in Chapter 98.
+   *
+   * Task #14 made leaf-ness the test for declarability, which is right — those
+   * provisions were being wrongly rejected. But it also made these
+   * indistinguishable from a ten-digit statistical line, and an entry is filed
+   * against a ten-digit number. Whether these can be keyed as published is a
+   * question about CBP practice; verification's job is to say the schedule
+   * stopped short, not to answer it.
+   */
+  it("keeps the code and records that no reporting number was published", () => {
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([candidate({ hts_code: "9101.11.40" })]),
+    );
+
+    expect(verified.candidates.map((c) => c.hts_code)).toEqual(["9101.11.40"]);
+    expect(verification.rejectedCodes).toEqual([]);
+    expect(verification.incompleteReportingNumbers).toEqual([
+      { code: "9101.11.40", digits: 8 },
+    ]);
+  });
+
+  it("says nothing about a full ten-digit line", () => {
+    const { verification } = verifyAgainstTariff(result([candidate()]));
+    expect(verification.incompleteReportingNumbers).toEqual([]);
+  });
+
+  it("recomputes the flag for a run stored before it existed", () => {
+    // Unlike the substituted recommendation, this is a property of the code
+    // itself, so an old determination can be told the truth about its own
+    // codes rather than assumed complete.
+    const stored = {
+      verification: {
+        verifiedCodes: ["9101.11.40", "8507.60.00.20"],
+        rejectedCodes: [],
+        corrections: [],
+        substitutedRecommendation: null,
+      },
+    } as unknown as ClassificationRun;
+
+    expect(
+      backfillRunFields(stored).verification.incompleteReportingNumbers,
+    ).toEqual([{ code: "9101.11.40", digits: 8 }]);
+  });
+});

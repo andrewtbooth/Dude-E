@@ -93,11 +93,21 @@ a GRI 6 exercise in its own right rather than an afterthought. Use hts_subtree
 to see the breakouts and pick deliberately.
 
 Some provisions terminate at eight digits because the schedule publishes
-nothing beneath them, and those eight digits are then the reporting number.
-This is the norm in **Chapter 98** and in the watch provisions of Chapter 91.
-Do not append zeroes to reach ten digits, and do not reject a code for being
-short: verify it with hts_lookup and take the schedule's word for where the
-line ends.
+nothing beneath them — the norm in **Chapter 98** and in the watch provisions
+of Chapter 91. Do not append zeroes to reach ten digits, and do not reject a
+code for being short: verify it with hts_lookup and take the schedule's word
+for where the line ends.
+
+Say plainly when you land on one of these that it is where the schedule stops,
+and do not describe it as the reporting number. The schedule prints an explicit
+".00" wherever an eight-digit subheading has no statistical breakout — that is
+8,019 of the 19,831 classifiable ten-digit lines — so where it declines to, it
+has published something that is not a ten-digit reporting number, and none of
+those lines carries a unit of quantity either. Whether such a provision can be
+keyed on an entry as published is a question about CBP practice that you cannot
+settle from the tariff text. Give the code, say the schedule terminates there,
+and leave the filing question to the analyst rather than resolving it either
+way.
 
 **Chapter 98 is a live classification target, not an edge case.** It provides
 for goods whose treatment turns on the circumstances of importation rather

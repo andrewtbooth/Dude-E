@@ -7,6 +7,7 @@ import {
 } from "@react-pdf/renderer";
 import type { Candidate } from "../agent/schema";
 import { BRAND } from "../brand";
+import { hasPublishedReportingNumber } from "../hts/parse";
 import type { DeterminationView } from "./types";
 
 /**
@@ -356,29 +357,65 @@ function Subject({ view }: { view: DeterminationView }) {
 function FinalDetermination({ view }: { view: DeterminationView }) {
   const candidate = view.selected;
   return (
-    <View style={styles.section} wrap={false}>
+    /**
+     * The section wraps; the headline does not.
+     *
+     * `wrap={false}` sat on the whole section, which was fine until it grew.
+     * Adding the reporting-number callout tipped it past what fits after the
+     * subject block, and @react-pdf moved the entire section to the next page
+     * rather than splitting it — leaving a hand's width of white space on page
+     * one and pushing the determination off the first page of a document whose
+     * entire purpose is to state it. Keeping the code, its path and its rates
+     * together is what actually mattered; where the prose after them breaks
+     * does not.
+     */
+    <View style={styles.section}>
       <Text style={styles.sectionTitle}>DETERMINATION</Text>
 
-      <Text style={styles.code}>{candidate.hts_code}</Text>
+      <View wrap={false}>
+        <Text style={styles.code}>{candidate.hts_code}</Text>
 
-      <View style={{ marginTop: 6 }}>
-        {candidate.description_path.map((segment, index) => (
-          <View key={index} style={styles.pathRow}>
-            <Text style={styles.pathIndent}>{"  ".repeat(index)}› </Text>
-            <Text style={styles.pathText}>{segment}</Text>
-          </View>
-        ))}
+        <View style={{ marginTop: 6 }}>
+          {candidate.description_path.map((segment, index) => (
+            <View key={index} style={styles.pathRow}>
+              <Text style={styles.pathIndent}>{"  ".repeat(index)}› </Text>
+              <Text style={styles.pathText}>{segment}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.dutyTable}>
+          <DutyCell label="GENERAL (COL. 1)" value={candidate.tariff.duty.general || "—"} />
+          <DutyCell label="SPECIAL" value={candidate.tariff.duty.special || "—"} />
+          <DutyCell label="COLUMN 2" value={candidate.tariff.duty.column_2 || "—"} />
+          <DutyCell
+            label="UNIT OF QUANTITY"
+            value={candidate.tariff.unit_of_quantity.join(", ") || "—"}
+          />
+        </View>
       </View>
 
-      <View style={styles.dutyTable}>
-        <DutyCell label="GENERAL (COL. 1)" value={candidate.tariff.duty.general || "—"} />
-        <DutyCell label="SPECIAL" value={candidate.tariff.duty.special || "—"} />
-        <DutyCell label="COLUMN 2" value={candidate.tariff.duty.column_2 || "—"} />
-        <DutyCell
-          label="UNIT OF QUANTITY"
-          value={candidate.tariff.unit_of_quantity.join(", ") || "—"}
-        />
-      </View>
+      {!hasPublishedReportingNumber(candidate.hts_code) && (
+        // Louder here than on screen, and deliberately so. An entry is filed
+        // against a ten-digit reporting number; this document prints a code
+        // under a heading that says DETERMINATION, and whoever reads it months
+        // from now has no way to know the schedule stopped short unless it
+        // says so on the page.
+        <View style={styles.callout}>
+          <Text style={styles.calloutTitle}>
+            NO TEN-DIGIT REPORTING NUMBER IS PUBLISHED FOR THIS LINE
+          </Text>
+          <Text style={{ fontSize: 8 }}>
+            {view.htsusRevision} terminates this provision at{" "}
+            {candidate.hts_code.replace(/\D/g, "").length} digits and publishes
+            no unit of quantity for it, where every classifiable line in
+            Chapters 1&ndash;97 carries both. It is the most specific
+            classification the schedule offers, and this determination is a
+            statement about classification, not about the reporting number to
+            key. Confirm the entry number with the filer before use.
+          </Text>
+        </View>
+      )}
 
       {candidate.tariff.duty.rates_published_on && (
         <Text style={{ fontSize: 7.5, color: COLORS.muted }}>
@@ -495,7 +532,12 @@ function Chapter99Section({
 
   if (candidate.tariff.chapter_99.length > 0) {
     return (
-      <View style={styles.callout}>
+      // minPresenceAhead rather than wrap={false}: this callout grows with the
+      // number of provisions matched, and a block that refuses to split is
+      // exactly what pushed the determination itself off page one. Asking for
+      // 44pt of company keeps the heading from stranding alone at a page foot
+      // without betting that the whole thing fits.
+      <View style={styles.callout} minPresenceAhead={44}>
         <Text style={styles.calloutTitle}>ADDITIONAL DUTIES MAY APPLY</Text>
         {candidate.tariff.chapter_99.map((entry) => (
           <Text key={entry.hts_code} style={{ fontSize: 8, marginBottom: 2 }}>

@@ -66,6 +66,7 @@ function run(
         rejectedCodes: [],
         corrections: [],
         substitutedRecommendation: null,
+        incompleteReportingNumbers: [],
       },
     usage: {
       inputTokens: 1000,

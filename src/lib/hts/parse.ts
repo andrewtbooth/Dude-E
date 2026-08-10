@@ -234,7 +234,40 @@ export function parseUsitcRows(
  * they are checked on their own path (see verifyChapter99). Letting them
  * through here would allow a run to answer "9903.88.03" to "what is this
  * product", which is not a classification at all.
+ *
+ * Reportable is not the same as complete, and the Chapter 91 lines are why.
+ * Every one of the 19,831 ten-digit leaves in Chapters 1-97 carries a unit of
+ * quantity; not one of those 95 does, and the schedule declined to append the
+ * `.00` it appends everywhere else. Whether a filer can key `9101.11.40` as
+ * published is a question about CBP practice, not about this data, so nothing
+ * here answers it — the line stays reportable, and
+ * `hasPublishedReportingNumber` marks it as lacking a statistical suffix so
+ * the interface and the determination can say so plainly.
  */
+/**
+ * Whether the schedule publishes a full ten-digit reporting number for a code.
+ *
+ * An entry is filed against a ten-digit statistical reporting number. For most
+ * of the schedule that number is printed: 19,831 ten-digit leaves in Chapters
+ * 1-97, of which 8,019 are an eight-digit subheading with `.00` appended
+ * because it has no statistical breakout. So where the schedule *stops* at
+ * eight digits it has not simply omitted the suffix — it has published
+ * something that is not a reporting number, and every such line also lacks the
+ * unit of quantity that a reporting number needs in order to report a quantity.
+ *
+ * That is 469 lines outside Chapter 99: 374 in Chapter 98 and 95 in Chapter 91.
+ * They are still the most specific classification available, so they are still
+ * offered — but a determination that prints one as the answer, without saying
+ * the schedule published no reporting number for it, hands a filer a number
+ * their broker may not be able to key.
+ *
+ * Derived from the code rather than stored, so it needs no re-sync and holds
+ * for any snapshot.
+ */
+export function hasPublishedReportingNumber(htsCode: string): boolean {
+  return htsCode.replace(/\D/g, "").length >= 10;
+}
+
 function resolveReportable(lines: HtsLine[]): void {
   const hasChildren = new Set<number>();
   for (const line of lines) {

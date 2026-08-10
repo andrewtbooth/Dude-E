@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import type { Candidate } from "@/lib/agent/schema";
+import { hasPublishedReportingNumber } from "@/lib/hts/parse";
 import { HtsCode } from "./HtsCode";
 
 export function CandidateCard({
@@ -65,6 +66,17 @@ export function CandidateCard({
           </label>
 
           <Breadcrumb path={candidate.description_path} />
+
+          {!hasPublishedReportingNumber(candidate.hts_code) && (
+            <p className="mt-2 border-l-2 border-[var(--warn)] pl-3 text-xs text-[var(--text-secondary)]">
+              <span className="font-medium text-[var(--warn)]">
+                No ten-digit reporting number published.{" "}
+              </span>
+              The schedule terminates this line at{" "}
+              {candidate.hts_code.replace(/\D/g, "").length} digits with no unit
+              of quantity. Confirm what your broker should key before filing.
+            </p>
+          )}
 
           <p className="mt-2.5 text-sm leading-relaxed text-[var(--text-secondary)]">
             {candidate.reasoning.justification}
