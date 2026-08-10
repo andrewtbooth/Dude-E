@@ -197,6 +197,21 @@ export function AnalyzeClient({
    * neither was true — and then hid the result, because the abort path never
    * offered a way back to it.
    */
+  /**
+   * Clear the result and put the form back.
+   *
+   * Deliberately does not clear the input: "new analysis" most often means
+   * re-running a near-identical description with one detail changed, and
+   * making the analyst retype it on a phone to do that is the wrong default.
+   */
+  function startOver() {
+    setRun(null);
+    setEntries([]);
+    setAnalysisId(null);
+    setDetached(null);
+    setError(null);
+  }
+
   function stopWatching() {
     abortRef.current?.abort();
     setRunning(false);
@@ -210,9 +225,37 @@ export function AnalyzeClient({
     if (analysisId) setDetached({ id: analysisId, reason: "stopped" });
   }
 
+  // Once a run has landed the form has done its job, and on a phone it is the
+  // single biggest thing standing between the analyst and the answer: mode
+  // toggle, four-row textarea, hint and button come to most of a screen. It
+  // collapses to a line naming what was classified, with a way back.
+  const collapsedForm = run !== null && !running;
+
   return (
     <div className="space-y-6">
-      <form onSubmit={submit} className="space-y-3">
+      {collapsedForm && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-2.5">
+          <span className="caption shrink-0">
+            {mode === "PART_NUMBER" ? "Part number" : "Classified"}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm text-[var(--text-secondary)]">
+            {input}
+          </span>
+          <button
+            type="button"
+            onClick={startOver}
+            className="shrink-0 text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+          >
+            New analysis
+          </button>
+        </div>
+      )}
+
+      <form
+        onSubmit={submit}
+        hidden={collapsedForm}
+        className="space-y-3"
+      >
         <fieldset disabled={disabled || running}>
           <legend className="sr-only">What are you classifying?</legend>
 

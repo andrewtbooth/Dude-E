@@ -42,6 +42,17 @@ export interface DeterminationView {
       indexValue: string;
       severity: "material" | "transcription";
     }[];
+    /**
+     * Set when the model's own recommendation failed verification and the best
+     * surviving candidate was promoted in its place.
+     *
+     * On the document this matters more than on the screen, not less: months
+     * later a reader has no way to tell that the code above was the
+     * application's fallback rather than the analysis's conclusion, and the
+     * fact that the run named a nonexistent code is the strongest signal
+     * available about how much weight the rest of it deserves.
+     */
+    substitutedRecommendation: { modelSaid: string; using: string } | null;
   };
   /**
    * When the tariff snapshot was pulled. Chapter 99 duties are captured as

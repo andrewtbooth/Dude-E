@@ -99,6 +99,18 @@ export interface ClassificationRun {
     rejectedCodes: { code: string; reason: string }[];
     /** Data fields where the model's transcription differed from the index. */
     corrections: CodeCorrection[];
+    /**
+     * Set when the model's own recommendation failed verification and the
+     * best surviving candidate was promoted into its place.
+     *
+     * Without this the substitution is invisible. `recommended_hts_code` comes
+     * back populated either way, so a code the application chose is presented
+     * in exactly the same terms as a code the model chose — and the screen is
+     * about to print it at the top of the page as the answer. The model naming
+     * a code that does not exist is the strongest signal available that the
+     * analysis needs a second look, and it was being swallowed by the recovery.
+     */
+    substitutedRecommendation: { modelSaid: string; using: string } | null;
   };
   usage: {
     /** Uncached prompt tokens, billed at full rate. */
@@ -134,6 +146,13 @@ export interface ClassificationRun {
  * Mutates and returns the same object; callers own freshly-parsed JSON.
  */
 export function backfillRunFields(run: ClassificationRun): ClassificationRun {
+  if (run.verification && run.verification.substitutedRecommendation === undefined) {
+    // Unknowable after the fact: whether the model's original recommendation
+    // survived is not recoverable from a stored run, because the substituted
+    // code replaced it in place. `null` says "no substitution recorded", which
+    // is the honest reading — it does not claim there was none.
+    run.verification.substitutedRecommendation = null;
+  }
   for (const correction of run.verification?.corrections ?? []) {
     if (correction.severity) continue;
     correction.severity =
@@ -1062,24 +1081,35 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         (result.recommended_hts_code ?? "").replace(/\D/g, ""),
     );
 
+  const recommended = modelDeclinedToRecommend
+    ? null
+    : recommendedStillValid
+      ? (reRanked.find(
+          (candidate) =>
+            candidate.hts_code.replace(/\D/g, "") ===
+            (result.recommended_hts_code ?? "").replace(/\D/g, ""),
+        )?.hts_code ?? null)
+      : // The recommendation itself failed verification. Falling back to the
+        // best surviving candidate is right here — the model did commit to
+        // an answer, it just named one that does not exist — but the swap is
+        // recorded below rather than passed off as the model's own answer.
+        (reRanked[0]?.hts_code ?? null);
+
   return {
     result: {
       ...result,
       candidates: reRanked,
-      recommended_hts_code: modelDeclinedToRecommend
-        ? null
-        : recommendedStillValid
-          ? (reRanked.find(
-              (candidate) =>
-                candidate.hts_code.replace(/\D/g, "") ===
-                (result.recommended_hts_code ?? "").replace(/\D/g, ""),
-            )?.hts_code ?? null)
-          : // The recommendation itself failed verification. Falling back to the
-            // best surviving candidate is right here — the model did commit to
-            // an answer, it just named one that does not exist.
-            (reRanked[0]?.hts_code ?? null),
+      recommended_hts_code: recommended,
     },
-    verification: { verifiedCodes, rejectedCodes, corrections },
+    verification: {
+      verifiedCodes,
+      rejectedCodes,
+      corrections,
+      substitutedRecommendation:
+        !modelDeclinedToRecommend && !recommendedStillValid && recommended
+          ? { modelSaid: result.recommended_hts_code!, using: recommended }
+          : null,
+    },
   };
 }
 

@@ -256,6 +256,7 @@ describe("automated checks section", () => {
             { code: "9617.00.10.99", reason: "not present in this HTSUS revision" },
           ],
           corrections: [],
+          substitutedRecommendation: null,
         },
       }),
     );
@@ -278,6 +279,7 @@ describe("automated checks section", () => {
               severity: "material" as const,
             },
           ],
+          substitutedRecommendation: null,
         },
       }),
     );
@@ -305,6 +307,7 @@ describe("automated checks section", () => {
               severity: "transcription" as const,
             },
           ],
+          substitutedRecommendation: null,
         },
       }),
     );
@@ -361,5 +364,43 @@ describe("the fixed footer and the space reserved for it", () => {
     ]) {
       expect(text).toContain(squashed(clause));
     }
+  }, 30_000);
+});
+
+describe("a recommendation the model did not actually make", () => {
+  /**
+   * When verification rejects the model's own pick, the application promotes
+   * the best surviving candidate — which is the right recovery and an invisible
+   * one. `recommended_hts_code` comes back populated either way, so months
+   * later a reader of this document has no way to tell the code above was a
+   * fallback rather than the analysis's conclusion. That matters more on paper
+   * than on screen: the screen had a run behind it, the document is all that
+   * is left.
+   */
+  it("says so, and names the code the model actually gave", async () => {
+    const view = sampleDeterminationView();
+    const text = squashed(
+      await textOf({
+        ...view,
+        verification: {
+          ...view.verification,
+          substitutedRecommendation: {
+            modelSaid: "9617.00.10.99",
+            using: "9617.00.10.00",
+          },
+        },
+      }),
+    );
+
+    expect(text).toContain(squashed("did not recommend the code it appeared to"));
+    expect(text).toContain("9617.00.10.99");
+    expect(text).toContain(squashed("Weigh the rest of the reasoning accordingly"));
+  }, 30_000);
+
+  it("stays silent when the model's own pick verified", async () => {
+    // The common case. This section appearing on every determination would
+    // make it furniture.
+    const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).not.toContain(squashed("did not recommend the code it appeared to"));
   }, 30_000);
 });

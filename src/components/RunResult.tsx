@@ -6,6 +6,7 @@ import type { Refinement } from "@/lib/agent/schema";
 import { CandidateCard } from "./CandidateCard";
 import { ClarifyingQuestions } from "./ClarifyingQuestions";
 import { ResultSummary } from "./ResultSummary";
+import { VerdictCard } from "./VerdictCard";
 
 /**
  * Everything downstream of a finished run: the summary, any clarifying
@@ -38,7 +39,19 @@ export function RunResult({
 
   return (
     <>
-      <ResultSummary run={run} />
+      {/* The answer first, then the questions it raises, then the reasoning.
+          The provenance and advisory blocks in ResultSummary are what an
+          analyst checks before exporting; they are not what they came for. */}
+      <VerdictCard
+        run={run}
+        selected={
+          selectedCode !== null &&
+          run.result.recommended_hts_code !== null &&
+          selectedCode.replace(/\D/g, "") ===
+            run.result.recommended_hts_code.replace(/\D/g, "")
+        }
+        onSelect={setSelectedCode}
+      />
 
       {run.result.clarifying_questions.length > 0 &&
         (onRefine ? (
@@ -50,6 +63,8 @@ export function RunResult({
         ) : (
           <ReadOnlyQuestions run={run} />
         ))}
+
+      <ResultSummary run={run} />
 
       {run.result.candidates.length > 0 && (
         <section>

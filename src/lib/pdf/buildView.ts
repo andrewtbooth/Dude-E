@@ -102,6 +102,8 @@ export function buildDeterminationView(
     verification: {
       rejectedCodes: input.run.verification.rejectedCodes,
       corrections: input.run.verification.corrections,
+      substitutedRecommendation:
+        input.run.verification.substitutedRecommendation ?? null,
     },
     model: input.model,
     effort: input.effort,

@@ -128,6 +128,49 @@ try {
     );
   }
 
+  // --- the answer has to be on the first screen -----------------------------
+  // The point of the verdict card is measured in pixels from the top of the
+  // document, not in whether it rendered. Asserting it exists somewhere would
+  // pass with it below the fold, which is the state it was built to fix.
+  const verdict = page.locator('section[aria-label="Recommended classification"]');
+  check(await verdict.isVisible(), "a verdict card is shown");
+
+  const geometry = await page.evaluate(() => {
+    const card = document.querySelector(
+      'section[aria-label="Recommended classification"]',
+    );
+    const log = document.querySelector('section[aria-label="Analysis progress"]');
+    if (!card) return null;
+    return {
+      cardTop: card.getBoundingClientRect().top + window.scrollY,
+      logTop: log ? log.getBoundingClientRect().top + window.scrollY : null,
+      viewport: window.innerHeight,
+    };
+  });
+  check(
+    geometry !== null && geometry.cardTop < geometry.viewport,
+    "the verdict is above the fold without scrolling",
+    JSON.stringify(geometry),
+  );
+
+  // The log must fold once the run ends, or it reoccupies the space the card
+  // was meant to claim.
+  const logBody = await page.evaluate(() => {
+    const log = document.querySelector('section[aria-label="Analysis progress"]');
+    const box = log?.querySelector(".scroll-region");
+    return box ? !box.hasAttribute("hidden") : null;
+  });
+  check(logBody === false, "the finished log folds itself away");
+
+  // Selecting from the card must move the selection in the list below — and
+  // must not be a pre-selection, which is why it takes a click at all.
+  const before = await page.locator('input[type="radio"]:checked').count();
+  check(before === 0, "nothing is selected until the analyst acts");
+
+  await page.locator('button:has-text("Select this code")').click();
+  const after = await page.locator('input[type="radio"]:checked').count();
+  check(after === 1, "the card's select drives the candidate list", `saw ${after}`);
+
   // --- a stranded run has to be findable ------------------------------------
   // A phone that locks mid-run leaves the row RUNNING forever: the server
   // finishes the analysis but nothing ever writes a terminal status, because

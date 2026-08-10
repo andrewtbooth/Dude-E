@@ -134,7 +134,11 @@ export function sampleDeterminationView(
     // The real figures for the 2026 Rev 15 snapshot, so the fixture
     // renders the same shape of claim a live determination makes.
     chapter99Scope: { subheadingsWithAdditionalDuty: 267, declarableLines: 19_949 },
-    verification: { rejectedCodes: [], corrections: [] },
+    verification: {
+      rejectedCodes: [],
+      corrections: [],
+      substitutedRecommendation: null,
+    },
     model: "claude-opus-5",
     effort: "max",
     appVersion: "0.1.0",

@@ -628,8 +628,15 @@ function AssumptionsSection({ view }: { view: DeterminationView }) {
  * the analyst who exported this saw it while the reader otherwise would not.
  */
 function VerificationSection({ view }: { view: DeterminationView }) {
-  const { rejectedCodes, corrections } = view.verification;
-  if (rejectedCodes.length === 0 && corrections.length === 0) return null;
+  const { rejectedCodes, corrections, substitutedRecommendation } =
+    view.verification;
+  if (
+    rejectedCodes.length === 0 &&
+    corrections.length === 0 &&
+    !substitutedRecommendation
+  ) {
+    return null;
+  }
 
   // Only corrections that change what would be filed are itemised. Wording
   // differences — a leading tariff number, a trailing colon — are counted
@@ -653,6 +660,31 @@ function VerificationSection({ view }: { view: DeterminationView }) {
         The following did not match and were corrected or discarded before this
         document was produced.
       </Text>
+
+      {substitutedRecommendation && (
+        <View>
+          <Text style={styles.subhead}>
+            The analysis did not recommend the code it appeared to
+          </Text>
+          <View style={styles.bulletRow}>
+            <Text style={styles.bulletMark}>—</Text>
+            <Text style={styles.bulletText}>
+              The model recommended{" "}
+              <Text style={styles.codeInline}>
+                {substitutedRecommendation.modelSaid}
+              </Text>
+              , which does not exist in {view.htsusRevision}. This application
+              substituted{" "}
+              <Text style={styles.codeInline}>
+                {substitutedRecommendation.using}
+              </Text>
+              , its best surviving candidate, and that substitution — not the
+              model&rsquo;s own conclusion — is what the analyst was shown as the
+              recommendation. Weigh the rest of the reasoning accordingly.
+            </Text>
+          </View>
+        </View>
+      )}
 
       {rejectedCodes.length > 0 && (
         <View>

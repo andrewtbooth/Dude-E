@@ -434,6 +434,39 @@ describe("verifyAgainstTariff — recommendation handling", () => {
     expect(verified.recommended_hts_code).toBe("8507.60.00.20");
   });
 
+  it("records that the promoted code is the app's choice, not the model's", () => {
+    // The recovery above is right and also invisible: recommended_hts_code
+    // comes back populated either way, so a code this application picked is
+    // presented in the same terms as one the model picked — on a screen that
+    // prints it at the top of the page as the answer. A model naming a code
+    // that does not exist is the strongest available signal that the analysis
+    // needs a second look, and the fallback was swallowing it.
+    const { verification } = verifyAgainstTariff({
+      ...result([candidate()]),
+      recommended_hts_code: "9999.99.99.99",
+    });
+    expect(verification.substitutedRecommendation).toEqual({
+      modelSaid: "9999.99.99.99",
+      using: "8507.60.00.20",
+    });
+  });
+
+  it("records no substitution when the model's own pick verified", () => {
+    const { verification } = verifyAgainstTariff(result([candidate()]));
+    expect(verification.substitutedRecommendation).toBeNull();
+  });
+
+  it("records no substitution when the model declined to recommend", () => {
+    // Declining is not a failed recommendation, and must not be reported as
+    // one — there is nothing the application substituted for.
+    const { verification } = verifyAgainstTariff({
+      ...result([candidate()]),
+      status: "needs_more_info",
+      recommended_hts_code: null,
+    });
+    expect(verification.substitutedRecommendation).toBeNull();
+  });
+
   it("keeps a recommendation that survived verification", () => {
     const { result: verified } = verifyAgainstTariff(result([candidate()]));
     expect(verified.recommended_hts_code).toBe("8507.60.00.20");

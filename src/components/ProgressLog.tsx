@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /** How far off the bottom the analyst can be before auto-follow gives up. */
 const FOLLOW_THRESHOLD_PX = 48;
@@ -25,6 +25,7 @@ export function ProgressLog({
   running: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
 
   /**
    * Whether to keep following the newest entry.
@@ -61,6 +62,13 @@ export function ProgressLog({
 
   if (entries.length === 0 && !running) return null;
 
+  // While the run is going the log is the whole point — it is the only
+  // evidence the thing is alive. The moment it finishes it becomes history,
+  // and leaving it expanded puts a screenful of completed steps between the
+  // analyst and the answer they were waiting for. So it folds itself away,
+  // and re-opens on request.
+  const open = running || expanded;
+
   return (
     <section
       aria-label="Analysis progress"
@@ -74,14 +82,24 @@ export function ProgressLog({
             aria-hidden="true"
           />
         )}
-        <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-          {running ? "Working" : "Analysis log"}
-        </h2>
+        <h2 className="caption">{running ? "Working" : "Analysis log"}</h2>
+
+        {!running && (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            className="ml-auto text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+          >
+            {expanded ? "Hide" : `Show ${entries.length} steps`}
+          </button>
+        )}
       </header>
 
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        hidden={!open}
         className="scroll-region max-h-72 px-4 py-3"
       >
         <ol className="space-y-1.5">
