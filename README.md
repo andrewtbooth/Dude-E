@@ -518,7 +518,7 @@ npx tsx scripts/dev/try-classify.ts --replay data/cassettes/bottle.json    # fre
 CLASSIFIER_REPLAY=data/cassettes/bottle.json npm run dev                   # whole UI, free
 npx tsx scripts/dev/verify-e2e.tsx --replay data/cassettes/bottle.json     # PDF path
 ./scripts/dev/browser-e2e.sh                                              # 17 checks, a real browser
-./scripts/dev/browser-ux.sh                                               # touch audit + 19 checks, phone viewport
+./scripts/dev/browser-ux.sh                                               # touch audit + 29 checks, phone viewport
 ```
 
 `browser-ux.sh` opens with `audit-touch-targets.mjs`, which walks every

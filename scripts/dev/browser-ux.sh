@@ -103,3 +103,24 @@ done
 echo ""
 echo "  a code with no published ten-digit reporting number"
 BASE="$BASE" node scripts/dev/browser-ux-reporting-number.mjs
+
+# --- third pass: recovering a run the browser walked away from ---------------
+stop_servers
+rm -f "$DB"
+DATABASE_URL="file:./$DB" npx prisma db push >/dev/null
+
+DATABASE_URL="file:./$DB" \
+CLASSIFIER_REPLAY="$CASSETTE" \
+CLASSIFIER_REPLAY_DELAY_MS=1 \
+SESSION_SECRET="browser-ux-only-not-a-real-secret-00000000000" \
+ANTHROPIC_API_KEY="unused-in-replay" \
+  nohup npx next dev -p "$PORT" > "/tmp/browser-ux-persistence.log" 2>&1 &
+
+for _ in $(seq 1 40); do
+  if curl -s --max-time 2 -o /dev/null "${BASE}/api/health"; then break; fi
+  sleep 1
+done
+
+echo ""
+echo "  a run that outlives the browser that started it"
+BASE="$BASE" UX_DB="$DB" node scripts/dev/browser-ux-persistence.mjs

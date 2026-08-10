@@ -112,6 +112,18 @@ export function AnalyzeClient({
             case "analysis_started":
               startedId = event.analysisId;
               setAnalysisId(event.analysisId);
+              /**
+               * Put the run in the address bar the moment it exists.
+               *
+               * Until this, /analyze held a run that had no URL. A reload, a
+               * back gesture, or iOS reclaiming the tab while the screen was
+               * off all landed on an empty form, with the analysis still going
+               * on the server and no way to reach it but History. replaceState
+               * rather than push: the empty form is not a place worth going
+               * back to, and this must not add a history entry the back
+               * gesture has to walk through.
+               */
+              window.history.replaceState(null, "", `/analyze/${event.analysisId}`);
               break;
             case "status":
               setEntries((prev) => [
@@ -210,6 +222,10 @@ export function AnalyzeClient({
     setAnalysisId(null);
     setDetached(null);
     setError(null);
+    // The address bar is still pointing at the finished run, because the
+    // stream put it there. Leaving it would mean a reload of what looks like
+    // a blank form silently reopens the previous analysis.
+    window.history.replaceState(null, "", "/analyze");
   }
 
   function stopWatching() {
