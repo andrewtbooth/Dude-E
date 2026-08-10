@@ -139,11 +139,13 @@ A snapshot is not a copy of the USITC payload. It is that payload run through
 column, description paths are a column, inherited rates are a column. Change a
 rule and nothing moves until a sync runs again.
 
-That gap is silent and it cost a release. Making Chapter 98 declarable was
-written, tested, reviewed and deployed — and was inert. The volume held data
-built by the previous rule, the entrypoint re-synced only when the data
-directory was *empty*, and nothing compared the data against the code that
-derived it. The deploy went green and the behaviour did not change.
+The gap is silent, which is what makes it dangerous. Making Chapter 98
+declarable is written, tested and reviewed, and on its own it would have
+deployed green and done nothing: the volume holds data built by the previous
+rule, the entrypoint re-synced only when the data directory was *empty*, and
+nothing compared the data against the code that derived it. A release where the
+tests pass, the deploy succeeds, and the behaviour does not move is the kind
+that gets debugged in the wrong place.
 
 So `DERIVATION_VERSION` in `parse.ts` is stamped into every manifest, and
 `scripts/deploy/check-snapshot-derivation.ts` runs on boot. A snapshot built by
