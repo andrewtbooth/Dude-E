@@ -1,6 +1,7 @@
 import { formatDate } from "@/lib/format";
 import { redirect } from "next/navigation";
 import { AnalyzeClient } from "@/components/AnalyzeClient";
+import { BottomNav } from "@/components/BottomNav";
 import { Masthead } from "@/components/Masthead";
 import { getSession } from "@/lib/auth/session";
 import { tryGetActiveRevision } from "@/lib/hts/store";
@@ -12,10 +13,10 @@ export default async function AnalyzePage() {
   const revision = tryGetActiveRevision();
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <Masthead session={session} active="analyze" />
 
-      <main className="mx-auto max-w-4xl px-5 py-8">
+      <main className="mx-auto max-w-4xl px-5 py-8 pb-[calc(3.5rem+env(safe-area-inset-bottom)+2rem)] sm:pb-8">
         <h1 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">
           Classify a product
         </h1>
@@ -40,6 +41,8 @@ export default async function AnalyzePage() {
           }
         />
       </main>
+
+      <BottomNav active="analyze" />
     </div>
   );
 }
@@ -71,7 +74,7 @@ function IncompleteSnapshotNotice({
 }) {
   return (
     <details className="mb-6 rounded-lg border border-[var(--warn)] bg-[var(--warn-subtle)] p-4">
-      <summary className="cursor-pointer text-sm font-medium text-[var(--warn)]">
+      <summary className="tap-target cursor-pointer text-sm font-medium text-[var(--warn)]">
         {revision} synced with {warnings.length} warning
         {warnings.length === 1 ? "" : "s"} — parts of the tariff may be missing
       </summary>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { BottomNav } from "@/components/BottomNav";
 import { Masthead } from "@/components/Masthead";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
@@ -53,10 +54,10 @@ export default async function HistoryPage({
   });
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <Masthead session={session} active="history" />
 
-      <main className="mx-auto max-w-6xl px-5 py-8">
+      <main className="mx-auto max-w-6xl px-5 py-8 pb-[calc(3.5rem+env(safe-area-inset-bottom)+2rem)] sm:pb-8">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">
@@ -68,7 +69,7 @@ export default async function HistoryPage({
             </p>
           </div>
 
-          <form className="flex flex-wrap items-center gap-2" action="/history">
+          <form className="flex w-full flex-wrap items-center gap-2 sm:w-auto" action="/history">
             <input type="hidden" name="scope" value={mineOnly ? "mine" : "all"} />
             <input
               type="search"
@@ -76,11 +77,12 @@ export default async function HistoryPage({
               defaultValue={query}
               placeholder="HTS code or product"
               aria-label="Search determinations"
-              className="w-56 rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none"
+              enterKeyHint="search"
+              className="min-h-11 min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none sm:flex-none sm:w-56"
             />
             <button
               type="submit"
-              className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)]"
+              className="tap-target rounded-md border border-[var(--border)] px-4 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)]"
             >
               Search
             </button>
@@ -123,7 +125,7 @@ export default async function HistoryPage({
                     href={`/api/determinations/${determination.id}/pdf`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ml-auto rounded-md border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--accent)] transition-colors hover:bg-[var(--accent-subtle)]"
+                    className="tap-target ml-auto rounded-md border border-[var(--border)] px-3 text-xs font-medium text-[var(--accent)] transition-colors hover:bg-[var(--accent-subtle)]"
                   >
                     Open PDF
                   </a>
@@ -165,7 +167,7 @@ export default async function HistoryPage({
                       list named work with no way to reach it. */}
                   <Link
                     href={`/analyze/${analysis.id}`}
-                    className="flex flex-wrap items-baseline gap-x-3 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs transition-colors hover:border-[var(--accent)]"
+                    className="flex min-h-11 flex-wrap items-center gap-x-3 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs transition-colors hover:border-[var(--accent)]"
                   >
                     <StatusTag status={analysis.status} />
                     <span className="text-[var(--text-muted)]">
@@ -187,6 +189,8 @@ export default async function HistoryPage({
           </section>
         )}
       </main>
+
+      <BottomNav active="history" />
     </div>
   );
 }
@@ -206,8 +210,8 @@ function ScopeTab({
       aria-current={active ? "page" : undefined}
       className={
         active
-          ? "-mb-px border-b-2 border-[var(--accent)] px-3 py-2 text-sm font-medium text-[var(--text-primary)]"
-          : "-mb-px border-b-2 border-transparent px-3 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+          ? "tap-target -mb-px border-b-2 border-[var(--accent)] px-4 text-sm font-medium text-[var(--text-primary)]"
+          : "tap-target -mb-px border-b-2 border-transparent px-4 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
       }
     >
       {children}
@@ -247,7 +251,7 @@ function EmptyState({ query }: { query: string }) {
       </p>
       <Link
         href="/analyze"
-        className="mt-2 inline-block text-sm font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+        className="tap-target mt-2 text-sm font-medium text-[var(--accent)] underline-offset-2 hover:underline"
       >
         Classify a product
       </Link>

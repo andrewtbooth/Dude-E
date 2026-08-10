@@ -22,7 +22,7 @@ export function Masthead({
   return (
     <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--surface-1)]/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
-        <Link href="/analyze" className="flex items-baseline gap-2.5">
+        <Link href="/analyze" className="tap-target items-baseline gap-2.5">
           {/* Set in the condensed face, uppercase and tracked, the way a form
               names its issuing authority in the top-left corner. */}
           <span className="font-[family-name:var(--font-display)] text-sm font-bold uppercase tracking-[0.14em] text-[var(--text-primary)]">
@@ -33,7 +33,10 @@ export function Masthead({
           </span>
         </Link>
 
-        <nav className="flex items-center gap-1 text-sm">
+        {/* Hidden on phones — the same two destinations live in BottomNav,
+            within thumb reach. Duplicating them here would put the app's only
+            navigation in the hardest corner of the screen to hit. */}
+        <nav className="hidden items-center gap-1 text-sm sm:flex">
           <NavLink href="/analyze" current={active === "analyze"}>
             Analyze
           </NavLink>
@@ -81,8 +84,8 @@ function NavLink({
       aria-current={current ? "page" : undefined}
       className={
         current
-          ? "rounded-md bg-[var(--surface-3)] px-2.5 py-1 text-[var(--text-primary)]"
-          : "rounded-md px-2.5 py-1 text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
+          ? "tap-target rounded-md bg-[var(--surface-3)] px-3 text-[var(--text-primary)]"
+          : "tap-target rounded-md px-3 text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
       }
     >
       {children}
@@ -134,6 +137,12 @@ function RevisionBadge({
       }
     >
       <span className="caption block">Tariff edition</span>
+      {/* Two renderings of the same fact, because the phone cannot afford the
+          long one. At full width the masthead names both editions and the
+          warning count; wrapped onto three lines on a 390px screen that pushed
+          the actual work most of a viewport down the page, and repeated what
+          the banner on /analyze says anyway. The revision alone answers the
+          question the masthead exists to answer — what am I about to stamp. */}
       <span
         className={`block text-[11px] font-medium ${
           warningCount > 0
@@ -141,10 +150,13 @@ function RevisionBadge({
             : "text-[var(--text-secondary)]"
         }`}
       >
-        {editions}
-        {warningCount > 0
-          ? ` · ${warningCount} warning${warningCount === 1 ? "" : "s"}`
-          : ""}
+        <span className="sm:hidden">{revision}</span>
+        <span className="hidden sm:inline">
+          {editions}
+          {warningCount > 0
+            ? ` · ${warningCount} warning${warningCount === 1 ? "" : "s"}`
+            : ""}
+        </span>
       </span>
     </span>
   );

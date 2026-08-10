@@ -80,7 +80,7 @@ export function ResultSummary({ run }: { run: ClassificationRun }) {
 
       {transcription.length > 0 && (
         <details className="rounded-lg border border-[var(--border)] px-4 py-3">
-          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          <summary className="tap-target cursor-pointer text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             {transcription.length} wording difference
             {transcription.length === 1 ? "" : "s"} normalised
           </summary>

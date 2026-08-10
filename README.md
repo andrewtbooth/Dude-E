@@ -518,8 +518,16 @@ npx tsx scripts/dev/try-classify.ts --replay data/cassettes/bottle.json    # fre
 CLASSIFIER_REPLAY=data/cassettes/bottle.json npm run dev                   # whole UI, free
 npx tsx scripts/dev/verify-e2e.tsx --replay data/cassettes/bottle.json     # PDF path
 ./scripts/dev/browser-e2e.sh                                              # 17 checks, a real browser
-./scripts/dev/browser-ux.sh                                               # 9 checks, a phone viewport
+./scripts/dev/browser-ux.sh                                               # touch audit + 19 checks, phone viewport
 ```
+
+`browser-ux.sh` opens with `audit-touch-targets.mjs`, which walks every
+interactive element at phone width and exits non-zero on anything under 44px or
+any text field under 16px (below which iOS zooms the viewport on focus and does
+not zoom back). It found 37 the first time it ran — including the candidate
+radio at 16x16, the control that decides which code a determination is written
+against. It is a guard, not a report: without the exit code the next component
+to land a small control would put the number quietly back to 1.
 
 The two browser scripts differ in more than their assertions. `browser-e2e.sh`
 replays at 1 ms a step, because it is checking outcomes — what was recorded,

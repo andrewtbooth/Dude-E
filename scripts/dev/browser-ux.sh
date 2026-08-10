@@ -55,6 +55,10 @@ for _ in $(seq 1 40); do
 done
 
 echo ""
+echo "  touch targets at phone width"
+BASE="$BASE" node scripts/dev/audit-touch-targets.mjs
+
+echo ""
 echo "  mobile viewport — scroll containment, log follow, correction proportion"
 BASE="$BASE" node scripts/dev/browser-ux.mjs
 

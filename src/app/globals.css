@@ -289,6 +289,47 @@ body {
   margin: 0 -1px -1px 0;
 }
 
+/* ===========================================================================
+   TOUCH
+   ---------------------------------------------------------------------------
+   Measured, not guessed: `scripts/dev/audit-touch-targets.mjs` walks every
+   interactive element at phone width and lists what falls short. It found 37,
+   including the candidate radio at 16x16 — the control that chooses which code
+   an analyst stands behind.
+
+   44px is the floor both platform guidelines land on. These give elements real
+   size rather than an invisible expanded hit region: an overlay large enough to
+   fix a 16px control is large enough to cover its neighbour, and a tap that
+   lands on the wrong control is worse than one that misses.
+   ======================================================================== */
+
+.tap-target {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Square controls — icon buttons with no text to set their width. */
+.tap-icon {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Any text field. 16px is not a taste call: iOS Safari zooms the viewport when
+   a focused input is below it, and the zoom does not reverse on blur — the
+   analyst is left on a page wider than the screen, mid-analysis. */
+input[type="text"],
+input[type="email"],
+input[type="search"],
+textarea,
+select {
+  font-size: 16px;
+}
+
 /* A status mark, struck rather than filled — the shape of a rubber stamp on a
    cleared document. It takes its colour from whatever sets `color` on it, so
    the same mark serves "complete" and "needs more information" without a

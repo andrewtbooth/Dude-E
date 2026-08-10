@@ -89,7 +89,7 @@ export function ProgressLog({
             type="button"
             onClick={() => setExpanded((value) => !value)}
             aria-expanded={expanded}
-            className="ml-auto text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+            className="tap-target ml-auto text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
           >
             {expanded ? "Hide" : `Show ${entries.length} steps`}
           </button>

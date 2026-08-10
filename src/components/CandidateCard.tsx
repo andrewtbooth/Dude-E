@@ -39,15 +39,25 @@ export function CandidateCard({
           : "rounded-lg border border-[var(--border)] bg-[var(--surface-1)] p-4"
       }
     >
-      <div className="flex items-start gap-3">
-        <input
-          type="radio"
-          id={inputId}
-          name="selected-candidate"
-          checked={selected}
-          onChange={onSelect}
-          className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent)]"
-        />
+      <div className="flex items-start gap-1">
+        {/* The radio itself measured 16x16 — the smallest control in the app,
+            and the one that decides which code a determination is written
+            against. The visible dot grows a little; the tappable area around
+            it grows to 44x44. */}
+        <label
+          htmlFor={inputId}
+          className="tap-icon -ml-1.5 shrink-0 cursor-pointer"
+          aria-label="Select this classification"
+        >
+          <input
+            type="radio"
+            id={inputId}
+            name="selected-candidate"
+            checked={selected}
+            onChange={onSelect}
+            className="h-5 w-5 accent-[var(--accent)]"
+          />
+        </label>
 
         <div className="min-w-0 flex-1">
           <label htmlFor={inputId} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -127,7 +137,7 @@ export function CandidateCard({
             onClick={() => setShowReasoning((open) => !open)}
             aria-expanded={showReasoning}
             aria-controls={detailsId}
-            className="mt-3 text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+            className="tap-target mt-1 text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
           >
             {showReasoning ? "Hide" : "Show"} GRI analysis
             {candidate.reasoning.notes_applied.length > 0 &&
@@ -377,7 +387,7 @@ function ScheduleB({ candidate }: { candidate: Candidate }) {
       </p>
       {scheduleB.considered.length > 0 && (
         <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-[var(--text-muted)]">
+          <summary className="tap-target cursor-pointer text-xs text-[var(--text-muted)]">
             {scheduleB.considered.length} other export code
             {scheduleB.considered.length === 1 ? "" : "s"} under this subheading
           </summary>

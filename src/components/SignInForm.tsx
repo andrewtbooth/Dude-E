@@ -17,6 +17,7 @@ export function SignInForm() {
         hint="Appears as the analyst of record on every determination you export."
         error={state.errors?.name}
         autoComplete="name"
+        enterKeyHint="next"
         placeholder="Dana Okafor"
       />
       <Field
@@ -25,6 +26,8 @@ export function SignInForm() {
         hint="Used to attribute your analyses in the audit history."
         error={state.errors?.email}
         autoComplete="email"
+        inputMode="email"
+        enterKeyHint="go"
         type="email"
         placeholder="dana.okafor@company.com"
       />
@@ -49,7 +52,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="w-full rounded-md bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60"
+      className="tap-target w-full justify-center rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60"
     >
       {pending ? "Starting session…" : "Start analyzing"}
     </button>
@@ -63,6 +66,8 @@ function Field({
   error,
   type = "text",
   autoComplete,
+  inputMode,
+  enterKeyHint,
   placeholder,
 }: {
   id: string;
@@ -71,6 +76,8 @@ function Field({
   error?: string;
   type?: string;
   autoComplete?: string;
+  inputMode?: "text" | "email" | "search";
+  enterKeyHint?: "next" | "go" | "search" | "done";
   placeholder?: string;
 }) {
   const errorId = `${id}-error`;
@@ -89,10 +96,12 @@ function Field({
         name={id}
         type={type}
         autoComplete={autoComplete}
+        inputMode={inputMode}
+        enterKeyHint={enterKeyHint}
         placeholder={placeholder}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : hintId}
-        className="mt-1.5 w-full rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none"
+        className="mt-1.5 min-h-11 w-full rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none"
       />
       {error ? (
         <p id={errorId} role="alert" className="mt-1 text-xs text-[var(--danger)]">

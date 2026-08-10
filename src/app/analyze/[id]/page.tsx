@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { BottomNav } from "@/components/BottomNav";
 import { Masthead } from "@/components/Masthead";
 import { RunResult } from "@/components/RunResult";
 import type { ClassificationRun } from "@/lib/agent/classify";
@@ -47,10 +48,10 @@ export default async function SavedAnalysisPage({
   const run = parseRun(analysis.resultJson);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <Masthead session={session} active="analyze" />
 
-      <main className="mx-auto max-w-4xl space-y-6 px-5 py-8">
+      <main className="mx-auto max-w-4xl space-y-6 px-5 py-8 pb-[calc(3.5rem+env(safe-area-inset-bottom)+2rem)] sm:pb-8">
         <header>
           <Link
             href="/history"
@@ -139,6 +140,8 @@ export default async function SavedAnalysisPage({
           )
         )}
       </main>
+
+      <BottomNav active="analyze" />
     </div>
   );
 }

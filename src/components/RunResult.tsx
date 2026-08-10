@@ -238,7 +238,7 @@ function ExportBar({
             href={`/api/determinations/${issued}/pdf`}
             target="_blank"
             rel="noreferrer"
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)]"
+            className="tap-target w-full justify-center rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] sm:w-auto"
           >
             Open the determination PDF
           </a>
@@ -253,7 +253,7 @@ function ExportBar({
             type="button"
             onClick={exportDetermination}
             disabled={disabled || busy || !selectedCode || !analysisId}
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            className="tap-target w-full justify-center rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50 sm:w-auto"
           >
             {busy ? "Recording…" : "Record determination and export PDF"}
           </button>

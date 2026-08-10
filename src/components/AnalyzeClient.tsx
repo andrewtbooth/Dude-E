@@ -244,7 +244,7 @@ export function AnalyzeClient({
           <button
             type="button"
             onClick={startOver}
-            className="shrink-0 text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+            className="tap-target shrink-0 text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
           >
             New analysis
           </button>
@@ -273,8 +273,8 @@ export function AnalyzeClient({
                 onClick={() => setMode(entry.value)}
                 className={
                   mode === entry.value
-                    ? "rounded px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] bg-[var(--surface-1)] shadow-[var(--shadow-sm)]"
-                    : "rounded px-3 py-1.5 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                    ? "tap-target rounded px-3 text-sm font-medium text-[var(--text-primary)] bg-[var(--surface-1)] shadow-[var(--shadow-sm)]"
+                    : "tap-target rounded px-3 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                 }
               >
                 {entry.label}
@@ -293,6 +293,18 @@ export function AnalyzeClient({
               rows={mode === "PART_NUMBER" ? 2 : 4}
               placeholder={activeMode.placeholder}
               aria-describedby="product-input-hint"
+              /**
+               * A part number is not prose and a phone keyboard treats it as
+               * prose by default: "1734-IB8S" comes back as "1734-ib8s" with a
+               * capital on the first letter and a red squiggle, or autocorrected
+               * into a word outright. The wrong characters here mean the model
+               * researches a part that does not exist.
+               *
+               * A description is prose and wants the opposite.
+               */
+              autoCapitalize={mode === "PART_NUMBER" ? "characters" : "sentences"}
+              autoCorrect={mode === "PART_NUMBER" ? "off" : "on"}
+              spellCheck={mode !== "PART_NUMBER"}
               className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none disabled:opacity-60"
             />
             <p
@@ -308,7 +320,7 @@ export function AnalyzeClient({
           <button
             type="submit"
             disabled={disabled || running || input.trim().length < 3}
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            className="tap-target justify-center rounded-md bg-[var(--accent)] px-5 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
           >
             {running ? "Analyzing…" : "Classify"}
           </button>
@@ -316,7 +328,7 @@ export function AnalyzeClient({
             <button
               type="button"
               onClick={stopWatching}
-              className="rounded-md border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)]"
+              className="tap-target rounded-md border border-[var(--border)] px-3 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)]"
             >
               Stop watching
             </button>
