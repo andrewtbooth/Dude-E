@@ -272,6 +272,7 @@ describe("automated checks section", () => {
               field: "duty.general",
               modelValue: "3.4%",
               indexValue: "7.2%",
+              severity: "material" as const,
             },
           ],
         },
@@ -280,5 +281,33 @@ describe("automated checks section", () => {
     expect(text).toContain("Values corrected from the tariff");
     expect(text).toContain("3.4%");
     expect(text).toContain("7.2%");
+  }, 30_000);
+
+  it("counts wording differences instead of itemising them", async () => {
+    // Every real correction seen so far has been a leading tariff number or a
+    // trailing colon on a description the model quoted. Listing those at full
+    // length pushed a genuine duty-rate correction off the reader's attention,
+    // so they are summarised — but not dropped, because the reader is entitled
+    // to know the model's transcription did not match the published text.
+    const text = await textOf(
+      sampleDeterminationView({
+        verification: {
+          rejectedCodes: [],
+          corrections: [
+            {
+              htsCode: "9617.00.10.00",
+              field: "description_path",
+              modelValue: "9617.00 Vacuum flasks and other vacuum vessels",
+              indexValue: "Vacuum flasks and other vacuum vessels:",
+              severity: "transcription" as const,
+            },
+          ],
+        },
+      }),
+    );
+    const flat = squashed(text);
+    expect(flat).toContain("Wordingnormalised");
+    expect(flat).not.toContain("Valuescorrectedfromthetariff");
+    expect(flat).not.toContain("9617.00Vacuumflasks");
   }, 30_000);
 });

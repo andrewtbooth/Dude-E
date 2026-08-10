@@ -460,7 +460,17 @@ npx tsx scripts/dev/try-classify.ts --record data/cassettes/bottle.json "steel w
 npx tsx scripts/dev/try-classify.ts --replay data/cassettes/bottle.json    # free, ~2s
 CLASSIFIER_REPLAY=data/cassettes/bottle.json npm run dev                   # whole UI, free
 npx tsx scripts/dev/verify-e2e.tsx --replay data/cassettes/bottle.json     # PDF path
+./scripts/dev/browser-e2e.sh                                              # 17 checks, a real browser
+./scripts/dev/browser-ux.sh                                               # 9 checks, a phone viewport
 ```
+
+The two browser scripts differ in more than their assertions. `browser-e2e.sh`
+replays at 1 ms a step, because it is checking outcomes — what was recorded,
+what the PDF contains, what the duplicate guard refuses. `browser-ux.sh` replays
+at 900 ms in an iPhone profile, because it is checking behaviour *during* a run:
+whether the page stays put while the log streams, whether the log keeps up with
+itself. Timing-dependent defects are invisible at 1 ms — an earlier review pass
+declared the scroll behaviour fine having run it at that speed, and it was not.
 
 Replay is refused in production builds, and every run it produces is stamped
 `replay:<model>` — that string reaches the PDF provenance block, so a document

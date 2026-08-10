@@ -607,6 +607,20 @@ function VerificationSection({ view }: { view: DeterminationView }) {
   const { rejectedCodes, corrections } = view.verification;
   if (rejectedCodes.length === 0 && corrections.length === 0) return null;
 
+  // Only corrections that change what would be filed are itemised. Wording
+  // differences — a leading tariff number, a trailing colon — are counted
+  // rather than listed, so a page full of punctuation notes does not bury a
+  // duty rate the model got wrong.
+  //
+  // A determination recorded before severity existed carries no value at all,
+  // and re-issuing its PDF must not quietly drop what the original showed. So
+  // the test is for the one severity that may be folded away; anything else,
+  // including nothing, is itemised.
+  const material = corrections.filter(
+    (entry) => entry.severity !== "transcription",
+  );
+  const transcriptionCount = corrections.length - material.length;
+
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>AUTOMATED CHECKS AGAINST THE TARIFF</Text>
@@ -630,10 +644,10 @@ function VerificationSection({ view }: { view: DeterminationView }) {
         </View>
       )}
 
-      {corrections.length > 0 && (
+      {material.length > 0 && (
         <View>
           <Text style={styles.subhead}>Values corrected from the tariff</Text>
-          {corrections.map((entry, index) => (
+          {material.map((entry, index) => (
             <View key={index} style={styles.bulletRow}>
               <Text style={styles.bulletMark}>—</Text>
               <Text style={styles.bulletText}>
@@ -645,6 +659,21 @@ function VerificationSection({ view }: { view: DeterminationView }) {
               </Text>
             </View>
           ))}
+        </View>
+      )}
+
+      {transcriptionCount > 0 && (
+        <View>
+          <Text style={styles.subhead}>Wording normalised</Text>
+          <View style={styles.bulletRow}>
+            <Text style={styles.bulletMark}>—</Text>
+            <Text style={styles.bulletText}>
+              {transcriptionCount} description{transcriptionCount === 1 ? "" : "s"}{" "}
+              {transcriptionCount === 1 ? "was" : "were"} quoted with different
+              punctuation or a leading tariff number. The published wording is
+              what appears above. No classification value was affected.
+            </Text>
+          </View>
         </View>
       )}
     </View>

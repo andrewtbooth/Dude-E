@@ -35,7 +35,13 @@ export interface DeterminationView {
    */
   verification: {
     rejectedCodes: { code: string; reason: string }[];
-    corrections: { htsCode: string; field: string; modelValue: string; indexValue: string }[];
+    corrections: {
+      htsCode: string;
+      field: string;
+      modelValue: string;
+      indexValue: string;
+      severity: "material" | "transcription";
+    }[];
   };
   /**
    * When the tariff snapshot was pulled. Chapter 99 duties are captured as

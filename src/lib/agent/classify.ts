@@ -46,6 +46,49 @@ export interface CodeCorrection {
   field: string;
   modelValue: string;
   indexValue: string;
+  /**
+   * Whether this correction changes what the determination means.
+   *
+   * `material` is a duty rate, an additional-duty string, or an export
+   * description — a value someone could act on and be wrong about. Those are
+   * the reason the advisory exists.
+   *
+   * `transcription` is the same fact written differently: the model prefixing
+   * a description path with its HTS number, or the schedule's trailing colons.
+   * Worth keeping on the record, worth overwriting from the index, not worth a
+   * warning above the answer.
+   */
+  severity: "material" | "transcription";
+}
+
+/**
+ * Compare description paths by what they say, not by how they are punctuated.
+ *
+ * Measured across both recorded runs, every single correction raised was a
+ * `description_path` diff of exactly this kind: the model writes
+ * `"9617.00 Vacuum flasks … inners"` where the index holds
+ * `"Vacuum flasks … inners:"`. An exact string comparison therefore fired on
+ * essentially every analysis, and put a warn-toned "corrected against the
+ * tariff" block above the answer and into the exported PDF.
+ *
+ * The cost of that is specific. The advisory exists to catch a wrong duty rate
+ * or an invented Chapter 99 charge — things that cost money. Firing it on
+ * punctuation every time is how a real warning gets skipped.
+ */
+export function normaliseDescriptionPath(segments: readonly string[]): string {
+  return segments
+    .map((segment) =>
+      segment
+        // A leading HTS number: "9617.00 Vacuum flasks…", "3926 Other…".
+        .replace(/^\d{4}(?:\.\d{2})*\s+/, "")
+        // The schedule prints a trailing colon on any line that breaks out.
+        .replace(/:\s*$/, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase(),
+    )
+    .filter(Boolean)
+    .join(" > ");
 }
 
 export interface ClassificationRun {
@@ -70,6 +113,37 @@ export interface ClassificationRun {
   effort: string;
   htsusRevision: string;
   durationMs: number;
+}
+
+/**
+ * Fill in fields a run predates.
+ *
+ * Runs are stored and recorded verbatim — a determination row keeps the JSON
+ * exactly as the classifier returned it, and a cassette keeps a whole replayed
+ * run. Both are read back through a cast, so a field added after the row was
+ * written is missing at runtime while the type insists it is present. Anything
+ * that then branches on it silently takes the wrong branch.
+ *
+ * `severity` is the first of these, and it does not have to be guessed. A
+ * correction preserves both the value the model gave and the value the index
+ * holds, so the same comparison that classifies a new correction classifies an
+ * old one — from the record itself rather than from an assumption about it.
+ * Only a field whose values cannot be compared that way falls back to
+ * `material`, which is the reading that keeps showing it to the analyst.
+ *
+ * Mutates and returns the same object; callers own freshly-parsed JSON.
+ */
+export function backfillRunFields(run: ClassificationRun): ClassificationRun {
+  for (const correction of run.verification?.corrections ?? []) {
+    if (correction.severity) continue;
+    correction.severity =
+      correction.field === "description_path" &&
+      normaliseDescriptionPath(correction.modelValue.split(" > ")) ===
+        normaliseDescriptionPath(correction.indexValue.split(" > "))
+        ? "transcription"
+        : "material";
+  }
+  return run;
 }
 
 /**
@@ -710,6 +784,7 @@ function verifyChapter99(
         field: `chapter_99[${line.htsNo}].additional_duty`,
         modelValue: entry.additional_duty,
         indexValue: published,
+        severity: "material",
       });
     }
 
@@ -837,6 +912,7 @@ function verifyScheduleB(
       field: "schedule_b.description",
       modelValue: claimed.description,
       indexValue: entry.description,
+      severity: "material",
     });
   }
 
@@ -847,6 +923,7 @@ function verifyScheduleB(
       field: "schedule_b.hs_subheading",
       modelValue: `export code sits under ${entry.hs6}`,
       indexValue: `HTS number sits under ${htsHs6}`,
+      severity: "material",
     });
   }
 
@@ -898,7 +975,21 @@ export function verifyAgainstTariff(result: ClassificationResult): {
     verifiedCodes.push(line.htsNo);
 
     const authoritativePath = line.descriptionPath.filter(Boolean);
+    // Compared normalised, still overwritten from the index below either way.
     if (
+      normaliseDescriptionPath(authoritativePath) !==
+      normaliseDescriptionPath(candidate.description_path)
+    ) {
+      corrections.push({
+        htsCode: line.htsNo,
+        field: "description_path",
+        modelValue: candidate.description_path.join(" > "),
+        indexValue: authoritativePath.join(" > "),
+        // A path that still differs after normalisation is not a typo: the
+        // model was describing a different article from the one it named.
+        severity: "material",
+      });
+    } else if (
       authoritativePath.join(" > ") !== candidate.description_path.join(" > ")
     ) {
       corrections.push({
@@ -906,6 +997,7 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         field: "description_path",
         modelValue: candidate.description_path.join(" > "),
         indexValue: authoritativePath.join(" > "),
+        severity: "transcription",
       });
     }
     if (candidate.tariff.duty.general !== line.general) {
@@ -914,6 +1006,8 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         field: "duty.general",
         modelValue: candidate.tariff.duty.general,
         indexValue: line.general,
+        // The number someone pays. Always worth surfacing.
+        severity: "material",
       });
     }
 

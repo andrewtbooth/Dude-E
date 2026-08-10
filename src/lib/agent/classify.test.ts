@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupFixtureIndex, teardownFixtureIndex } from "../../test/htsus-fixture";
-import { verifyAgainstTariff } from "./classify";
+import { backfillRunFields, verifyAgainstTariff } from "./classify";
+import type { ClassificationRun } from "./classify";
 import type { Candidate, ClassificationResult } from "./schema";
 
 beforeAll(() => setupFixtureIndex());
@@ -182,6 +183,7 @@ describe("verifyAgainstTariff", () => {
       field: "duty.general",
       modelValue: "2.7%",
       indexValue: "3.4%",
+      severity: "material",
     });
   });
 
@@ -196,6 +198,56 @@ describe("verifyAgainstTariff", () => {
       "Other",
       "Other",
     ]);
+  });
+
+  it("calls a wrong path material and a re-typed one transcription", () => {
+    // Every correction observed in a real run so far has been the second kind:
+    // the model quoting the schedule's own wording with the leading tariff
+    // number left on or the trailing colon dropped. Those were driving a
+    // warning banner that said values had been "replaced with what the
+    // published schedule actually says" — true, but describing punctuation in
+    // the language reserved for a wrong duty rate. The two have to be told
+    // apart before either can be presented honestly.
+    const { verification: wrong } = verifyAgainstTariff(
+      result([candidate({ description_path: ["Wrong", "Path"] })]),
+    );
+    expect(
+      wrong.corrections.find((c) => c.field === "description_path")?.severity,
+    ).toBe("material");
+
+    const { verification: retyped } = verifyAgainstTariff(
+      result([
+        candidate({
+          description_path: [
+            "8507 Electric storage batteries, including separators therefor; parts thereof",
+            "8507.60 Lithium-ion batteries",
+            "Other",
+            "Other",
+          ],
+        }),
+      ]),
+    );
+    expect(
+      retyped.corrections.find((c) => c.field === "description_path")?.severity,
+    ).toBe("transcription");
+  });
+
+  it("raises nothing at all when the path matches exactly", () => {
+    const { verification } = verifyAgainstTariff(
+      result([
+        candidate({
+          description_path: [
+            "Electric storage batteries, including separators therefor; parts thereof:",
+            "Lithium-ion batteries:",
+            "Other",
+            "Other",
+          ],
+        }),
+      ]),
+    );
+    expect(
+      verification.corrections.filter((c) => c.field === "description_path"),
+    ).toEqual([]);
   });
 
   it("replaces units with the tariff's", () => {
@@ -327,6 +379,7 @@ describe("verifyAgainstTariff — Schedule B", () => {
       field: "schedule_b.description",
       modelValue: "Vacuum flasks, complete",
       indexValue: "FLASK AND OTHER VESSELS, COMPLETE WITH CASES",
+      severity: "material",
     });
   });
 
@@ -343,6 +396,7 @@ describe("verifyAgainstTariff — Schedule B", () => {
       field: "schedule_b.hs_subheading",
       modelValue: "export code sits under 961700",
       indexValue: "HTS number sits under 850760",
+      severity: "material",
     });
   });
 
@@ -504,5 +558,83 @@ describe("verifyAgainstTariff — Chapter 99 and rulings", () => {
       result([candidate({ cross_rulings: [ruling()] })]),
     );
     expect(verified.candidates[0].cross_rulings).toHaveLength(1);
+  });
+});
+
+describe("backfillRunFields", () => {
+  // Determinations are stored as the classifier returned them, and cassettes
+  // are recorded the same way, so both go on carrying the shape they had when
+  // written. Reading one back through a cast produces an object that satisfies
+  // the type and is missing the field anyway — which is worse than a null,
+  // because nothing complains and every branch on it quietly takes the wrong
+  // side.
+  const run = (
+    corrections: Record<string, unknown>[],
+  ): ClassificationRun =>
+    ({
+      verification: { verifiedCodes: [], rejectedCodes: [], corrections },
+    }) as unknown as ClassificationRun;
+
+  it("reads severity off the record rather than assuming it", () => {
+    // The values are both preserved on the correction, so the same comparison
+    // the classifier makes today can be made about a row written before it
+    // existed. No guess is required and none should be made.
+    const backfilled = backfillRunFields(
+      run([
+        {
+          htsCode: "9617.00.10.00",
+          field: "description_path",
+          modelValue: "9617.00 Vacuum flasks and other vacuum vessels",
+          indexValue: "Vacuum flasks and other vacuum vessels:",
+        },
+      ]),
+    );
+    expect(backfilled.verification.corrections[0].severity).toBe("transcription");
+  });
+
+  it("keeps an unclassifiable correction visible", () => {
+    // A duty rate carries no paths to compare. Defaulting it to material is
+    // the reading that keeps showing it; defaulting the other way would hide
+    // a wrong number behind a disclosure labelled "punctuation".
+    const backfilled = backfillRunFields(
+      run([
+        {
+          htsCode: "9617.00.10.00",
+          field: "duty.general",
+          modelValue: "3.4%",
+          indexValue: "7.2%",
+        },
+      ]),
+    );
+    expect(backfilled.verification.corrections[0].severity).toBe("material");
+  });
+
+  it("calls a genuinely different path material", () => {
+    const backfilled = backfillRunFields(
+      run([
+        {
+          htsCode: "9617.00.10.00",
+          field: "description_path",
+          modelValue: "Wrong > Path",
+          indexValue: "Vacuum flasks and other vacuum vessels:",
+        },
+      ]),
+    );
+    expect(backfilled.verification.corrections[0].severity).toBe("material");
+  });
+
+  it("does not overwrite a severity the classifier already set", () => {
+    const backfilled = backfillRunFields(
+      run([
+        {
+          htsCode: "9617.00.10.00",
+          field: "description_path",
+          modelValue: "9617.00 Vacuum flasks",
+          indexValue: "Vacuum flasks",
+          severity: "material",
+        },
+      ]),
+    );
+    expect(backfilled.verification.corrections[0].severity).toBe("material");
   });
 });

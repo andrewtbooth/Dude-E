@@ -1,12 +1,20 @@
-import type { ClassificationRun } from "../agent/classify";
+import { backfillRunFields, type ClassificationRun } from "../agent/classify";
 import type { Candidate, Refinement } from "../agent/schema";
 import type { DeterminationView } from "./types";
 
 /** How many rejected alternates the determination carries. */
 export const MAX_ALTERNATES = 5;
 
+/**
+ * Rehydrate a run that was stored verbatim at analysis time.
+ *
+ * The cast is deliberate — runs are stored as returned so a determination can
+ * be reconstructed even after the schema moves — but it means the type
+ * describes what the *current* classifier emits, not what is necessarily in
+ * the row, so fields added since a row was written need filling in.
+ */
 export function parseRun(resultJson: string): ClassificationRun {
-  return JSON.parse(resultJson) as ClassificationRun;
+  return backfillRunFields(JSON.parse(resultJson) as ClassificationRun);
 }
 
 export function parseRefinements(json: string): Refinement[] {

@@ -49,7 +49,18 @@ export function AnalyzeClient({
   const [run, setRun] = useState<ClassificationRun | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [droppedAnalysisId, setDroppedAnalysisId] = useState<string | null>(null);
+  /**
+   * A run that is still going on the server with nobody watching it.
+   *
+   * `dropped` is the connection failing under us; `stopped` is the analyst
+   * choosing to stop watching. Both leave the run alive — the server does not
+   * cancel on a lost consumer — so both need a way back to the result, but
+   * they must not be described to the analyst in the same words.
+   */
+  const [detached, setDetached] = useState<{
+    id: string;
+    reason: "dropped" | "stopped";
+  } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const activeMode = MODES.find((entry) => entry.value === mode)!;
@@ -63,7 +74,7 @@ export function AnalyzeClient({
       setRunning(true);
       setError(null);
       setRun(null);
-      setDroppedAnalysisId(null);
+      setDetached(null);
       if (!continuingAnalysisId) setEntries([]);
 
       // Tracks whether the stream reached a terminal event. A dropped
@@ -151,7 +162,7 @@ export function AnalyzeClient({
         // here. Previously the page showed nothing at all in this case: no
         // result, no error, no explanation, and no link to the row that was
         // still being written.
-        if (!settled && startedId) setDroppedAnalysisId(startedId);
+        if (!settled && startedId) setDetached({ id: startedId, reason: "dropped" });
       } catch (caught) {
         if ((caught as Error).name !== "AbortError") {
           setError(
@@ -160,7 +171,7 @@ export function AnalyzeClient({
               : "The analysis could not be completed.",
           );
           // Same reasoning as above: a transport failure does not stop the run.
-          if (startedId) setDroppedAnalysisId(startedId);
+          if (startedId) setDetached({ id: startedId, reason: "dropped" });
         }
       } finally {
         setRunning(false);
@@ -176,13 +187,27 @@ export function AnalyzeClient({
     void startRun([], null);
   }
 
-  function cancel() {
+  /**
+   * Detach from the stream. This is not a cancel, and it used to say it was.
+   *
+   * Aborting the fetch only closes this end of the pipe; the route keeps the
+   * run alive on purpose, so the analysis still finishes, still costs what it
+   * was always going to cost, and still lands in the database. Calling that
+   * "Cancel" told the analyst they had stopped a run and saved the spend when
+   * neither was true — and then hid the result, because the abort path never
+   * offered a way back to it.
+   */
+  function stopWatching() {
     abortRef.current?.abort();
     setRunning(false);
     setEntries((prev) => [
       ...prev,
-      { kind: "warning", text: "Cancelled by analyst." },
+      {
+        kind: "warning",
+        text: "Stopped watching. The run continues on the server.",
+      },
     ]);
+    if (analysisId) setDetached({ id: analysisId, reason: "stopped" });
   }
 
   return (
@@ -247,10 +272,10 @@ export function AnalyzeClient({
           {running && (
             <button
               type="button"
-              onClick={cancel}
+              onClick={stopWatching}
               className="rounded-md border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)]"
             >
-              Cancel
+              Stop watching
             </button>
           )}
           {running && (
@@ -270,20 +295,22 @@ export function AnalyzeClient({
         </div>
       )}
 
-      {droppedAnalysisId && !run && (
+      {detached && !run && (
         <div
           role="status"
           className="rounded-lg border border-[var(--warn)] bg-[var(--warn-subtle)] px-4 py-3"
         >
           <p className="text-sm text-[var(--text-primary)]">
-            The connection to this run dropped before it finished reporting.
+            {detached.reason === "stopped"
+              ? "You stopped watching this run."
+              : "The connection to this run dropped before it finished reporting."}
           </p>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
             The analysis kept running on the server. Nothing has been lost and
             nothing needs re-running — open it once it settles.
           </p>
           <a
-            href={`/analyze/${droppedAnalysisId}`}
+            href={`/analyze/${detached.id}`}
             className="mt-2 inline-block text-xs font-medium text-[var(--accent)] underline underline-offset-2"
           >
             Open this analysis

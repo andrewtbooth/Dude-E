@@ -206,6 +206,9 @@ body {
 /* Scrollable regions (long subtree listings, GRI narratives). */
 .scroll-region {
   overflow-y: auto;
+  /* Stop a flick that reaches the end of the log from continuing into the
+     page behind it — on a phone that reads as the layout jumping. */
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }

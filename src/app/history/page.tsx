@@ -41,7 +41,11 @@ export default async function HistoryPage({
     where: {
       ...(mineOnly ? { analystId: session.id } : {}),
       determinations: { none: {} },
-      status: { in: ["COMPLETE", "NEEDS_MORE_INFO", "FAILED"] },
+      // RUNNING belongs here too. A run whose stream was dropped — the phone
+      // locked, the tab was backgrounded — stays RUNNING forever, and leaving
+      // it out of this list meant the one place an analyst goes to find loose
+      // work silently hid exactly the runs most likely to be lost.
+      status: { in: ["RUNNING", "COMPLETE", "NEEDS_MORE_INFO", "FAILED"] },
     },
     include: { analyst: true },
     orderBy: { createdAt: "desc" },
