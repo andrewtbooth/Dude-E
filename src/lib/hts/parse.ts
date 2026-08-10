@@ -245,6 +245,32 @@ export function parseUsitcRows(
  * the interface and the determination can say so plainly.
  */
 /**
+ * Which version of the derivation rules produced a snapshot.
+ *
+ * A snapshot is not a copy of what USITC published. It is that payload run
+ * through this file: the indent stack rebuilt into a tree, rates resolved by
+ * inheritance, description paths assembled, and `isReportable` decided. Those
+ * results are *stored* — `is_reportable` is a column, not a query — so changing
+ * a rule here changes nothing at all until a sync runs again.
+ *
+ * That gap is silent and it has already bitten. Making Chapter 98 declarable
+ * was correct, tested, deployed, and inert: the snapshot on the volume had been
+ * built by the old rule, the entrypoint re-syncs only when the directory is
+ * empty, and nothing anywhere compared the data to the code that derived it.
+ * The deploy reported success and the behaviour did not change.
+ *
+ * So the version travels with the snapshot. Bump it whenever a rule in this
+ * file changes what gets stored, and the next boot notices and re-syncs. The
+ * number is not the tariff revision — two snapshots of the same revision built
+ * by different rules are different data.
+ *
+ * 1. Original: ten digits means declarable.
+ * 2. Leaf-ness means declarable, so Chapter 98 and the Chapter 91 watch
+ *    provisions stop being rejected outright.
+ */
+export const DERIVATION_VERSION = 2;
+
+/**
  * Whether the schedule publishes a full ten-digit reporting number for a code.
  *
  * An entry is filed against a ten-digit statistical reporting number. For most

@@ -100,4 +100,28 @@ describe("docker-entrypoint.sh", () => {
     // health check fails before the server exists.
     expect(script).toMatch(/\)\s*&/);
   });
+
+  it("re-syncs when the snapshot predates this build's derivation rules", () => {
+    /**
+     * The snapshot is not a copy of the USITC payload — it is that payload run
+     * through the parser, with the results stored as columns. `is_reportable`
+     * is a column. So a rule change in parse.ts changes nothing at all until a
+     * sync runs again.
+     *
+     * This test exists because that gap already cost a release. Making Chapter
+     * 98 provisions declarable was written, tested, reviewed and deployed, and
+     * did nothing: the volume held data built by the old rule, and the only
+     * condition that triggered a re-sync was an *empty* data directory. The
+     * deploy went green and the behaviour did not move.
+     */
+    expect(script).toContain("check-snapshot-derivation.ts");
+
+    // And it must be a reason to sync, not a reason to refuse to boot. Stale
+    // derived data is worth re-deriving in the background; it is not worth
+    // taking the app down for, and the app can serve the old snapshot mean-
+    // while.
+    const staleBranch = script.slice(script.indexOf("check-snapshot-derivation.ts"));
+    expect(staleBranch).toMatch(/sync_reason=/);
+    expect(staleBranch.slice(0, staleBranch.indexOf("fi"))).not.toMatch(/exit 1/);
+  });
 });

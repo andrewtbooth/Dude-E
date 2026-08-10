@@ -25,7 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ProxyAgent, setGlobalDispatcher } from "undici";
 import { extractText, getDocumentProxy } from "unpdf";
-import { parseUsitcRows } from "../src/lib/hts/parse";
+import { DERIVATION_VERSION, parseUsitcRows } from "../src/lib/hts/parse";
 import {
   MIN_NOTES_LENGTH,
   splitSectionNotes,
@@ -964,6 +964,9 @@ async function main(): Promise<void> {
     noteCount: notes.length,
     scheduleBCount: scheduleB.length,
     scheduleBEdition,
+    // Stamped so a later boot can tell whether this snapshot was built by the
+    // rules the code now holds — see DERIVATION_VERSION.
+    derivationVersion: DERIVATION_VERSION,
     warnings,
   };
 

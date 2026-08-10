@@ -129,7 +129,33 @@ Two behaviours worth knowing:
   relying on it.
 - **Which lines are declarable is decided at sync time**, not at query time, so
   a change to that rule only reaches a deployment when the tariff is re-synced.
-  An existing snapshot keeps whatever the parser decided when it was built.
+  An existing snapshot keeps whatever the parser decided when it was built —
+  and `DERIVATION_VERSION` is how a deployment finds that out for itself.
+
+### The snapshot is derived data, and it knows which rules derived it
+
+A snapshot is not a copy of the USITC payload. It is that payload run through
+`src/lib/hts/parse.ts`, with the results **stored**: `is_reportable` is a
+column, description paths are a column, inherited rates are a column. Change a
+rule and nothing moves until a sync runs again.
+
+That gap is silent and it cost a release. Making Chapter 98 declarable was
+written, tested, reviewed and deployed — and was inert. The volume held data
+built by the previous rule, the entrypoint re-synced only when the data
+directory was *empty*, and nothing compared the data against the code that
+derived it. The deploy went green and the behaviour did not change.
+
+So `DERIVATION_VERSION` in `parse.ts` is stamped into every manifest, and
+`scripts/deploy/check-snapshot-derivation.ts` runs on boot. A snapshot built by
+older rules — or by rules old enough to predate the stamp — triggers a
+background re-sync, exactly as an empty directory does. **Bump it whenever a
+rule in `parse.ts` changes what gets stored.**
+
+Practical effect: re-deriving the tariff is a redeploy, not a shell session.
+Run the **Deploy** workflow in GitHub; the machine boots, notices the mismatch,
+serves the old snapshot while the new one downloads (~90s), and swaps it in.
+Nothing needs `flyctl`, which matters because the snapshot lives on the Fly
+volume and cannot be refreshed from a GitHub runner's disk.
 
 ### What counts as declarable
 
