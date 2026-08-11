@@ -30,9 +30,22 @@ primary_region = "iad"
   PORT = "3000"
   # Reasoning depth, and the main spend lever: low | medium | high | xhigh | max.
   # Unset means `max` — correctness over cost, which is right for real
-  # determinations and expensive for shaking out plumbing. Override it here, or
-  # set CLASSIFIER_EFFORT in the Fly dashboard for a change that takes effect on
-  # restart without a redeploy.
+  # determinations and expensive for shaking out plumbing.
+  #
+  # Two ways to change it, and the Fly dashboard's "Environment" panel is not
+  # one of them: it displays these values but does not edit them, because they
+  # live here and are baked in at deploy.
+  #
+  #   1. Uncomment the line below and redeploy. Version-controlled and
+  #      reviewable, which is what a value that shapes every determination's
+  #      cost and depth should be.
+  #   2. `fly secrets set CLASSIFIER_EFFORT=medium`, or the dashboard's Secrets
+  #      panel followed by its "Deploy Secrets" button. Secrets reach the
+  #      process as environment variables, but Fly *stages* them: saving one
+  #      changes nothing until a release goes out. Two things bite later — a
+  #      secret's value cannot be read back afterwards, and a secret overrides
+  #      anything set here, so a forgotten one will silently beat a later edit
+  #      to this file.
   #
   # Note when trialling: lower effort also means fewer tool calls. A `low` run on
   # a plain description may never reach web search, so it exercises less of the

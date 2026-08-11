@@ -96,7 +96,6 @@ function result(candidates: Candidate[]): ClassificationResult {
     recommended_hts_code: candidates[0]?.hts_code ?? null,
     assumptions: [],
     info_that_would_raise_confidence: [],
-    chapter_98_provisions: [],
   };
 }
 

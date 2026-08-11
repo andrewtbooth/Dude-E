@@ -60,7 +60,6 @@ function run(
       recommended_hts_code: recommended,
       assumptions: ["Assumed stainless steel."],
       info_that_would_raise_confidence: [],
-      chapter_98_provisions: [],
     },
     verification: {
         verifiedCodes: [],

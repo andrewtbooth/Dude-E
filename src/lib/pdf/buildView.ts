@@ -98,7 +98,6 @@ export function buildDeterminationView(
     htsusRevision: input.htsusRevision,
     scheduleBEdition: input.scheduleBEdition,
     tariffRetrievedAt: input.tariffRetrievedAt,
-    chapter98Provisions: input.run.result.chapter_98_provisions ?? [],
     chapter99Scope: input.chapter99Scope ?? null,
     verification: {
       rejectedCodes: input.run.verification.rejectedCodes,

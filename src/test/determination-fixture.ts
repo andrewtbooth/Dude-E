@@ -131,10 +131,6 @@ export function sampleDeterminationView(
     htsusRevision: "2026 HTS Revision 13",
     scheduleBEdition: "2026",
     tariffRetrievedAt: new Date("2026-07-30T09:00:00Z"),
-    // Empty by default: naming a Chapter 98 provision is the exception, and a
-    // fixture that always carries one would let a section meant to be rare be
-    // developed as though it were furniture.
-    chapter98Provisions: [],
     // The real figures for the 2026 Rev 15 snapshot, so the fixture
     // renders the same shape of claim a live determination makes.
     chapter99Scope: { subheadingsWithAdditionalDuty: 267, declarableLines: 19_949 },

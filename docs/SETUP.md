@@ -199,15 +199,24 @@ The app also limits itself to 10 analyses per person per 15 minutes.
 ### Spending less while you are still testing
 
 Most of that per-analysis cost is reasoning depth, and depth is one setting.
-In the Fly dashboard, under **Secrets**, add:
+In the Fly dashboard, under **Secrets**, add a secret whose **name** is
+`CLASSIFIER_EFFORT` and whose **value** is exactly one of `low`, `medium`,
+`high`, `xhigh`, `max` — one word, no quotes, nothing else:
 
 | Name | Value |
 |---|---|
-| `CLASSIFIER_EFFORT` | `low`, `medium`, `high`, `xhigh` or `max` |
+| `CLASSIFIER_EFFORT` | `medium` |
 
-Saving it restarts the app; no redeploy, no code change. Delete it to go back
-to the default (`max`). An invalid value fails loudly at startup rather than
-silently picking something for you.
+**Saving it is not enough.** Fly *stages* a secret and applies it on the next
+release — the dashboard says so above the form. Press **Deploy Secrets** there,
+which restarts the running image in about thirty seconds, or run the Deploy
+workflow, which rebuilds and takes a few minutes. Until one of those happens
+the app keeps the depth it already had.
+
+Delete the secret to go back to the default (`max`). An invalid value fails
+loudly at startup rather than silently picking something for you — which is the
+right behaviour and also means a typo takes the app down until you fix it, so
+check the value before deploying it.
 
 Which to use depends on what you are testing:
 

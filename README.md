@@ -186,10 +186,18 @@ on their originating under USMCA. Those are facts about one importation, and the
 same product can arrive under a different provision, or none, next month.
 
 So "what is this thing" can never be answered with `9813.00.20`, any more than
-with `9903.88.03`. When the facts point at one, the analysis names it in
-`chapter_98_provisions` with the conditions spelled out, and the screen and the
-PDF both print it under a heading that says it is claimable on a particular
-entry and is not part of the classification.
+with `9903.88.03`.
+
+**And the app does not raise Chapter 98 at all.** An earlier version surfaced
+provisions the facts pointed at, beside the classification. That was dropped on
+the same reasoning that excluded them: Chapter 98 eligibility is decided per
+entry, by whoever files it, from facts about that shipment. A provision named
+on a product record would be read as settled when nothing about it has been
+established — and for the transactional provisions, which are most of the
+chapter, it is true of nearly every product and therefore says nothing.
+
+Chapter 99 is different and stays: an additional duty is a consequence of the
+classification and the origin, so it belongs with the code.
 
 ### Declarable is not the same as filable
 
