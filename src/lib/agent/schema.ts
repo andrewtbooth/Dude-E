@@ -100,6 +100,33 @@ export const chapter99Schema = z.object({
 });
 
 /**
+ * A Chapter 98 provision the facts point at.
+ *
+ * Deliberately not part of the classification, and deliberately not attached to
+ * a candidate. Chapter 98 turns on the circumstances of an importation — goods
+ * exported and returned (9801), imported temporarily under bond (9813),
+ * originating under USMCA (9823) — not on what the article is. This application
+ * produces the classification a product carries in a library and reuses across
+ * every shipment, and the same product can arrive under a different Chapter 98
+ * provision, or none, each time.
+ *
+ * So it sits on the result as context for whoever files a particular entry,
+ * with the conditions spelled out, rather than anywhere it could be mistaken
+ * for the product's code.
+ */
+export const chapter98Schema = z.object({
+  hts_code: z.string().describe('Chapter 98 provision, e.g. "9813.00.05".'),
+  provision: z
+    .string()
+    .describe('What it provides for, e.g. "Temporary importation under bond".'),
+  applies_when: z
+    .string()
+    .describe(
+      "The circumstances of importation that would have to hold. Be specific about what must be true of the shipment, not the product.",
+    ),
+});
+
+/**
  * The export-side determination.
  *
  * Modelled as a decision with a reason rather than a lookup result, because
@@ -275,6 +302,11 @@ export const classificationResultSchema = z.object({
     .describe(
       "Facts that would firm up the call but were not blocking. Distinct from clarifying_questions.",
     ),
+  chapter_98_provisions: z
+    .array(chapter98Schema)
+    .describe(
+      "Chapter 98 provisions the stated facts point at, if any. These are claimed alongside the classification on a particular entry — never instead of it — so never put one in candidates or in recommended_hts_code. Empty is the normal answer; only name one when something in the facts actually raises it.",
+    ),
 });
 
 /**
@@ -304,6 +336,7 @@ export type CandidateTariff = z.infer<typeof candidateTariffSchema>;
 export type NoteApplied = z.infer<typeof noteAppliedSchema>;
 export type Duty = z.infer<typeof dutySchema>;
 export type Chapter99 = z.infer<typeof chapter99Schema>;
+export type Chapter98 = z.infer<typeof chapter98Schema>;
 export type CrossRuling = z.infer<typeof crossRulingSchema>;
 export type Candidate = z.infer<typeof candidateSchema>;
 export type ClarifyingQuestion = z.infer<typeof clarifyingQuestionSchema>;

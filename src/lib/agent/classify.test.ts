@@ -96,6 +96,7 @@ function result(candidates: Candidate[]): ClassificationResult {
     recommended_hts_code: candidates[0]?.hts_code ?? null,
     assumptions: [],
     info_that_would_raise_confidence: [],
+    chapter_98_provisions: [],
   };
 }
 
@@ -719,5 +720,50 @@ describe("verifyAgainstTariff — codes with no published reporting number", () 
     expect(
       backfillRunFields(stored).verification.incompleteReportingNumbers,
     ).toEqual([{ code: "9101.11.40", digits: 8 }]);
+  });
+});
+
+describe("verifyAgainstTariff — Chapter 98 is claimed, not classified", () => {
+  /**
+   * This application produces the classification a product carries in a library
+   * and reuses across every shipment. A Chapter 98 provision is a fact about
+   * one importation — exported and returned, temporarily under bond,
+   * originating under USMCA — so it cannot be what the product *is*, and the
+   * same product can arrive under a different provision, or none, next month.
+   *
+   * Task #14 made these declarable, which fixed a real bug (they were being
+   * rejected with a message denying they could be entered at all) and created
+   * this one: they became eligible to be the recommended code.
+   */
+  it("refuses a Chapter 98 provision as a candidate", () => {
+    const { result: verified, verification } = verifyAgainstTariff(
+      result([candidate({ hts_code: "9813.00.20" })]),
+    );
+    expect(verified.candidates).toEqual([]);
+    expect(verification.verifiedCodes).toEqual([]);
+  });
+
+  it("says why in terms of the product, not the digits", () => {
+    // The reason is printed into the determination's discarded list. "8 digits
+    // cannot be declared" would be false; "not a classification" is the point.
+    const { verification } = verifyAgainstTariff(
+      result([candidate({ hts_code: "9813.00.20" })]),
+    );
+    const reason = verification.rejectedCodes[0]?.reason ?? "";
+    expect(reason).toMatch(/circumstances of a particular importation/);
+    expect(reason).toMatch(/claimed alongside/);
+    expect(reason).not.toMatch(/digit/);
+  });
+
+  it("keeps refusing Chapter 99, for the same structural reason", () => {
+    const { verification } = verifyAgainstTariff(
+      result([candidate({ hts_code: "9903.88.03" })]),
+    );
+    expect(verification.rejectedCodes[0]?.reason).toMatch(/alongside/);
+  });
+
+  it("leaves an ordinary classification alone", () => {
+    const { result: verified } = verifyAgainstTariff(result([candidate()]));
+    expect(verified.candidates).toHaveLength(1);
   });
 });

@@ -136,14 +136,22 @@ describe("parseUsitcRows", () => {
   });
 
   /**
-   * Declarability is "nothing is published beneath it", not "it has ten digits".
+   * Declarability is "nothing is published beneath it", not "it has ten digits"
+   * — and separately, two chapters are never a classification at all.
    *
    * The ten-digit rule is right across most of the schedule and wrong exactly
    * where it costs most: 3,564 subheadings in the 2026 Rev 15 snapshot end at
-   * eight digits, including 374 in Chapter 98 — 9801 American goods returned,
-   * 9802 outward processing, 9813 temporary importation under bond. Every one
-   * was rejected, with a message denying it could be declared at all, printed
-   * into the determination.
+   * eight digits, and the watch provisions of Chapter 91 were being rejected
+   * with a message denying they could be declared, printed into the
+   * determination.
+   *
+   * Chapters 98 and 99 are excluded for a different reason, which is about what
+   * this application is for rather than about the shape of the line. It
+   * produces the classification a product carries in a library and keeps across
+   * every shipment. A Chapter 98 provision turns on the circumstances of one
+   * importation — exported and returned, temporarily under bond, originating
+   * under USMCA — so the same product can arrive under a different one, or
+   * none, next month. Neither chapter can answer "what is this product".
    */
   describe("provisions that terminate above ten digits", () => {
     /** 9813.00.20 — TIB, samples for taking orders. No breakout beneath it. */
@@ -153,15 +161,35 @@ describe("parseUsitcRows", () => {
       { htsno: "9813.00.25", indent: 1, description: "Articles solely for examination", general: "Free" },
     ];
 
-    it("treats an 8-digit Chapter 98 leaf as declarable", () => {
+    it("never treats a Chapter 98 provision as a classification", () => {
+      // These are real leaves and they exist in the index — a run can look one
+      // up and name it. What they cannot be is the answer to what the product
+      // is, which is the only thing isReportable governs.
       const { lines } = parseUsitcRows(tib);
+      expect(lines.filter((l) => l.isReportable)).toEqual([]);
+      expect(lines.find((l) => l.htsNo === "9813.00.20")).toBeDefined();
+    });
+
+    /**
+     * The watch provisions are the case the leaf rule was actually for: real
+     * Chapter 1-97 classifications that the schedule stops at eight digits.
+     */
+    it("treats an 8-digit Chapter 91 leaf as declarable", () => {
+      const { lines } = parseUsitcRows([
+        { htsno: "9101.11", indent: 0, description: "With mechanical display only:" },
+        { htsno: "9101.11.40", indent: 1, description: "Having no jewels or only one jewel in the movement" },
+        { htsno: "9101.11.80", indent: 1, description: "Other" },
+      ]);
       const reportable = lines.filter((l) => l.isReportable).map((l) => l.htsNo);
-      expect(reportable).toEqual(["9813.00.20", "9813.00.25"]);
+      expect(reportable).toEqual(["9101.11.40", "9101.11.80"]);
     });
 
     it("still refuses a line the schedule breaks out further", () => {
-      const { lines } = parseUsitcRows(tib);
-      expect(lines.find((l) => l.htsNo === "9813.00")?.isReportable).toBe(false);
+      const { lines } = parseUsitcRows([
+        { htsno: "9101.11", indent: 0, description: "With mechanical display only:" },
+        { htsno: "9101.11.40", indent: 1, description: "Having no jewels" },
+      ]);
+      expect(lines.find((l) => l.htsNo === "9101.11")?.isReportable).toBe(false);
     });
 
     /**

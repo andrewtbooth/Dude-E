@@ -103,6 +103,10 @@ export function ResultSummary({ run }: { run: ClassificationRun }) {
         </details>
       )}
 
+      {result.chapter_98_provisions.length > 0 && (
+        <Chapter98Section provisions={result.chapter_98_provisions} />
+      )}
+
       {result.assumptions.length > 0 && (
         <Advisory tone="info" title="Assumptions this analysis rests on">
           <ul className="space-y-0.5">
@@ -122,6 +126,52 @@ export function ResultSummary({ run }: { run: ClassificationRun }) {
           </ul>
         </Advisory>
       )}
+    </section>
+  );
+}
+
+/**
+ * Chapter 98 provisions the facts point at — beside the classification, never
+ * as it.
+ *
+ * Styled as information rather than as a warning, and worded to keep the two
+ * apart. This application produces the code a product carries in a library and
+ * keeps across every shipment; a Chapter 98 provision is a fact about one
+ * importation, so it cannot travel with the product. An analyst who files the
+ * entry needs to see it. An analyst who is cataloguing the product needs to see
+ * that it is not part of what they are cataloguing.
+ */
+function Chapter98Section({
+  provisions,
+}: {
+  provisions: ClassificationRun["result"]["chapter_98_provisions"];
+}) {
+  return (
+    <section className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface-1)] px-4 py-3">
+      <h3 className="caption">Claimable on a particular entry</h3>
+      <p className="mt-1 text-xs text-[var(--text-secondary)]">
+        These are Chapter 98 provisions the stated facts point at. They are
+        claimed <em>alongside</em> the classification above on a given import,
+        and turn on the circumstances of that shipment rather than on what the
+        product is — so they are not part of this product&rsquo;s
+        classification, and the same product may arrive under a different one,
+        or none, next time.
+      </p>
+      <ul className="mt-2.5 space-y-2">
+        {provisions.map((provision, index) => (
+          <li key={index} className="text-sm">
+            <span className="hts-code font-semibold text-[var(--text-primary)]">
+              {provision.hts_code}
+            </span>{" "}
+            <span className="text-[var(--text-secondary)]">
+              {provision.provision}
+            </span>
+            <span className="mt-0.5 block text-xs text-[var(--text-muted)]">
+              Applies when: {provision.applies_when}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
