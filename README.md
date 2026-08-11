@@ -80,7 +80,7 @@ data/htsus/2026-hts-revision-15/
 ```
 
 A full run takes roughly a minute and a half and produces about 35,800 tariff
-lines, some 20,400 of them declarable reporting numbers, across 98 chapters,
+lines, about 20,000 of them declarable classifications, across 98 chapters,
 plus 121 note documents — 98 chapter, 22 section, 1 general — and 9,779
 Schedule B export codes. (Chapter 77 is reserved and correctly returns
 nothing.)
@@ -139,8 +139,8 @@ A snapshot is not a copy of the USITC payload. It is that payload run through
 column, description paths are a column, inherited rates are a column. Change a
 rule and nothing moves until a sync runs again.
 
-The gap is silent, which is what makes it dangerous. Making Chapter 98
-declarable is written, tested and reviewed, and on its own it would have
+The gap is silent, which is what makes it dangerous. Excluding Chapter 98 as a
+classification is written, tested and reviewed, and on its own it would have
 deployed green and done nothing: the volume holds data built by the previous
 rule, the entrypoint re-synced only when the data directory was *empty*, and
 nothing compared the data against the code that derived it. A release where the
@@ -161,58 +161,65 @@ volume and cannot be refreshed from a GitHub runner's disk.
 
 ### What counts as declarable
 
-A line can be declared when the schedule publishes nothing beneath it — not
-when it has ten digits. Ten digits is right for most of the schedule and wrong
-where it matters: **3,564 subheadings terminate at eight**, and treating those
-as undeclarable rejected them outright.
+Two separate questions, and conflating them was the original bug.
+
+**Is this the deepest line the schedule publishes?** That, not "does it have ten
+digits", is what makes a line declarable. The ten-digit rule is right across most
+of the schedule and wrong where it costs most: **3,564 subheadings terminate at
+eight digits**, and the 95 watch provisions of Chapter 91 were being rejected
+outright with a message denying they could be entered at all.
+
+**Is this a classification at all?** Chapters 98 and 99 are not. Both are claimed
+*alongside* a Chapter 1–97 classification, never instead of one:
 
 | | |
 |---|---|
-| 3,095 in Chapter 99 | Section 301 and 232 provisions |
-| 374 in Chapter 98 | 9801 American goods returned, 9802 outward processing, 9804 personal exemptions, most of the 9813 temporary-importation-under-bond series |
-| 95 in Chapter 91 | watch provisions with no statistical breakout |
+| 3,095 in Chapter 99 | Section 301 and 232 — additional duties on top of a classification |
+| 374 in Chapter 98 | 9823 USMCA (200), 9822 FTA temporary admission (60), 9820 preference apparel (25), 9804 personal exemptions (18), 9813 TIB (13), and others |
 
-These are terminal as published rather than lines whose children were lost:
-USITC emits an explicit `.00` reporting number wherever an eight-digit
-subheading has no breakout, which accounts for 8,080 of the 19,949 ten-digit
-lines.
+Chapter 98 is excluded for a reason particular to what this app is for. It
+produces a **durable classification** — the code an analyst attaches to a
+product in a library and reuses across every shipment of it. A Chapter 98
+provision is not a property of the product: 9801 turns on the goods having been
+exported and returned, 9813 on their being imported temporarily under bond, 9823
+on their originating under USMCA. Those are facts about one importation, and the
+same product can arrive under a different provision, or none, next month.
 
-Chapter 99 is excluded anyway. Its provisions are additional duties declared
-*alongside* a Chapter 1–97 classification, never instead of one, and they are
-verified on their own path — admitting them here would let a run answer
-`9903.88.03` to "what is this product", which is not a classification.
-
-Net effect on the 2026 Revision 15 snapshot: 19,949 → **20,418** declarable
-lines, with nothing that was declarable becoming undeclarable.
+So "what is this thing" can never be answered with `9813.00.20`, any more than
+with `9903.88.03`. When the facts point at one, the analysis names it in
+`chapter_98_provisions` with the conditions spelled out, and the screen and the
+PDF both print it under a heading that says it is claimable on a particular
+entry and is not part of the classification.
 
 ### Declarable is not the same as filable
 
-An entry is filed against a ten-digit statistical reporting number, and 469 of
-those newly-declarable lines are not one. The evidence is uniform:
+With Chapters 98 and 99 excluded as classifications, **95 lines** remain that are
+the deepest thing the schedule publishes and still stop short of the ten-digit
+number an entry is filed against — all of them Chapter 91 watch provisions. The
+evidence is uniform:
 
 | | carries a unit of quantity |
 |---|---|
 | Every ten-digit leaf, Chapters 1–97 | **19,831 / 19,831** |
 | Chapter 91 ten-digit leaves | 82 / 82 |
 | **Chapter 91 eight-digit leaves** | **0 / 95** |
-| **Chapter 98 eight-digit leaves** | **0 / 374** |
 
 A reporting number reports a quantity, so a line with no unit is not one. And
 the schedule plainly *can* extend an eight-digit subheading when it wants to —
-8,019 of those 19,831 leaves are exactly that, an eight-digit subheading with
-`.00` appended because there is no statistical breakout. Where it declines to,
-it has published something that stops short.
+8,019 of those 19,831 leaves are exactly that, `.00` appended because there is no
+statistical breakout. Where it declines to, it has published something that stops
+short.
 
 Whether such a provision can nonetheless be keyed on an entry as published is a
 question about CBP practice, not about this data, and this application does not
 answer it. `hasPublishedReportingNumber` marks the line; the verdict card, the
 candidate card and the determination PDF all say the schedule stopped short and
 tell the analyst to confirm the entry number with the filer. The code stays
-selectable, because it is the most specific classification available and
-blocking it would be answering the question by refusing to.
+selectable, because it is the most specific classification available and blocking
+it would be answering the question by refusing to.
 
-If your filing practice settles it in either direction, that is a one-line
-change to the helper and the wording that surrounds it.
+If your filing practice settles it in either direction, that is a one-line change
+to the helper and the wording that surrounds it.
 
 ### Chapter 99 exposure
 

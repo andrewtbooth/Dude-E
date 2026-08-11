@@ -195,6 +195,7 @@ export function DeterminationDoc({ view }: { view: DeterminationView }) {
         <GriSection candidate={view.selected} />
         <AssumptionsSection view={view} />
         <VerificationSection view={view} />
+        <Chapter98Section view={view} />
         <AlternatesSection view={view} />
         <AuthoritiesSection view={view} />
         <ScopeSection />
@@ -774,6 +775,51 @@ function VerificationSection({ view }: { view: DeterminationView }) {
           </View>
         </View>
       )}
+    </View>
+  );
+}
+
+/**
+ * Chapter 98 provisions, in their own section and unmistakably not the answer.
+ *
+ * The determination above states what the product *is*, and that is what a
+ * product library carries. A Chapter 98 provision states something about one
+ * importation of it — exported and returned, temporarily under bond,
+ * originating under USMCA — and the same product can arrive under a different
+ * one, or none, next month.
+ *
+ * Printing it near the determination without that distinction is how a reader
+ * months from now ends up treating a shipment-level claim as the product's
+ * classification. Hence its own heading, its own sentence saying which is
+ * which, and the conditions spelled out for each.
+ */
+function Chapter98Section({ view }: { view: DeterminationView }) {
+  if (view.chapter98Provisions.length === 0) return null;
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>
+        CLAIMABLE ON A PARTICULAR ENTRY — NOT PART OF THIS CLASSIFICATION
+      </Text>
+      <Text style={{ fontSize: 8, color: COLORS.muted, marginBottom: 5 }}>
+        These Chapter 98 provisions are claimed alongside the classification
+        above on a given import. They turn on the circumstances of that shipment
+        rather than on what the product is, so they do not travel with the
+        product and are not part of the determination stated above. Each has to
+        be established for the entry it is claimed on.
+      </Text>
+      {view.chapter98Provisions.map((provision, index) => (
+        <View key={index} style={styles.bulletRow}>
+          <Text style={styles.bulletMark}>—</Text>
+          <Text style={styles.bulletText}>
+            <Text style={styles.codeInline}>{provision.hts_code}</Text>{" "}
+            {provision.provision}.{" "}
+            <Text style={{ color: COLORS.muted }}>
+              Applies when: {provision.applies_when}
+            </Text>
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }

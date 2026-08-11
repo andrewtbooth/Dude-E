@@ -137,6 +137,27 @@ export const FIXTURE_ROWS: UsitcRawRow[] = [
     other: "$2.70 each + 45% on the case and strap, band or bracelet",
   },
 
+  // --- Chapter 98: a TIB provision ---
+  //
+  // Present so the fixture can exercise the *refusal* path rather than the
+  // not-found one. Without it, a test asserting "a Chapter 98 provision is not
+  // a classification" passes because the code is absent from the index — which
+  // is a different rejection with a different message, and would keep passing
+  // if the Chapter 98 rule were deleted outright.
+  {
+    htsno: "9813.00",
+    indent: "0",
+    description: "Articles admitted temporarily free of duty under bond:",
+    units: [],
+  },
+  {
+    htsno: "9813.00.20",
+    indent: "1",
+    description: "Samples solely for use in taking orders for merchandise",
+    units: [],
+    general: "Free, under bond",
+  },
+
   // --- Chapter 99: Section 301 ---
   {
     htsno: "9903.88.03",

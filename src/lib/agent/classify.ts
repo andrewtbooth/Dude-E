@@ -177,6 +177,12 @@ export function backfillRunFields(run: ClassificationRun): ClassificationRun {
       .filter((code) => !hasPublishedReportingNumber(code))
       .map((code) => ({ code, digits: code.replace(/\D/g, "").length }));
   }
+  if (run.result && !run.result.chapter_98_provisions) {
+    // An empty list, not a null: a run from before the field existed did not
+    // decline to name a Chapter 98 provision, it was never asked. Both render
+    // as "none named", and neither should claim the question was considered.
+    run.result.chapter_98_provisions = [];
+  }
   for (const correction of run.verification?.corrections ?? []) {
     if (correction.severity) continue;
     correction.severity =
@@ -1001,28 +1007,43 @@ export function verifyAgainstTariff(result: ClassificationResult): {
     }
 
     if (!line.isReportable) {
-      // Say why *this* line is not declarable rather than asserting a digit
-      // rule. Chapter 98 and the watch provisions of Chapter 91 terminate at
-      // eight digits, so "an 8-digit line cannot be declared" was simply false
-      // for them — and it was printed into the determination's discarded list,
-      // telling a reader that 9813.00.20 is not a code you can enter.
+      // Say why *this* line is not the answer, rather than asserting a digit
+      // rule. The watch provisions of Chapter 91 terminate at eight digits, so
+      // "an 8-digit line cannot be declared" was simply false for them — and it
+      // was printed into the determination's discarded list, telling a reader
+      // that a real code was not one you can enter.
+      //
+      // Chapters 98 and 99 are a different kind of "no". Both are claimed
+      // alongside a classification rather than being one, and this application
+      // produces a durable classification — the code that attaches to a product
+      // and is reused across every shipment of it. A Chapter 98 provision is a
+      // fact about one importation (exported and returned, temporarily under
+      // bond, originating under USMCA), and the same product arrives under a
+      // different one next month.
       const reason =
         line.chapter === "99"
-          ? "is a Chapter 99 provision, which is declared alongside a " +
-            "Chapter 1-97 classification rather than instead of one"
-          : `is not the deepest published line under ${line.htsNo} — the ` +
-            `schedule breaks it out further, so a more specific code applies`;
+          ? "is a Chapter 99 provision — an additional duty claimed alongside " +
+            "a Chapter 1-97 classification rather than instead of one"
+          : line.chapter === "98"
+            ? "is a Chapter 98 provision, which turns on the circumstances of a " +
+              "particular importation rather than on what the product is. It is " +
+              "claimed alongside the product's classification, and cannot be the " +
+              "classification a product library holds"
+            : `is not the deepest published line under ${line.htsNo} — the ` +
+              `schedule breaks it out further, so a more specific code applies`;
       rejectedCodes.push({ code: candidate.hts_code, reason });
       continue;
     }
 
     verifiedCodes.push(line.htsNo);
 
-    // Verified is not the same as filable. 469 lines outside Chapter 99 are the
-    // deepest thing the schedule publishes and still stop short of a ten-digit
-    // reporting number — see hasPublishedReportingNumber. They are kept as
-    // candidates, because they are the most specific classification available,
-    // and named here so nothing downstream prints one as a finished answer.
+    // Verified is not the same as filable. With Chapters 98 and 99 excluded as
+    // classifications, what remains are the 95 Chapter 91 watch provisions: the
+    // deepest thing the schedule publishes, and still short of the ten-digit
+    // number an entry is filed against — see hasPublishedReportingNumber. They
+    // stay as candidates, because they are the most specific classification
+    // available, and are named here so nothing downstream prints one as a
+    // finished answer.
     if (!hasPublishedReportingNumber(line.htsNo)) {
       incompleteReportingNumbers.push({
         code: line.htsNo,

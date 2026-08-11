@@ -31,11 +31,13 @@ describe("HTSUS index", () => {
 
   it("reports index statistics", () => {
     const stats = getIndexStats();
-    // 16 lines, 5 reportable: the four ten-digit statistical lines plus
-    // 9101.11.40, a watch provision the schedule terminates at eight digits.
-    // Reportable and yet not a ten-digit reporting number — see
-    // hasPublishedReportingNumber.
-    expect(stats.lineCount).toBe(16);
+    // 18 lines, 5 reportable. The four ten-digit statistical lines plus
+    // 9101.11.40 — a watch provision the schedule terminates at eight digits,
+    // reportable and yet not a ten-digit reporting number (see
+    // hasPublishedReportingNumber). The two Chapter 98 rows and the Chapter 99
+    // row are in the index and deliberately not reportable: both chapters are
+    // claimed alongside a classification rather than being one.
+    expect(stats.lineCount).toBe(18);
     expect(stats.reportableLineCount).toBe(5);
     expect(stats.noteCount).toBe(3);
     expect(stats.scheduleBCount).toBe(3);

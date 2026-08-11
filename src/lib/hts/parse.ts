@@ -245,6 +245,28 @@ export function parseUsitcRows(
  * the interface and the determination can say so plainly.
  */
 /**
+ * Chapters whose provisions are claimed *alongside* a classification, never
+ * instead of one.
+ *
+ * Chapter 99 was always here: Section 301 and 232 provisions are additional
+ * duties on top of a Chapter 1-97 classification.
+ *
+ * Chapter 98 belongs with it, for a reason particular to what this application
+ * is for. It produces a durable classification — one an analyst attaches to a
+ * product in a library and reuses across every shipment of it. A Chapter 98
+ * provision is not a property of the product at all: 9801 turns on the goods
+ * having been exported and returned, 9813 on their being imported temporarily
+ * under bond, 9823 on their originating under USMCA. Those are facts about a
+ * particular importation, and the same product can arrive under a different one
+ * next month.
+ *
+ * So "what is this thing" can never be answered with 9813.00.20, any more than
+ * it can be answered with 9903.88.03. Both get named next to the classification
+ * instead, which is where they are actually claimed.
+ */
+const SECONDARY_CHAPTERS = new Set(["98", "99"]);
+
+/**
  * Which version of the derivation rules produced a snapshot.
  *
  * A snapshot is not a copy of what USITC published. It is that payload run
@@ -267,8 +289,11 @@ export function parseUsitcRows(
  * 1. Original: ten digits means declarable.
  * 2. Leaf-ness means declarable, so Chapter 98 and the Chapter 91 watch
  *    provisions stop being rejected outright.
+ * 3. Chapter 98 joins Chapter 99 as a secondary chapter: its provisions are
+ *    claimed alongside a classification and are never the classification, so
+ *    they cannot be the answer to "what is this product".
  */
-export const DERIVATION_VERSION = 2;
+export const DERIVATION_VERSION = 3;
 
 /**
  * Whether the schedule publishes a full ten-digit reporting number for a code.
@@ -303,7 +328,7 @@ function resolveReportable(lines: HtsLine[]): void {
   for (const line of lines) {
     line.isReportable =
       line.digits.length >= 8 &&
-      line.chapter !== "99" &&
+      !SECONDARY_CHAPTERS.has(line.chapter) &&
       !hasChildren.has(line.id);
   }
 }
