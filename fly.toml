@@ -40,11 +40,12 @@ primary_region = "iad"
   #      reviewable, which is what a value that shapes every determination's
   #      cost and depth should be.
   #   2. `fly secrets set CLASSIFIER_EFFORT=medium`, or the dashboard's Secrets
-  #      panel. Secrets reach the process as environment variables and take
-  #      effect on the restart that setting one triggers, so this is the route
-  #      when you cannot redeploy. Note that a secret's value cannot be read
-  #      back afterwards, and that a secret overrides anything set here — so a
-  #      forgotten secret will silently beat a later edit to this file.
+  #      panel followed by its "Deploy Secrets" button. Secrets reach the
+  #      process as environment variables, but Fly *stages* them: saving one
+  #      changes nothing until a release goes out. Two things bite later — a
+  #      secret's value cannot be read back afterwards, and a secret overrides
+  #      anything set here, so a forgotten one will silently beat a later edit
+  #      to this file.
   #
   # Note when trialling: lower effort also means fewer tool calls. A `low` run on
   # a plain description may never reach web search, so it exercises less of the
