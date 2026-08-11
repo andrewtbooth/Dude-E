@@ -55,20 +55,6 @@ export interface DeterminationView {
     substitutedRecommendation: { modelSaid: string; using: string } | null;
   };
   /**
-   * Chapter 98 provisions the analysis named, claimed alongside the
-   * classification on a particular entry rather than being it.
-   *
-   * On the document these have to be visibly separate from the determination.
-   * A reader months later sees a page headed DETERMINATION with a code on it;
-   * a Chapter 98 number printed anywhere near that, without saying it turns on
-   * the circumstances of one shipment, reads as part of the answer.
-   */
-  chapter98Provisions: {
-    hts_code: string;
-    provision: string;
-    applies_when: string;
-  }[];
-  /**
    * When the tariff snapshot was pulled. Chapter 99 duties are captured as
    * published at sync time and change faster than the HTSUS is revised, so
    * they have to be dated on the artifact rather than left to read as live.

@@ -177,12 +177,6 @@ export function backfillRunFields(run: ClassificationRun): ClassificationRun {
       .filter((code) => !hasPublishedReportingNumber(code))
       .map((code) => ({ code, digits: code.replace(/\D/g, "").length }));
   }
-  if (run.result && !run.result.chapter_98_provisions) {
-    // An empty list, not a null: a run from before the field existed did not
-    // decline to name a Chapter 98 provision, it was never asked. Both render
-    // as "none named", and neither should claim the question was considered.
-    run.result.chapter_98_provisions = [];
-  }
   for (const correction of run.verification?.corrections ?? []) {
     if (correction.severity) continue;
     correction.severity =

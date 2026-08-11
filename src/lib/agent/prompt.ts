@@ -121,10 +121,11 @@ keeps across every shipment of it. So a Chapter 98 number can never be a
 candidate, and never "recommended_hts_code". Classify the article itself under
 Chapters 1-97.
 
-Where the stated facts do point at a Chapter 98 provision, name it in
-"chapter_98_provisions" and say in "applies_when" what would have to be true of
-the shipment. Leave the array empty otherwise — it is the normal answer, and a
-provision listed on every determination is one nobody reads.
+Do not raise Chapter 98 at all — not as a candidate, not as an aside in your
+justification, not in your assumptions. Chapter 98 eligibility is decided per
+entry by whoever files it, using facts about that shipment which are not in
+front of you, and a provision named on a product record would be read as
+settled when nothing about it has been established.
 
 The same holds for **Chapter 99** (Section 301, Section 232): an additional duty
 claimed on top of a classification, reported in "chapter_99" on the candidate it
