@@ -49,7 +49,18 @@ export function AnalyzeClient({
   const [run, setRun] = useState<ClassificationRun | null>(null);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [droppedAnalysisId, setDroppedAnalysisId] = useState<string | null>(null);
+  /**
+   * A run that is still going on the server with nobody watching it.
+   *
+   * `dropped` is the connection failing under us; `stopped` is the analyst
+   * choosing to stop watching. Both leave the run alive — the server does not
+   * cancel on a lost consumer — so both need a way back to the result, but
+   * they must not be described to the analyst in the same words.
+   */
+  const [detached, setDetached] = useState<{
+    id: string;
+    reason: "dropped" | "stopped";
+  } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const activeMode = MODES.find((entry) => entry.value === mode)!;
@@ -63,7 +74,7 @@ export function AnalyzeClient({
       setRunning(true);
       setError(null);
       setRun(null);
-      setDroppedAnalysisId(null);
+      setDetached(null);
       if (!continuingAnalysisId) setEntries([]);
 
       // Tracks whether the stream reached a terminal event. A dropped
@@ -101,6 +112,18 @@ export function AnalyzeClient({
             case "analysis_started":
               startedId = event.analysisId;
               setAnalysisId(event.analysisId);
+              /**
+               * Put the run in the address bar the moment it exists.
+               *
+               * Until this, /analyze held a run that had no URL. A reload, a
+               * back gesture, or iOS reclaiming the tab while the screen was
+               * off all landed on an empty form, with the analysis still going
+               * on the server and no way to reach it but History. replaceState
+               * rather than push: the empty form is not a place worth going
+               * back to, and this must not add a history entry the back
+               * gesture has to walk through.
+               */
+              window.history.replaceState(null, "", `/analyze/${event.analysisId}`);
               break;
             case "status":
               setEntries((prev) => [
@@ -151,7 +174,7 @@ export function AnalyzeClient({
         // here. Previously the page showed nothing at all in this case: no
         // result, no error, no explanation, and no link to the row that was
         // still being written.
-        if (!settled && startedId) setDroppedAnalysisId(startedId);
+        if (!settled && startedId) setDetached({ id: startedId, reason: "dropped" });
       } catch (caught) {
         if ((caught as Error).name !== "AbortError") {
           setError(
@@ -160,7 +183,7 @@ export function AnalyzeClient({
               : "The analysis could not be completed.",
           );
           // Same reasoning as above: a transport failure does not stop the run.
-          if (startedId) setDroppedAnalysisId(startedId);
+          if (startedId) setDetached({ id: startedId, reason: "dropped" });
         }
       } finally {
         setRunning(false);
@@ -176,18 +199,79 @@ export function AnalyzeClient({
     void startRun([], null);
   }
 
-  function cancel() {
+  /**
+   * Detach from the stream. This is not a cancel, and it used to say it was.
+   *
+   * Aborting the fetch only closes this end of the pipe; the route keeps the
+   * run alive on purpose, so the analysis still finishes, still costs what it
+   * was always going to cost, and still lands in the database. Calling that
+   * "Cancel" told the analyst they had stopped a run and saved the spend when
+   * neither was true — and then hid the result, because the abort path never
+   * offered a way back to it.
+   */
+  /**
+   * Clear the result and put the form back.
+   *
+   * Deliberately does not clear the input: "new analysis" most often means
+   * re-running a near-identical description with one detail changed, and
+   * making the analyst retype it on a phone to do that is the wrong default.
+   */
+  function startOver() {
+    setRun(null);
+    setEntries([]);
+    setAnalysisId(null);
+    setDetached(null);
+    setError(null);
+    // The address bar is still pointing at the finished run, because the
+    // stream put it there. Leaving it would mean a reload of what looks like
+    // a blank form silently reopens the previous analysis.
+    window.history.replaceState(null, "", "/analyze");
+  }
+
+  function stopWatching() {
     abortRef.current?.abort();
     setRunning(false);
     setEntries((prev) => [
       ...prev,
-      { kind: "warning", text: "Cancelled by analyst." },
+      {
+        kind: "warning",
+        text: "Stopped watching. The run continues on the server.",
+      },
     ]);
+    if (analysisId) setDetached({ id: analysisId, reason: "stopped" });
   }
+
+  // Once a run has landed the form has done its job, and on a phone it is the
+  // single biggest thing standing between the analyst and the answer: mode
+  // toggle, four-row textarea, hint and button come to most of a screen. It
+  // collapses to a line naming what was classified, with a way back.
+  const collapsedForm = run !== null && !running;
 
   return (
     <div className="space-y-6">
-      <form onSubmit={submit} className="space-y-3">
+      {collapsedForm && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-2.5">
+          <span className="caption shrink-0">
+            {mode === "PART_NUMBER" ? "Part number" : "Classified"}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm text-[var(--text-secondary)]">
+            {input}
+          </span>
+          <button
+            type="button"
+            onClick={startOver}
+            className="tap-target shrink-0 text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+          >
+            New analysis
+          </button>
+        </div>
+      )}
+
+      <form
+        onSubmit={submit}
+        hidden={collapsedForm}
+        className="space-y-3"
+      >
         <fieldset disabled={disabled || running}>
           <legend className="sr-only">What are you classifying?</legend>
 
@@ -205,8 +289,8 @@ export function AnalyzeClient({
                 onClick={() => setMode(entry.value)}
                 className={
                   mode === entry.value
-                    ? "rounded px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] bg-[var(--surface-1)] shadow-[var(--shadow-sm)]"
-                    : "rounded px-3 py-1.5 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                    ? "tap-target rounded px-3 text-sm font-medium text-[var(--text-primary)] bg-[var(--surface-1)] shadow-[var(--shadow-sm)]"
+                    : "tap-target rounded px-3 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                 }
               >
                 {entry.label}
@@ -225,6 +309,18 @@ export function AnalyzeClient({
               rows={mode === "PART_NUMBER" ? 2 : 4}
               placeholder={activeMode.placeholder}
               aria-describedby="product-input-hint"
+              /**
+               * A part number is not prose and a phone keyboard treats it as
+               * prose by default: "1734-IB8S" comes back as "1734-ib8s" with a
+               * capital on the first letter and a red squiggle, or autocorrected
+               * into a word outright. The wrong characters here mean the model
+               * researches a part that does not exist.
+               *
+               * A description is prose and wants the opposite.
+               */
+              autoCapitalize={mode === "PART_NUMBER" ? "characters" : "sentences"}
+              autoCorrect={mode === "PART_NUMBER" ? "off" : "on"}
+              spellCheck={mode !== "PART_NUMBER"}
               className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none disabled:opacity-60"
             />
             <p
@@ -240,17 +336,17 @@ export function AnalyzeClient({
           <button
             type="submit"
             disabled={disabled || running || input.trim().length < 3}
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            className="tap-target justify-center rounded-md bg-[var(--accent)] px-5 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
           >
             {running ? "Analyzing…" : "Classify"}
           </button>
           {running && (
             <button
               type="button"
-              onClick={cancel}
-              className="rounded-md border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)]"
+              onClick={stopWatching}
+              className="tap-target rounded-md border border-[var(--border)] px-3 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)]"
             >
-              Cancel
+              Stop watching
             </button>
           )}
           {running && (
@@ -270,20 +366,22 @@ export function AnalyzeClient({
         </div>
       )}
 
-      {droppedAnalysisId && !run && (
+      {detached && !run && (
         <div
           role="status"
           className="rounded-lg border border-[var(--warn)] bg-[var(--warn-subtle)] px-4 py-3"
         >
           <p className="text-sm text-[var(--text-primary)]">
-            The connection to this run dropped before it finished reporting.
+            {detached.reason === "stopped"
+              ? "You stopped watching this run."
+              : "The connection to this run dropped before it finished reporting."}
           </p>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
             The analysis kept running on the server. Nothing has been lost and
             nothing needs re-running — open it once it settles.
           </p>
           <a
-            href={`/analyze/${droppedAnalysisId}`}
+            href={`/analyze/${detached.id}`}
             className="mt-2 inline-block text-xs font-medium text-[var(--accent)] underline underline-offset-2"
           >
             Open this analysis

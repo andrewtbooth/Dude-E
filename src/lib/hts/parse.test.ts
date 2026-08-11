@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatHtsNo, levelOf, parseUsitcRows, toDigits } from "./parse";
+import {
+  formatHtsNo,
+  hasPublishedReportingNumber,
+  levelOf,
+  parseUsitcRows,
+  toDigits,
+} from "./parse";
 import type { UsitcRawRow } from "./types";
 
 /**
@@ -123,10 +129,55 @@ describe("parseUsitcRows", () => {
     expect(rateLine?.ratesInheritedFrom).toBeNull();
   });
 
-  it("marks only 10-digit lines as reportable", () => {
+  it("marks the deepest published lines as reportable", () => {
     const { lines } = parseUsitcRows(battery);
     const reportable = lines.filter((l) => l.isReportable).map((l) => l.htsNo);
     expect(reportable).toEqual(["8507.60.00.10", "8507.60.00.20"]);
+  });
+
+  /**
+   * Declarability is "nothing is published beneath it", not "it has ten digits".
+   *
+   * The ten-digit rule is right across most of the schedule and wrong exactly
+   * where it costs most: 3,564 subheadings in the 2026 Rev 15 snapshot end at
+   * eight digits, including 374 in Chapter 98 — 9801 American goods returned,
+   * 9802 outward processing, 9813 temporary importation under bond. Every one
+   * was rejected, with a message denying it could be declared at all, printed
+   * into the determination.
+   */
+  describe("provisions that terminate above ten digits", () => {
+    /** 9813.00.20 — TIB, samples for taking orders. No breakout beneath it. */
+    const tib = [
+      { htsno: "9813.00", indent: 0, description: "Articles admitted temporarily free of duty under bond:" },
+      { htsno: "9813.00.20", indent: 1, description: "Samples solely for use in taking orders", general: "Free" },
+      { htsno: "9813.00.25", indent: 1, description: "Articles solely for examination", general: "Free" },
+    ];
+
+    it("treats an 8-digit Chapter 98 leaf as declarable", () => {
+      const { lines } = parseUsitcRows(tib);
+      const reportable = lines.filter((l) => l.isReportable).map((l) => l.htsNo);
+      expect(reportable).toEqual(["9813.00.20", "9813.00.25"]);
+    });
+
+    it("still refuses a line the schedule breaks out further", () => {
+      const { lines } = parseUsitcRows(tib);
+      expect(lines.find((l) => l.htsNo === "9813.00")?.isReportable).toBe(false);
+    });
+
+    /**
+     * Chapter 99 is excluded whatever its shape. Its provisions are additional
+     * duties declared *alongside* a Chapter 1-97 classification, never instead
+     * of one, and they are checked on their own path. Admitting them here would
+     * let a run answer "9903.88.03" to "what is this product", which is not a
+     * classification at all.
+     */
+    it("never treats a Chapter 99 provision as a classification", () => {
+      const { lines } = parseUsitcRows([
+        { htsno: "9903.88", indent: 0, description: "Section 301 provisions:" },
+        { htsno: "9903.88.03", indent: 1, description: "Articles of China", general: "The duty provided + 25%" },
+      ]);
+      expect(lines.every((l) => !l.isReportable)).toBe(true);
+    });
   });
 
   it("carries chapter and heading down to descendants", () => {
@@ -322,5 +373,42 @@ describe("indent jumps", () => {
     const chlorides = lines.find((l) => l.htsNo === "2827");
     expect(calcium?.parentId).toBe(chlorides?.id);
     expect(calcium?.descriptionPath).toEqual(["Chlorides:", "Calcium chloride"]);
+  });
+});
+
+describe("hasPublishedReportingNumber", () => {
+  /**
+   * An entry is filed against a ten-digit statistical reporting number, and
+   * the schedule prints one for almost every classifiable line — including
+   * 8,019 that are an eight-digit subheading with `.00` appended precisely
+   * because there is no statistical breakout. So a line that stops at eight
+   * digits has not had its suffix omitted in parsing; the schedule published
+   * something that is not a reporting number.
+   *
+   * This does not decide whether such a line can be filed as published — that
+   * is a question about CBP practice. It decides only that the interface must
+   * not present one as though it were a complete reporting number.
+   */
+  it("accepts a ten-digit statistical line", () => {
+    expect(hasPublishedReportingNumber("8507.60.00.20")).toBe(true);
+  });
+
+  it("accepts an eight-digit subheading the schedule extended with .00", () => {
+    expect(hasPublishedReportingNumber("9617.00.10.00")).toBe(true);
+  });
+
+  it("rejects a watch provision that terminates at eight digits", () => {
+    // 9101.11.40 is a leaf in the 2026 snapshot: no children, no unit of
+    // quantity, and no `.00` appended, unlike the rest of the schedule.
+    expect(hasPublishedReportingNumber("9101.11.40")).toBe(false);
+  });
+
+  it("rejects a Chapter 98 provision that terminates at eight digits", () => {
+    expect(hasPublishedReportingNumber("9813.00.20")).toBe(false);
+  });
+
+  it("reads the digits, not the punctuation", () => {
+    expect(hasPublishedReportingNumber("8507600020")).toBe(true);
+    expect(hasPublishedReportingNumber("9101 11 40")).toBe(false);
   });
 });

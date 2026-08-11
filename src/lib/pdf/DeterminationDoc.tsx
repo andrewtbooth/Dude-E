@@ -6,6 +6,8 @@ import {
   View,
 } from "@react-pdf/renderer";
 import type { Candidate } from "../agent/schema";
+import { BRAND } from "../brand";
+import { hasPublishedReportingNumber } from "../hts/parse";
 import type { DeterminationView } from "./types";
 
 /**
@@ -18,20 +20,42 @@ import type { DeterminationView } from "./types";
  * this application.
  */
 
+/**
+ * Named for the roles this document uses, valued from the shared palette.
+ *
+ * The indirection is the point: these were literal hex codes, which meant the
+ * exported determination kept the palette it was written with while the screen
+ * moved on. `brand.test.ts` fails if a hex code reappears here.
+ */
 const COLORS = {
-  ink: "#14130f",
-  body: "#2f2e2a",
-  muted: "#6b6962",
-  rule: "#d4d1c8",
-  accent: "#1f5fa8",
-  warn: "#8a5208",
-  panel: "#f4f3ef",
+  ink: BRAND.ink,
+  body: BRAND.body,
+  muted: BRAND.muted,
+  rule: BRAND.rule,
+  accent: BRAND.accent,
+  warn: BRAND.warn,
+  panel: BRAND.surface2,
 };
 
 const styles = StyleSheet.create({
   page: {
     paddingTop: 44,
-    paddingBottom: 60,
+    /**
+     * Must clear the fixed footer, which is taller than it looks.
+     *
+     * The footer is absolutely positioned, so the page reserves its space by
+     * arithmetic rather than by layout — nothing pushes back if the number is
+     * too small. It was 60 against a footer that ran to eight lines, and body
+     * text descended straight through: on the sample determination the last
+     * line of the Chapter 99 note printed on top of the disclaimer, both
+     * illegible. No test catches it, because the text extractor reads
+     * overlapping strings perfectly happily.
+     *
+     * 54 = 26 (offset from the page edge) + ~18 (two lines at 7pt) + 10 clear.
+     * If the footer text grows, this has to grow with it, and the rendered
+     * page has to be looked at — `npm run dev:pdf`.
+     */
+    paddingBottom: 54,
     paddingHorizontal: 48,
     fontSize: 9.5,
     lineHeight: 1.5,
@@ -173,6 +197,7 @@ export function DeterminationDoc({ view }: { view: DeterminationView }) {
         <VerificationSection view={view} />
         <AlternatesSection view={view} />
         <AuthoritiesSection view={view} />
+        <ScopeSection />
         <Footer />
       </Page>
     </Document>
@@ -332,29 +357,65 @@ function Subject({ view }: { view: DeterminationView }) {
 function FinalDetermination({ view }: { view: DeterminationView }) {
   const candidate = view.selected;
   return (
-    <View style={styles.section} wrap={false}>
+    /**
+     * The section wraps; the headline does not.
+     *
+     * `wrap={false}` sat on the whole section, which was fine until it grew.
+     * Adding the reporting-number callout tipped it past what fits after the
+     * subject block, and @react-pdf moved the entire section to the next page
+     * rather than splitting it — leaving a hand's width of white space on page
+     * one and pushing the determination off the first page of a document whose
+     * entire purpose is to state it. Keeping the code, its path and its rates
+     * together is what actually mattered; where the prose after them breaks
+     * does not.
+     */
+    <View style={styles.section}>
       <Text style={styles.sectionTitle}>DETERMINATION</Text>
 
-      <Text style={styles.code}>{candidate.hts_code}</Text>
+      <View wrap={false}>
+        <Text style={styles.code}>{candidate.hts_code}</Text>
 
-      <View style={{ marginTop: 6 }}>
-        {candidate.description_path.map((segment, index) => (
-          <View key={index} style={styles.pathRow}>
-            <Text style={styles.pathIndent}>{"  ".repeat(index)}› </Text>
-            <Text style={styles.pathText}>{segment}</Text>
-          </View>
-        ))}
+        <View style={{ marginTop: 6 }}>
+          {candidate.description_path.map((segment, index) => (
+            <View key={index} style={styles.pathRow}>
+              <Text style={styles.pathIndent}>{"  ".repeat(index)}› </Text>
+              <Text style={styles.pathText}>{segment}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.dutyTable}>
+          <DutyCell label="GENERAL (COL. 1)" value={candidate.tariff.duty.general || "—"} />
+          <DutyCell label="SPECIAL" value={candidate.tariff.duty.special || "—"} />
+          <DutyCell label="COLUMN 2" value={candidate.tariff.duty.column_2 || "—"} />
+          <DutyCell
+            label="UNIT OF QUANTITY"
+            value={candidate.tariff.unit_of_quantity.join(", ") || "—"}
+          />
+        </View>
       </View>
 
-      <View style={styles.dutyTable}>
-        <DutyCell label="GENERAL (COL. 1)" value={candidate.tariff.duty.general || "—"} />
-        <DutyCell label="SPECIAL" value={candidate.tariff.duty.special || "—"} />
-        <DutyCell label="COLUMN 2" value={candidate.tariff.duty.column_2 || "—"} />
-        <DutyCell
-          label="UNIT OF QUANTITY"
-          value={candidate.tariff.unit_of_quantity.join(", ") || "—"}
-        />
-      </View>
+      {!hasPublishedReportingNumber(candidate.hts_code) && (
+        // Louder here than on screen, and deliberately so. An entry is filed
+        // against a ten-digit reporting number; this document prints a code
+        // under a heading that says DETERMINATION, and whoever reads it months
+        // from now has no way to know the schedule stopped short unless it
+        // says so on the page.
+        <View style={styles.callout}>
+          <Text style={styles.calloutTitle}>
+            NO TEN-DIGIT REPORTING NUMBER IS PUBLISHED FOR THIS LINE
+          </Text>
+          <Text style={{ fontSize: 8 }}>
+            {view.htsusRevision} terminates this provision at{" "}
+            {candidate.hts_code.replace(/\D/g, "").length} digits and publishes
+            no unit of quantity for it, where every classifiable line in
+            Chapters 1&ndash;97 carries both. It is the most specific
+            classification the schedule offers, and this determination is a
+            statement about classification, not about the reporting number to
+            key. Confirm the entry number with the filer before use.
+          </Text>
+        </View>
+      )}
 
       {candidate.tariff.duty.rates_published_on && (
         <Text style={{ fontSize: 7.5, color: COLORS.muted }}>
@@ -471,7 +532,12 @@ function Chapter99Section({
 
   if (candidate.tariff.chapter_99.length > 0) {
     return (
-      <View style={styles.callout}>
+      // minPresenceAhead rather than wrap={false}: this callout grows with the
+      // number of provisions matched, and a block that refuses to split is
+      // exactly what pushed the determination itself off page one. Asking for
+      // 44pt of company keeps the heading from stranding alone at a page foot
+      // without betting that the whole thing fits.
+      <View style={styles.callout} minPresenceAhead={44}>
         <Text style={styles.calloutTitle}>ADDITIONAL DUTIES MAY APPLY</Text>
         {candidate.tariff.chapter_99.map((entry) => (
           <Text key={entry.hts_code} style={{ fontSize: 8, marginBottom: 2 }}>
@@ -604,8 +670,29 @@ function AssumptionsSection({ view }: { view: DeterminationView }) {
  * the analyst who exported this saw it while the reader otherwise would not.
  */
 function VerificationSection({ view }: { view: DeterminationView }) {
-  const { rejectedCodes, corrections } = view.verification;
-  if (rejectedCodes.length === 0 && corrections.length === 0) return null;
+  const { rejectedCodes, corrections, substitutedRecommendation } =
+    view.verification;
+  if (
+    rejectedCodes.length === 0 &&
+    corrections.length === 0 &&
+    !substitutedRecommendation
+  ) {
+    return null;
+  }
+
+  // Only corrections that change what would be filed are itemised. Wording
+  // differences — a leading tariff number, a trailing colon — are counted
+  // rather than listed, so a page full of punctuation notes does not bury a
+  // duty rate the model got wrong.
+  //
+  // A determination recorded before severity existed carries no value at all,
+  // and re-issuing its PDF must not quietly drop what the original showed. So
+  // the test is for the one severity that may be folded away; anything else,
+  // including nothing, is itemised.
+  const material = corrections.filter(
+    (entry) => entry.severity !== "transcription",
+  );
+  const transcriptionCount = corrections.length - material.length;
 
   return (
     <View style={styles.section}>
@@ -615,6 +702,31 @@ function VerificationSection({ view }: { view: DeterminationView }) {
         The following did not match and were corrected or discarded before this
         document was produced.
       </Text>
+
+      {substitutedRecommendation && (
+        <View>
+          <Text style={styles.subhead}>
+            The analysis did not recommend the code it appeared to
+          </Text>
+          <View style={styles.bulletRow}>
+            <Text style={styles.bulletMark}>—</Text>
+            <Text style={styles.bulletText}>
+              The model recommended{" "}
+              <Text style={styles.codeInline}>
+                {substitutedRecommendation.modelSaid}
+              </Text>
+              , which does not exist in {view.htsusRevision}. This application
+              substituted{" "}
+              <Text style={styles.codeInline}>
+                {substitutedRecommendation.using}
+              </Text>
+              , its best surviving candidate, and that substitution — not the
+              model&rsquo;s own conclusion — is what the analyst was shown as the
+              recommendation. Weigh the rest of the reasoning accordingly.
+            </Text>
+          </View>
+        </View>
+      )}
 
       {rejectedCodes.length > 0 && (
         <View>
@@ -630,10 +742,10 @@ function VerificationSection({ view }: { view: DeterminationView }) {
         </View>
       )}
 
-      {corrections.length > 0 && (
+      {material.length > 0 && (
         <View>
           <Text style={styles.subhead}>Values corrected from the tariff</Text>
-          {corrections.map((entry, index) => (
+          {material.map((entry, index) => (
             <View key={index} style={styles.bulletRow}>
               <Text style={styles.bulletMark}>—</Text>
               <Text style={styles.bulletText}>
@@ -645,6 +757,21 @@ function VerificationSection({ view }: { view: DeterminationView }) {
               </Text>
             </View>
           ))}
+        </View>
+      )}
+
+      {transcriptionCount > 0 && (
+        <View>
+          <Text style={styles.subhead}>Wording normalised</Text>
+          <View style={styles.bulletRow}>
+            <Text style={styles.bulletMark}>—</Text>
+            <Text style={styles.bulletText}>
+              {transcriptionCount} description{transcriptionCount === 1 ? "" : "s"}{" "}
+              {transcriptionCount === 1 ? "was" : "were"} quoted with different
+              punctuation or a leading tariff number. The published wording is
+              what appears above. No classification value was affected.
+            </Text>
+          </View>
         </View>
       )}
     </View>
@@ -731,24 +858,57 @@ function AuthoritiesSection({ view }: { view: DeterminationView }) {
 
 // --- 8. Disclaimer ----------------------------------------------------------
 
-function Footer() {
+/**
+ * The limitations, stated once and in full.
+ *
+ * These used to be set at 7pt in a fixed footer repeated on every page. That
+ * had two costs and no benefit. The footer ran to eight lines, so it consumed
+ * roughly the bottom fifth of every page — which is what pushed the
+ * determination itself onto page two with a hand's width of white space above
+ * it. And nobody reads eight lines of 7pt grey type printed identically four
+ * times; repetition at that size is how a real limitation becomes wallpaper.
+ *
+ * So it is a section now, at the end, at a size a person can actually read,
+ * and every page carries a one-line pointer to it. The text is unchanged.
+ */
+function ScopeSection() {
   return (
-    <View style={styles.footer} fixed>
-      <Text style={styles.footerText}>
+    // Flows rather than forcing a page: on the sample it otherwise claimed a
+    // fourth page to hold three paragraphs, and the footer on every page
+    // already points here, so it does not need to announce itself.
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>SCOPE AND LIMITATIONS</Text>
+      <Text style={styles.para}>
         Advisory work product, machine-generated. The named analyst selected the
         classification from the candidates presented; this document does not
         evidence any further review, and the identity above is self-asserted at
         sign-in and not authenticated. It is not a ruling letter and is not
-        binding on U.S. Customs and Border Protection. Scope is tariff
-        classification only — country of origin, valuation, free trade agreement
-        eligibility, antidumping and countervailing duty scope, quota, and
-        partner government agency requirements were not analysed. Chapter 99
-        additional duties, including Section 301 and Section 232, are screened
-        only partially and must be verified independently; this document does
-        not establish that none apply. For high-value, high-volume, or genuinely
-        ambiguous merchandise, request a binding ruling under 19 CFR Part 177
-        before entry. Duty rates are as published in the tariff edition named
-        above and change frequently; confirm currency before filing.
+        binding on U.S. Customs and Border Protection.
+      </Text>
+      <Text style={styles.para}>
+        Scope is tariff classification only — country of origin, valuation, free
+        trade agreement eligibility, antidumping and countervailing duty scope,
+        quota, and partner government agency requirements were not analysed.
+        Chapter 99 additional duties, including Section 301 and Section 232, are
+        screened only partially and must be verified independently; this
+        document does not establish that none apply.
+      </Text>
+      <Text style={styles.para}>
+        For high-value, high-volume, or genuinely ambiguous merchandise, request
+        a binding ruling under 19 CFR Part 177 before entry. Duty rates are as
+        published in the tariff edition named above and change frequently;
+        confirm currency before filing.
+      </Text>
+    </View>
+  );
+}
+
+function Footer() {
+  return (
+    <View style={styles.footer} fixed>
+      <Text style={styles.footerText}>
+        Advisory work product, machine-generated — not a ruling letter and not
+        binding on CBP. Full scope and limitations at the end of this document.
       </Text>
       <Text
         style={styles.pageNumber}

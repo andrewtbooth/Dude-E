@@ -6,6 +6,7 @@ import type { Refinement } from "@/lib/agent/schema";
 import { CandidateCard } from "./CandidateCard";
 import { ClarifyingQuestions } from "./ClarifyingQuestions";
 import { ResultSummary } from "./ResultSummary";
+import { VerdictCard } from "./VerdictCard";
 
 /**
  * Everything downstream of a finished run: the summary, any clarifying
@@ -38,7 +39,19 @@ export function RunResult({
 
   return (
     <>
-      <ResultSummary run={run} />
+      {/* The answer first, then the questions it raises, then the reasoning.
+          The provenance and advisory blocks in ResultSummary are what an
+          analyst checks before exporting; they are not what they came for. */}
+      <VerdictCard
+        run={run}
+        selected={
+          selectedCode !== null &&
+          run.result.recommended_hts_code !== null &&
+          selectedCode.replace(/\D/g, "") ===
+            run.result.recommended_hts_code.replace(/\D/g, "")
+        }
+        onSelect={setSelectedCode}
+      />
 
       {run.result.clarifying_questions.length > 0 &&
         (onRefine ? (
@@ -50,6 +63,8 @@ export function RunResult({
         ) : (
           <ReadOnlyQuestions run={run} />
         ))}
+
+      <ResultSummary run={run} />
 
       {run.result.candidates.length > 0 && (
         <section>
@@ -223,7 +238,7 @@ function ExportBar({
             href={`/api/determinations/${issued}/pdf`}
             target="_blank"
             rel="noreferrer"
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)]"
+            className="tap-target w-full justify-center rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] sm:w-auto"
           >
             Open the determination PDF
           </a>
@@ -238,7 +253,7 @@ function ExportBar({
             type="button"
             onClick={exportDetermination}
             disabled={disabled || busy || !selectedCode || !analysisId}
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            className="tap-target w-full justify-center rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--accent-text)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50 sm:w-auto"
           >
             {busy ? "Recording…" : "Record determination and export PDF"}
           </button>

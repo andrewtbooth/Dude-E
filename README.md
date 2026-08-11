@@ -80,7 +80,7 @@ data/htsus/2026-hts-revision-15/
 ```
 
 A full run takes roughly a minute and a half and produces about 35,800 tariff
-lines, near 20,000 of them 10-digit reportable numbers, across 98 chapters,
+lines, some 20,400 of them declarable reporting numbers, across 98 chapters,
 plus 121 note documents — 98 chapter, 22 section, 1 general — and 9,779
 Schedule B export codes. (Chapter 77 is reserved and correctly returns
 nothing.)
@@ -127,6 +127,92 @@ Two behaviours worth knowing:
   still useful. Warnings are recorded in the manifest and shown in the masthead
   and on the analyze page, so an analyst can see what is incomplete before
   relying on it.
+- **Which lines are declarable is decided at sync time**, not at query time, so
+  a change to that rule only reaches a deployment when the tariff is re-synced.
+  An existing snapshot keeps whatever the parser decided when it was built —
+  and `DERIVATION_VERSION` is how a deployment finds that out for itself.
+
+### The snapshot is derived data, and it knows which rules derived it
+
+A snapshot is not a copy of the USITC payload. It is that payload run through
+`src/lib/hts/parse.ts`, with the results **stored**: `is_reportable` is a
+column, description paths are a column, inherited rates are a column. Change a
+rule and nothing moves until a sync runs again.
+
+The gap is silent, which is what makes it dangerous. Making Chapter 98
+declarable is written, tested and reviewed, and on its own it would have
+deployed green and done nothing: the volume holds data built by the previous
+rule, the entrypoint re-synced only when the data directory was *empty*, and
+nothing compared the data against the code that derived it. A release where the
+tests pass, the deploy succeeds, and the behaviour does not move is the kind
+that gets debugged in the wrong place.
+
+So `DERIVATION_VERSION` in `parse.ts` is stamped into every manifest, and
+`scripts/deploy/check-snapshot-derivation.ts` runs on boot. A snapshot built by
+older rules — or by rules old enough to predate the stamp — triggers a
+background re-sync, exactly as an empty directory does. **Bump it whenever a
+rule in `parse.ts` changes what gets stored.**
+
+Practical effect: re-deriving the tariff is a redeploy, not a shell session.
+Run the **Deploy** workflow in GitHub; the machine boots, notices the mismatch,
+serves the old snapshot while the new one downloads (~90s), and swaps it in.
+Nothing needs `flyctl`, which matters because the snapshot lives on the Fly
+volume and cannot be refreshed from a GitHub runner's disk.
+
+### What counts as declarable
+
+A line can be declared when the schedule publishes nothing beneath it — not
+when it has ten digits. Ten digits is right for most of the schedule and wrong
+where it matters: **3,564 subheadings terminate at eight**, and treating those
+as undeclarable rejected them outright.
+
+| | |
+|---|---|
+| 3,095 in Chapter 99 | Section 301 and 232 provisions |
+| 374 in Chapter 98 | 9801 American goods returned, 9802 outward processing, 9804 personal exemptions, most of the 9813 temporary-importation-under-bond series |
+| 95 in Chapter 91 | watch provisions with no statistical breakout |
+
+These are terminal as published rather than lines whose children were lost:
+USITC emits an explicit `.00` reporting number wherever an eight-digit
+subheading has no breakout, which accounts for 8,080 of the 19,949 ten-digit
+lines.
+
+Chapter 99 is excluded anyway. Its provisions are additional duties declared
+*alongside* a Chapter 1–97 classification, never instead of one, and they are
+verified on their own path — admitting them here would let a run answer
+`9903.88.03` to "what is this product", which is not a classification.
+
+Net effect on the 2026 Revision 15 snapshot: 19,949 → **20,418** declarable
+lines, with nothing that was declarable becoming undeclarable.
+
+### Declarable is not the same as filable
+
+An entry is filed against a ten-digit statistical reporting number, and 469 of
+those newly-declarable lines are not one. The evidence is uniform:
+
+| | carries a unit of quantity |
+|---|---|
+| Every ten-digit leaf, Chapters 1–97 | **19,831 / 19,831** |
+| Chapter 91 ten-digit leaves | 82 / 82 |
+| **Chapter 91 eight-digit leaves** | **0 / 95** |
+| **Chapter 98 eight-digit leaves** | **0 / 374** |
+
+A reporting number reports a quantity, so a line with no unit is not one. And
+the schedule plainly *can* extend an eight-digit subheading when it wants to —
+8,019 of those 19,831 leaves are exactly that, an eight-digit subheading with
+`.00` appended because there is no statistical breakout. Where it declines to,
+it has published something that stops short.
+
+Whether such a provision can nonetheless be keyed on an entry as published is a
+question about CBP practice, not about this data, and this application does not
+answer it. `hasPublishedReportingNumber` marks the line; the verdict card, the
+candidate card and the determination PDF all say the schedule stopped short and
+tell the analyst to confirm the entry number with the filer. The code stays
+selectable, because it is the most specific classification available and
+blocking it would be answering the question by refusing to.
+
+If your filing practice settles it in either direction, that is a one-line
+change to the helper and the wording that surrounds it.
 
 ### Chapter 99 exposure
 
@@ -302,8 +388,8 @@ code that has not been verified.
 
 **Nothing is accepted on the model's word.** After the run, every returned code
 is re-checked against the snapshot (`verifyAgainstTariff` in `classify.ts`).
-Codes that do not exist, or that resolve to a non-declarable 8-digit line, are
-dropped and the candidates re-ranked; if everything fails, the analysis fails
+Codes that do not exist, or that resolve to a line the schedule breaks out
+further, are dropped and the candidates re-ranked; if everything fails, the analysis fails
 rather than presenting something unverifiable. A fluent, well-formed,
 nonexistent 10-digit code is the highest-consequence failure mode in this
 domain, and the one a language model is most prone to.
@@ -431,7 +517,25 @@ npx tsx scripts/dev/try-classify.ts --record data/cassettes/bottle.json "steel w
 npx tsx scripts/dev/try-classify.ts --replay data/cassettes/bottle.json    # free, ~2s
 CLASSIFIER_REPLAY=data/cassettes/bottle.json npm run dev                   # whole UI, free
 npx tsx scripts/dev/verify-e2e.tsx --replay data/cassettes/bottle.json     # PDF path
+./scripts/dev/browser-e2e.sh                                              # 17 checks, a real browser
+./scripts/dev/browser-ux.sh                                               # touch audit + 29 checks, phone viewport
 ```
+
+`browser-ux.sh` opens with `audit-touch-targets.mjs`, which walks every
+interactive element at phone width and exits non-zero on anything under 44px or
+any text field under 16px (below which iOS zooms the viewport on focus and does
+not zoom back). It found 37 the first time it ran — including the candidate
+radio at 16x16, the control that decides which code a determination is written
+against. It is a guard, not a report: without the exit code the next component
+to land a small control would put the number quietly back to 1.
+
+The two browser scripts differ in more than their assertions. `browser-e2e.sh`
+replays at 1 ms a step, because it is checking outcomes — what was recorded,
+what the PDF contains, what the duplicate guard refuses. `browser-ux.sh` replays
+at 900 ms in an iPhone profile, because it is checking behaviour *during* a run:
+whether the page stays put while the log streams, whether the log keeps up with
+itself. Timing-dependent defects are invisible at 1 ms — an earlier review pass
+declared the scroll behaviour fine having run it at that speed, and it was not.
 
 Replay is refused in production builds, and every run it produces is stamped
 `replay:<model>` — that string reaches the PDF provenance block, so a document
@@ -504,13 +608,56 @@ reachable URL (default: 10 analyses per client per 15 minutes).
 
 ---
 
+## The look, and why it is that look
+
+Every artifact in this trade is a ruled form — an entry summary, a commercial
+invoice, the tariff schedule itself: boxes with small condensed captions above
+the values they hold. That is not decoration, it is how the people who use
+those documents find things, and it is the one visual language a compliance
+analyst already reads fluently. So the interface borrows it instead of
+inventing another card layout.
+
+- **Three typefaces, vendored** (`src/app/fonts/`). Archivo for prose, Archivo
+  Narrow for the captions a form puts above its boxes, IBM Plex Mono for
+  everything numeric — its figures are tabular by construction, so a column of
+  ten-digit codes aligns digit under digit, which is how codes get compared.
+  Checked in rather than fetched by `next/font/google`, so the build needs no
+  network. 84 KB, both OFL-1.1, licenses included.
+- **Ruled field blocks** (`.field`, `.field-grid`, `.field-block`, `.caption`)
+  for anything transcribed onto an entry — duty rates, units, the tariff
+  edition. Loose label/value pairs let the eye pair a value with the wrong
+  caption on a narrow screen; boxes sharing a rule do not.
+- **Struck marks, not filled pills** (`.stamp`). Status takes its colour from
+  `currentColor`, so one mark serves every state without a palette of variants.
+- **`<HtsCode>`** spaces a code at its segment boundaries — heading,
+  subheading, rate line, statistical suffix — because that structure is what an
+  analyst is comparing. The dots stay real characters, so a copy still pastes.
+
+### Keeping the screen and the document in step
+
+The determination is drawn twice, by engines that share nothing: CSS custom
+properties on screen, `@react-pdf` for the PDF, which has no cascade and cannot
+read a variable. The palette therefore lives in `src/lib/brand.ts`; the PDF
+imports it, `globals.css` mirrors it, and `brand.test.ts` parses the stylesheet
+and fails naming the pair that drifted. It also checks the `themeColor` in
+`layout.tsx` — the easiest value in the app to forget, since it lives in a
+`Viewport` export rather than the stylesheet.
+
+Design changes want looking at, not reasoning about. `node scripts/dev/shoot.mjs`
+drives a replayed run and captures every screen at phone width in both themes;
+`npm run dev:pdf` renders the sample determination.
+
+---
+
 ## Layout
 
 ```
 src/
   app/            routes: splash (/), /analyze, /history, API handlers
+    fonts/        vendored woff2 + OFL licenses
   components/     UI — analysis client, candidate cards, masthead, theme
   lib/
+    brand.ts      the palette both renderers agree on
     agent/        system prompt, tools, run loop, output schema, verification
     hts/          USITC parsing, SQLite index, query layer
     pdf/          determination document and view assembly
@@ -518,7 +665,7 @@ src/
   test/           shared fixtures
 scripts/
   sync-htsus.ts   the tariff sync
-  dev/            offline seed, sample PDF render
+  dev/            offline seed, sample PDF render, browser checks, screenshots
 ```
 
 ---

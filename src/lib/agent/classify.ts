@@ -11,6 +11,7 @@ import {
   THINKING_BUDGET_TOKENS,
   config,
 } from "../config";
+import { hasPublishedReportingNumber } from "../hts/parse";
 import {
   getActiveRevision,
   lookupExact,
@@ -46,6 +47,49 @@ export interface CodeCorrection {
   field: string;
   modelValue: string;
   indexValue: string;
+  /**
+   * Whether this correction changes what the determination means.
+   *
+   * `material` is a duty rate, an additional-duty string, or an export
+   * description — a value someone could act on and be wrong about. Those are
+   * the reason the advisory exists.
+   *
+   * `transcription` is the same fact written differently: the model prefixing
+   * a description path with its HTS number, or the schedule's trailing colons.
+   * Worth keeping on the record, worth overwriting from the index, not worth a
+   * warning above the answer.
+   */
+  severity: "material" | "transcription";
+}
+
+/**
+ * Compare description paths by what they say, not by how they are punctuated.
+ *
+ * Measured across both recorded runs, every single correction raised was a
+ * `description_path` diff of exactly this kind: the model writes
+ * `"9617.00 Vacuum flasks … inners"` where the index holds
+ * `"Vacuum flasks … inners:"`. An exact string comparison therefore fired on
+ * essentially every analysis, and put a warn-toned "corrected against the
+ * tariff" block above the answer and into the exported PDF.
+ *
+ * The cost of that is specific. The advisory exists to catch a wrong duty rate
+ * or an invented Chapter 99 charge — things that cost money. Firing it on
+ * punctuation every time is how a real warning gets skipped.
+ */
+export function normaliseDescriptionPath(segments: readonly string[]): string {
+  return segments
+    .map((segment) =>
+      segment
+        // A leading HTS number: "9617.00 Vacuum flasks…", "3926 Other…".
+        .replace(/^\d{4}(?:\.\d{2})*\s+/, "")
+        // The schedule prints a trailing colon on any line that breaks out.
+        .replace(/:\s*$/, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase(),
+    )
+    .filter(Boolean)
+    .join(" > ");
 }
 
 export interface ClassificationRun {
@@ -56,6 +100,31 @@ export interface ClassificationRun {
     rejectedCodes: { code: string; reason: string }[];
     /** Data fields where the model's transcription differed from the index. */
     corrections: CodeCorrection[];
+    /**
+     * Set when the model's own recommendation failed verification and the
+     * best surviving candidate was promoted into its place.
+     *
+     * Without this the substitution is invisible. `recommended_hts_code` comes
+     * back populated either way, so a code the application chose is presented
+     * in exactly the same terms as a code the model chose — and the screen is
+     * about to print it at the top of the page as the answer. The model naming
+     * a code that does not exist is the strongest signal available that the
+     * analysis needs a second look, and it was being swallowed by the recovery.
+     */
+    substitutedRecommendation: { modelSaid: string; using: string } | null;
+    /**
+     * Verified codes for which the schedule publishes no ten-digit reporting
+     * number — see `hasPublishedReportingNumber`.
+     *
+     * Not a rejection. These are the deepest lines the schedule publishes, so
+     * they are the most specific classification available and they stay on
+     * offer. But an entry is filed against a ten-digit number, and printing
+     * one of these as a finished answer hands a filer something their broker
+     * may not be able to key. Whether these particular provisions are filable
+     * as published is a question about CBP practice; the application's job is
+     * to say that the schedule stopped short, not to decide the question.
+     */
+    incompleteReportingNumbers: { code: string; digits: number }[];
   };
   usage: {
     /** Uncached prompt tokens, billed at full rate. */
@@ -70,6 +139,54 @@ export interface ClassificationRun {
   effort: string;
   htsusRevision: string;
   durationMs: number;
+}
+
+/**
+ * Fill in fields a run predates.
+ *
+ * Runs are stored and recorded verbatim — a determination row keeps the JSON
+ * exactly as the classifier returned it, and a cassette keeps a whole replayed
+ * run. Both are read back through a cast, so a field added after the row was
+ * written is missing at runtime while the type insists it is present. Anything
+ * that then branches on it silently takes the wrong branch.
+ *
+ * `severity` is the first of these, and it does not have to be guessed. A
+ * correction preserves both the value the model gave and the value the index
+ * holds, so the same comparison that classifies a new correction classifies an
+ * old one — from the record itself rather than from an assumption about it.
+ * Only a field whose values cannot be compared that way falls back to
+ * `material`, which is the reading that keeps showing it to the analyst.
+ *
+ * Mutates and returns the same object; callers own freshly-parsed JSON.
+ */
+export function backfillRunFields(run: ClassificationRun): ClassificationRun {
+  if (run.verification && run.verification.substitutedRecommendation === undefined) {
+    // Unknowable after the fact: whether the model's original recommendation
+    // survived is not recoverable from a stored run, because the substituted
+    // code replaced it in place. `null` says "no substitution recorded", which
+    // is the honest reading — it does not claim there was none.
+    run.verification.substitutedRecommendation = null;
+  }
+  if (run.verification && !run.verification.incompleteReportingNumbers) {
+    // Recomputable, unlike the substitution above: the test is a property of
+    // the code itself, so a run stored before this existed can be told the
+    // truth about its own codes rather than assumed innocent.
+    run.verification.incompleteReportingNumbers = (
+      run.verification.verifiedCodes ?? []
+    )
+      .filter((code) => !hasPublishedReportingNumber(code))
+      .map((code) => ({ code, digits: code.replace(/\D/g, "").length }));
+  }
+  for (const correction of run.verification?.corrections ?? []) {
+    if (correction.severity) continue;
+    correction.severity =
+      correction.field === "description_path" &&
+      normaliseDescriptionPath(correction.modelValue.split(" > ")) ===
+        normaliseDescriptionPath(correction.indexValue.split(" > "))
+        ? "transcription"
+        : "material";
+  }
+  return run;
 }
 
 /**
@@ -710,6 +827,7 @@ function verifyChapter99(
         field: `chapter_99[${line.htsNo}].additional_duty`,
         modelValue: entry.additional_duty,
         indexValue: published,
+        severity: "material",
       });
     }
 
@@ -837,6 +955,7 @@ function verifyScheduleB(
       field: "schedule_b.description",
       modelValue: claimed.description,
       indexValue: entry.description,
+      severity: "material",
     });
   }
 
@@ -847,6 +966,7 @@ function verifyScheduleB(
       field: "schedule_b.hs_subheading",
       modelValue: `export code sits under ${entry.hs6}`,
       indexValue: `HTS number sits under ${htsHs6}`,
+      severity: "material",
     });
   }
 
@@ -865,6 +985,7 @@ export function verifyAgainstTariff(result: ClassificationResult): {
   const verifiedCodes: string[] = [];
   const rejectedCodes: { code: string; reason: string }[] = [];
   const corrections: CodeCorrection[] = [];
+  const incompleteReportingNumbers: { code: string; digits: number }[] = [];
 
   const kept: Candidate[] = [];
 
@@ -880,17 +1001,51 @@ export function verifyAgainstTariff(result: ClassificationResult): {
     }
 
     if (!line.isReportable) {
-      rejectedCodes.push({
-        code: candidate.hts_code,
-        reason: `resolves to a ${line.digits.length}-digit line, which cannot be declared on an entry`,
-      });
+      // Say why *this* line is not declarable rather than asserting a digit
+      // rule. Chapter 98 and the watch provisions of Chapter 91 terminate at
+      // eight digits, so "an 8-digit line cannot be declared" was simply false
+      // for them — and it was printed into the determination's discarded list,
+      // telling a reader that 9813.00.20 is not a code you can enter.
+      const reason =
+        line.chapter === "99"
+          ? "is a Chapter 99 provision, which is declared alongside a " +
+            "Chapter 1-97 classification rather than instead of one"
+          : `is not the deepest published line under ${line.htsNo} — the ` +
+            `schedule breaks it out further, so a more specific code applies`;
+      rejectedCodes.push({ code: candidate.hts_code, reason });
       continue;
     }
 
     verifiedCodes.push(line.htsNo);
 
+    // Verified is not the same as filable. 469 lines outside Chapter 99 are the
+    // deepest thing the schedule publishes and still stop short of a ten-digit
+    // reporting number — see hasPublishedReportingNumber. They are kept as
+    // candidates, because they are the most specific classification available,
+    // and named here so nothing downstream prints one as a finished answer.
+    if (!hasPublishedReportingNumber(line.htsNo)) {
+      incompleteReportingNumbers.push({
+        code: line.htsNo,
+        digits: line.htsNo.replace(/\D/g, "").length,
+      });
+    }
+
     const authoritativePath = line.descriptionPath.filter(Boolean);
+    // Compared normalised, still overwritten from the index below either way.
     if (
+      normaliseDescriptionPath(authoritativePath) !==
+      normaliseDescriptionPath(candidate.description_path)
+    ) {
+      corrections.push({
+        htsCode: line.htsNo,
+        field: "description_path",
+        modelValue: candidate.description_path.join(" > "),
+        indexValue: authoritativePath.join(" > "),
+        // A path that still differs after normalisation is not a typo: the
+        // model was describing a different article from the one it named.
+        severity: "material",
+      });
+    } else if (
       authoritativePath.join(" > ") !== candidate.description_path.join(" > ")
     ) {
       corrections.push({
@@ -898,6 +1053,7 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         field: "description_path",
         modelValue: candidate.description_path.join(" > "),
         indexValue: authoritativePath.join(" > "),
+        severity: "transcription",
       });
     }
     if (candidate.tariff.duty.general !== line.general) {
@@ -906,6 +1062,8 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         field: "duty.general",
         modelValue: candidate.tariff.duty.general,
         indexValue: line.general,
+        // The number someone pays. Always worth surfacing.
+        severity: "material",
       });
     }
 
@@ -960,24 +1118,36 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         (result.recommended_hts_code ?? "").replace(/\D/g, ""),
     );
 
+  const recommended = modelDeclinedToRecommend
+    ? null
+    : recommendedStillValid
+      ? (reRanked.find(
+          (candidate) =>
+            candidate.hts_code.replace(/\D/g, "") ===
+            (result.recommended_hts_code ?? "").replace(/\D/g, ""),
+        )?.hts_code ?? null)
+      : // The recommendation itself failed verification. Falling back to the
+        // best surviving candidate is right here — the model did commit to
+        // an answer, it just named one that does not exist — but the swap is
+        // recorded below rather than passed off as the model's own answer.
+        (reRanked[0]?.hts_code ?? null);
+
   return {
     result: {
       ...result,
       candidates: reRanked,
-      recommended_hts_code: modelDeclinedToRecommend
-        ? null
-        : recommendedStillValid
-          ? (reRanked.find(
-              (candidate) =>
-                candidate.hts_code.replace(/\D/g, "") ===
-                (result.recommended_hts_code ?? "").replace(/\D/g, ""),
-            )?.hts_code ?? null)
-          : // The recommendation itself failed verification. Falling back to the
-            // best surviving candidate is right here — the model did commit to
-            // an answer, it just named one that does not exist.
-            (reRanked[0]?.hts_code ?? null),
+      recommended_hts_code: recommended,
     },
-    verification: { verifiedCodes, rejectedCodes, corrections },
+    verification: {
+      verifiedCodes,
+      rejectedCodes,
+      corrections,
+      incompleteReportingNumbers,
+      substitutedRecommendation:
+        !modelDeclinedToRecommend && !recommendedStillValid && recommended
+          ? { modelSaid: result.recommended_hts_code!, using: recommended }
+          : null,
+    },
   };
 }
 

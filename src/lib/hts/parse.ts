@@ -191,7 +191,10 @@ export function parseUsitcRows(
       additionalDuties:
         clean(row.additionalDuties) || clean(row.addiitionalDuties) || null,
       parentId,
-      isReportable: level === 10,
+      // Provisional. Whether a line can be declared depends on whether
+      // anything sits beneath it, which is not known until every row has been
+      // read — see resolveReportable below.
+      isReportable: false,
     };
 
     lines.push(line);
@@ -202,7 +205,107 @@ export function parseUsitcRows(
   });
 
   resolveRates(lines, byId);
+  resolveReportable(lines);
   return { lines, warnings };
+}
+
+/**
+ * Mark the lines that can actually appear on an entry.
+ *
+ * The rule is "nothing is published beneath it", not "it has ten digits".
+ *
+ * Ten digits is right for almost the whole schedule, and was the rule here
+ * until it turned out to be wrong in exactly the places that matter most.
+ * 3,564 subheadings in the 2026 Rev 15 snapshot terminate at eight digits:
+ *
+ *   3,095 in Chapter 99 — Section 301 and 232 provisions
+ *     374 in Chapter 98 — 9801 American goods returned, 9802 outward
+ *                         processing, 9804 personal exemptions, and most of
+ *                         the 9813 temporary-importation-under-bond series
+ *      95 in Chapter 91 — watch provisions with no statistical breakout
+ *
+ * These are not lines whose ten-digit children were lost in parsing. USITC
+ * publishes an explicit `.00` reporting number wherever an eight-digit
+ * subheading has no breakout — 8,080 of the 19,949 ten-digit lines end that
+ * way — so a subheading with no child is terminal as published.
+ *
+ * Chapter 99 is excluded regardless. Its provisions are additional duties
+ * declared *alongside* a Chapter 1-97 classification, never instead of one, and
+ * they are checked on their own path (see verifyChapter99). Letting them
+ * through here would allow a run to answer "9903.88.03" to "what is this
+ * product", which is not a classification at all.
+ *
+ * Reportable is not the same as complete, and the Chapter 91 lines are why.
+ * Every one of the 19,831 ten-digit leaves in Chapters 1-97 carries a unit of
+ * quantity; not one of those 95 does, and the schedule declined to append the
+ * `.00` it appends everywhere else. Whether a filer can key `9101.11.40` as
+ * published is a question about CBP practice, not about this data, so nothing
+ * here answers it — the line stays reportable, and
+ * `hasPublishedReportingNumber` marks it as lacking a statistical suffix so
+ * the interface and the determination can say so plainly.
+ */
+/**
+ * Which version of the derivation rules produced a snapshot.
+ *
+ * A snapshot is not a copy of what USITC published. It is that payload run
+ * through this file: the indent stack rebuilt into a tree, rates resolved by
+ * inheritance, description paths assembled, and `isReportable` decided. Those
+ * results are *stored* — `is_reportable` is a column, not a query — so changing
+ * a rule here changes nothing at all until a sync runs again.
+ *
+ * That gap is silent and it has already bitten. Making Chapter 98 declarable
+ * was correct, tested, deployed, and inert: the snapshot on the volume had been
+ * built by the old rule, the entrypoint re-syncs only when the directory is
+ * empty, and nothing anywhere compared the data to the code that derived it.
+ * The deploy reported success and the behaviour did not change.
+ *
+ * So the version travels with the snapshot. Bump it whenever a rule in this
+ * file changes what gets stored, and the next boot notices and re-syncs. The
+ * number is not the tariff revision — two snapshots of the same revision built
+ * by different rules are different data.
+ *
+ * 1. Original: ten digits means declarable.
+ * 2. Leaf-ness means declarable, so Chapter 98 and the Chapter 91 watch
+ *    provisions stop being rejected outright.
+ */
+export const DERIVATION_VERSION = 2;
+
+/**
+ * Whether the schedule publishes a full ten-digit reporting number for a code.
+ *
+ * An entry is filed against a ten-digit statistical reporting number. For most
+ * of the schedule that number is printed: 19,831 ten-digit leaves in Chapters
+ * 1-97, of which 8,019 are an eight-digit subheading with `.00` appended
+ * because it has no statistical breakout. So where the schedule *stops* at
+ * eight digits it has not simply omitted the suffix — it has published
+ * something that is not a reporting number, and every such line also lacks the
+ * unit of quantity that a reporting number needs in order to report a quantity.
+ *
+ * That is 469 lines outside Chapter 99: 374 in Chapter 98 and 95 in Chapter 91.
+ * They are still the most specific classification available, so they are still
+ * offered — but a determination that prints one as the answer, without saying
+ * the schedule published no reporting number for it, hands a filer a number
+ * their broker may not be able to key.
+ *
+ * Derived from the code rather than stored, so it needs no re-sync and holds
+ * for any snapshot.
+ */
+export function hasPublishedReportingNumber(htsCode: string): boolean {
+  return htsCode.replace(/\D/g, "").length >= 10;
+}
+
+function resolveReportable(lines: HtsLine[]): void {
+  const hasChildren = new Set<number>();
+  for (const line of lines) {
+    if (line.parentId !== null) hasChildren.add(line.parentId);
+  }
+
+  for (const line of lines) {
+    line.isReportable =
+      line.digits.length >= 8 &&
+      line.chapter !== "99" &&
+      !hasChildren.has(line.id);
+  }
 }
 
 function coerceFootnotes(raw: unknown): string[] {

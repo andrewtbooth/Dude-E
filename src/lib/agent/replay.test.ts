@@ -32,7 +32,13 @@ function doneEvent(model = "claude-sonnet-5"): ProgressEvent {
         assumptions: [],
         info_that_would_raise_confidence: [],
       },
-      verification: { verifiedCodes: [], rejectedCodes: [], corrections: [] },
+      verification: {
+        verifiedCodes: [],
+        rejectedCodes: [],
+        corrections: [],
+        substitutedRecommendation: null,
+        incompleteReportingNumbers: [],
+      },
       usage: {
         inputTokens: 12,
         cacheWriteTokens: 4252,

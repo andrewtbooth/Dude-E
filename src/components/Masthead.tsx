@@ -22,16 +22,21 @@ export function Masthead({
   return (
     <header className="sticky top-0 z-20 border-b border-[var(--border)] bg-[var(--surface-1)]/95 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
-        <Link href="/analyze" className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold tracking-tight text-[var(--text-primary)]">
+        <Link href="/analyze" className="tap-target items-baseline gap-2.5">
+          {/* Set in the condensed face, uppercase and tracked, the way a form
+              names its issuing authority in the top-left corner. */}
+          <span className="font-[family-name:var(--font-display)] text-sm font-bold uppercase tracking-[0.14em] text-[var(--text-primary)]">
             Dude&#8209;E
           </span>
-          <span className="text-xs text-[var(--text-muted)]">
-            Tariff Classification
+          <span className="caption hidden sm:inline">
+            U.S. Tariff Classification
           </span>
         </Link>
 
-        <nav className="flex items-center gap-1 text-sm">
+        {/* Hidden on phones — the same two destinations live in BottomNav,
+            within thumb reach. Duplicating them here would put the app's only
+            navigation in the hardest corner of the screen to hit. */}
+        <nav className="hidden items-center gap-1 text-sm sm:flex">
           <NavLink href="/analyze" current={active === "analyze"}>
             Analyze
           </NavLink>
@@ -79,8 +84,8 @@ function NavLink({
       aria-current={current ? "page" : undefined}
       className={
         current
-          ? "rounded-md bg-[var(--surface-3)] px-2.5 py-1 text-[var(--text-primary)]"
-          : "rounded-md px-2.5 py-1 text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
+          ? "tap-target rounded-md bg-[var(--surface-3)] px-3 text-[var(--text-primary)]"
+          : "tap-target rounded-md px-3 text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
       }
     >
       {children}
@@ -100,7 +105,7 @@ function RevisionBadge({
   if (!revision) {
     return (
       <span
-        className="rounded-md bg-[var(--danger-subtle)] px-2 py-1 text-[11px] font-medium text-[var(--danger)]"
+        className="stamp text-[var(--danger)]"
         title="No HTSUS snapshot has been synced. Run `npm run sync:htsus`. Analyses are unavailable until then."
       >
         No HTSUS data
@@ -114,12 +119,14 @@ function RevisionBadge({
     ? `${revision} · Schedule B ${scheduleBEdition}`
     : `${revision} · no Schedule B`;
 
+  // The edition an analyst is about to stamp onto a determination is a field
+  // on a form, not a status chip: it has a name and a value, and both matter.
   return (
     <span
       className={
         warningCount > 0
-          ? "rounded-md bg-[var(--warn-subtle)] px-2 py-1 text-[11px] font-medium text-[var(--warn)]"
-          : "rounded-md bg-[var(--surface-2)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)]"
+          ? "field border-[var(--warn)] bg-[var(--warn-subtle)] px-2 py-1"
+          : "field px-2 py-1"
       }
       title={
         warningCount > 0
@@ -129,8 +136,28 @@ function RevisionBadge({
             : `${revision} — the edition every determination is stamped with. No export schedule was synced, so no Schedule B codes will be offered.`
       }
     >
-      {editions}
-      {warningCount > 0 ? ` · ${warningCount} warning${warningCount === 1 ? "" : "s"}` : ""}
+      <span className="caption block">Tariff edition</span>
+      {/* Two renderings of the same fact, because the phone cannot afford the
+          long one. At full width the masthead names both editions and the
+          warning count; wrapped onto three lines on a 390px screen that pushed
+          the actual work most of a viewport down the page, and repeated what
+          the banner on /analyze says anyway. The revision alone answers the
+          question the masthead exists to answer — what am I about to stamp. */}
+      <span
+        className={`block text-[11px] font-medium ${
+          warningCount > 0
+            ? "text-[var(--warn)]"
+            : "text-[var(--text-secondary)]"
+        }`}
+      >
+        <span className="sm:hidden">{revision}</span>
+        <span className="hidden sm:inline">
+          {editions}
+          {warningCount > 0
+            ? ` · ${warningCount} warning${warningCount === 1 ? "" : "s"}`
+            : ""}
+        </span>
+      </span>
     </span>
   );
 }

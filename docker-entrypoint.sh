@@ -38,20 +38,37 @@ if ! npx prisma db push --accept-data-loss; then
   exit 1
 fi
 
+# Sync in the background when the snapshot is missing *or* when it was built by
+# older derivation rules.
+#
+# The staleness half is new and it closes a hole that cost a release. The
+# snapshot is not a copy of the USITC payload — it is that payload run through
+# the parser, with the results stored as columns. `is_reportable` is a column.
+# So making Chapter 98 declarable shipped green and did nothing: the volume held
+# data built by the previous rule, this check tested only for an *empty*
+# directory, and nothing compared the data to the code that derived it.
+sync_reason=""
 if [ -z "$(ls -A "${HTSUS_DATA_DIR}" 2>/dev/null)" ]; then
-  echo "==> no tariff snapshot found at ${HTSUS_DATA_DIR}"
-  echo "    Downloading in the background — roughly ninety seconds."
-  echo "    The app is serving now and will refuse to classify until it lands."
+  sync_reason="no tariff snapshot found at ${HTSUS_DATA_DIR}"
+elif ! npx tsx scripts/deploy/check-snapshot-derivation.ts; then
+  sync_reason="snapshot predates this build's derivation rules"
+fi
+
+if [ -n "$sync_reason" ]; then
+  echo "==> ${sync_reason}"
+  echo "    Syncing in the background — roughly ninety seconds."
+  echo "    The app is serving now; it keeps using the snapshot it has, if any,"
+  echo "    until the new one lands."
   (
     if npm run sync:htsus; then
       echo "==> tariff snapshot ready"
     else
-      echo "==> tariff sync FAILED. The app will keep refusing to classify."
+      echo "==> tariff sync FAILED."
       echo "    Re-run the Deploy workflow, or check egress to hts.usitc.gov."
     fi
   ) &
 else
-  echo "==> tariff snapshot present"
+  echo "==> tariff snapshot present and current"
 fi
 
 exec "$@"

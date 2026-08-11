@@ -31,8 +31,12 @@ describe("HTSUS index", () => {
 
   it("reports index statistics", () => {
     const stats = getIndexStats();
-    expect(stats.lineCount).toBe(13);
-    expect(stats.reportableLineCount).toBe(4);
+    // 16 lines, 5 reportable: the four ten-digit statistical lines plus
+    // 9101.11.40, a watch provision the schedule terminates at eight digits.
+    // Reportable and yet not a ten-digit reporting number — see
+    // hasPublishedReportingNumber.
+    expect(stats.lineCount).toBe(16);
+    expect(stats.reportableLineCount).toBe(5);
     expect(stats.noteCount).toBe(3);
     expect(stats.scheduleBCount).toBe(3);
     expect(stats.scheduleBHs6Count).toBe(2);

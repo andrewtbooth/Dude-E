@@ -11,6 +11,13 @@
    ======================================================================== */
 
 :root {
+  /* The light palette is mirrored from src/lib/brand.ts, which is what the
+     PDF renders from — @react-pdf has no cascade and no custom properties, so
+     the two cannot share a declaration. brand.test.ts parses this block and
+     fails when they disagree, which is the only thing keeping an exported
+     determination looking like the screen it came from. Change a value here
+     and change it there. */
+
   /* Surfaces — warm neutrals; this is a document tool, not a dashboard. */
   --page: #f7f7f5;
   --surface-1: #ffffff;
@@ -26,29 +33,48 @@
   --text-muted: #6b6962;
   --text-inverse: #f7f7f5;
 
-  /* Accent — used sparingly, for the primary action and focus rings. */
-  --accent: #1f5fa8;
-  --accent-hover: #17497f;
-  --accent-subtle: #e8f0f9;
+  /* Accent — a deep harbour teal, used sparingly for the primary action and
+     focus rings. Reads as ink on a shipping document rather than as a web
+     link, and holds ~7:1 on white so it can carry small text. */
+  --accent: #0f5666;
+  --accent-hover: #0b4351;
+  --accent-subtle: #e3eff2;
   --accent-text: #ffffff;
 
   /* Semantic status. Confidence bands and duty warnings lean on these. */
   --ok: #1d7a4c;
   --ok-subtle: #e6f4ec;
-  --warn: #a1620a;
+  /* Darkened from #a1620a to the value the PDF was already using: the two
+     renderers disagreed, and the darker one is the one that holds 4.5:1. */
+  --warn: #8a5208;
   --warn-subtle: #fbf0dc;
   --danger: #a52a1a;
   --danger-subtle: #fbeae7;
   --info: #2a5f8f;
   --info-subtle: #e8f0f7;
 
-  --radius: 8px;
-  --radius-lg: 12px;
+  /* Tariff schedules are printed as ruled boxes, not rounded cards. The radius
+     is small enough to soften a tap target without pretending this is a
+     consumer app. */
+  --radius: 6px;
+  --radius-lg: 10px;
   --shadow-sm: 0 1px 2px rgb(20 19 15 / 0.06);
   --shadow: 0 2px 8px rgb(20 19 15 / 0.08);
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  /* Three voices — see src/app/fonts.ts for why. The `--font-*` families fall
+     back to the system stack, so a failed font load degrades rather than
+     breaks. */
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-archivo-narrow), var(--font-archivo), ui-sans-serif,
+    system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", "Cascadia Mono",
+    Menlo, Consolas, monospace;
+
+  /* Field captions are set small, condensed and wide-tracked, the way a
+     customs form labels the box beneath it. */
+  --caption-size: 0.6875rem;
+  --caption-tracking: 0.09em;
 
   color-scheme: light;
 }
@@ -67,10 +93,10 @@
     --text-muted: #9a988f;
     --text-inverse: #14130f;
 
-    --accent: #6aa5e0;
-    --accent-hover: #8ebcea;
-    --accent-subtle: #17293c;
-    --accent-text: #0d1929;
+    --accent: #62bcd0;
+    --accent-hover: #8ad2e2;
+    --accent-subtle: #10303a;
+    --accent-text: #06202a;
 
     --ok: #5fc38e;
     --ok-subtle: #14291f;
@@ -102,10 +128,10 @@
   --text-muted: #9a988f;
   --text-inverse: #14130f;
 
-  --accent: #6aa5e0;
-  --accent-hover: #8ebcea;
-  --accent-subtle: #17293c;
-  --accent-text: #0d1929;
+  --accent: #62bcd0;
+  --accent-hover: #8ad2e2;
+  --accent-subtle: #10303a;
+  --accent-text: #06202a;
 
   --ok: #5fc38e;
   --ok-subtle: #14291f;
@@ -152,6 +178,7 @@
   --color-info-subtle: var(--info-subtle);
 
   --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
   --font-mono: var(--font-mono);
 
   --radius-DEFAULT: var(--radius);
@@ -184,12 +211,144 @@ body {
   border-radius: 3px;
 }
 
-/* HTS numbers are read digit by digit and compared across rows — tabular
+/* ===========================================================================
+   THE FORM LANGUAGE
+   ---------------------------------------------------------------------------
+   Every artifact in this trade — an entry summary, a commercial invoice, a
+   bill of lading, the tariff schedule itself — is a ruled form: boxes with
+   small condensed captions above the values they hold. That is not decoration,
+   it is how the people who use those documents find things, and it is the one
+   visual language an analyst already reads fluently.
+
+   So the interface borrows it rather than inventing another card layout: ruled
+   boxes with captions, numbers set in a tabular mono, and status shown as a
+   struck mark rather than a coloured pill. What it deliberately does not
+   borrow is the density — a customs form is designed for paper at arm's
+   length, this is read on a phone.
+   ======================================================================== */
+
+/* HTS numbers are read digit by digit and compared down a column — tabular
    figures stop them jittering between lines. */
 .hts-code {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
+}
+
+/* The caption above a field. Condensed and wide-tracked so a full label —
+   UNIT OF QUANTITY, not UOQ — fits the column at a readable size. */
+.caption {
+  font-family: var(--font-display);
+  font-size: var(--caption-size);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: var(--caption-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* A ruled box holding one value under its caption. */
+.field {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  padding: 0.5rem 0.75rem;
+  min-width: 0;
+}
+
+.field-value {
+  margin-top: 0.125rem;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* A block of fields sharing their rules, the way boxes do on a printed form.
+   The wrapper owns the outer radius and clips its children, so the corners are
+   right no matter how many fields there are or how they reflow — working the
+   radius out per-child breaks the moment a grid wraps to a second row. */
+.field-block {
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.field-block .field {
+  border-radius: 0;
+}
+
+/* `-1px` margins collapse the doubled rule between neighbours into a single
+   hairline. The grid stays responsive so it reflows to one column on a narrow
+   phone rather than scrolling sideways. */
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0;
+}
+
+.field-grid > .field {
+  border-radius: 0;
+  margin: 0 -1px -1px 0;
+}
+
+/* ===========================================================================
+   TOUCH
+   ---------------------------------------------------------------------------
+   Measured, not guessed: `scripts/dev/audit-touch-targets.mjs` walks every
+   interactive element at phone width and lists what falls short. It found 37,
+   including the candidate radio at 16x16 — the control that chooses which code
+   an analyst stands behind.
+
+   44px is the floor both platform guidelines land on. These give elements real
+   size rather than an invisible expanded hit region: an overlay large enough to
+   fix a 16px control is large enough to cover its neighbour, and a tap that
+   lands on the wrong control is worse than one that misses.
+   ======================================================================== */
+
+.tap-target {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Square controls — icon buttons with no text to set their width. */
+.tap-icon {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Any text field. 16px is not a taste call: iOS Safari zooms the viewport when
+   a focused input is below it, and the zoom does not reverse on blur — the
+   analyst is left on a page wider than the screen, mid-analysis. */
+input[type="text"],
+input[type="email"],
+input[type="search"],
+textarea,
+select {
+  font-size: 16px;
+}
+
+/* A status mark, struck rather than filled — the shape of a rubber stamp on a
+   cleared document. It takes its colour from whatever sets `color` on it, so
+   the same mark serves "complete" and "needs more information" without a
+   palette of pill variants, and it never invents a red that would read as an
+   error where none happened. */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  padding: 0.1875rem 0.5rem;
+  font-family: var(--font-display);
+  font-size: var(--caption-size);
+  font-weight: 700;
+  letter-spacing: var(--caption-tracking);
+  text-transform: uppercase;
+  /* Not rotated. A tilted stamp is charming once and unreadable at 11px on a
+     phone, and this one carries the run's actual status. */
 }
 
 /* Respect a reduced-motion preference for the streaming progress indicators. */
@@ -206,6 +365,9 @@ body {
 /* Scrollable regions (long subtree listings, GRI narratives). */
 .scroll-region {
   overflow-y: auto;
+  /* Stop a flick that reaches the end of the log from continuing into the
+     page behind it — on a phone that reads as the layout jumping. */
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }

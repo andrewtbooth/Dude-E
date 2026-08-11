@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+
+/** How far off the bottom the analyst can be before auto-follow gives up. */
+const FOLLOW_THRESHOLD_PX = 48;
 
 export interface ProgressEntry {
   kind: "status" | "thinking" | "tool" | "warning";
@@ -21,13 +24,50 @@ export function ProgressLog({
   entries: ProgressEntry[];
   running: boolean;
 }) {
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
 
+  /**
+   * Whether to keep following the newest entry.
+   *
+   * Held in a ref and updated from the analyst's own scrolling rather than
+   * measured when a new entry lands. By the time the effect below runs, React
+   * has already appended the entry and grown `scrollHeight`, so the distance
+   * to the bottom is measured against a box that just got taller — one entry
+   * taller than the threshold makes it look like the analyst scrolled away,
+   * and following then stops for the rest of the run. Reading intent from the
+   * scroll event instead means the box can grow by any amount without being
+   * mistaken for the analyst moving.
+   */
+  const following = useRef(true);
+
+  // Keep the log pinned to its newest entry by moving the box's own
+  // scrollTop. `scrollIntoView` walks the whole ancestor chain, so on a phone
+  // — where the log sits mid-page — every streamed entry dragged the document
+  // out from under the analyst's thumb.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "nearest" });
+    const box = scrollRef.current;
+    if (!box || !following.current) return;
+    box.scrollTop = box.scrollHeight;
   }, [entries.length]);
 
+  // Scrolling up to re-read an earlier tool call has to survive the next entry
+  // arriving; scrolling back down has to resume following.
+  function onScroll(event: React.UIEvent<HTMLDivElement>) {
+    const box = event.currentTarget;
+    following.current =
+      box.scrollHeight - box.scrollTop - box.clientHeight <=
+      FOLLOW_THRESHOLD_PX;
+  }
+
   if (entries.length === 0 && !running) return null;
+
+  // While the run is going the log is the whole point — it is the only
+  // evidence the thing is alive. The moment it finishes it becomes history,
+  // and leaving it expanded puts a screenful of completed steps between the
+  // analyst and the answer they were waiting for. So it folds itself away,
+  // and re-opens on request.
+  const open = running || expanded;
 
   return (
     <section
@@ -42,12 +82,26 @@ export function ProgressLog({
             aria-hidden="true"
           />
         )}
-        <h2 className="text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-          {running ? "Working" : "Analysis log"}
-        </h2>
+        <h2 className="caption">{running ? "Working" : "Analysis log"}</h2>
+
+        {!running && (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            className="tap-target ml-auto text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+          >
+            {expanded ? "Hide" : `Show ${entries.length} steps`}
+          </button>
+        )}
       </header>
 
-      <div className="scroll-region max-h-72 px-4 py-3">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        hidden={!open}
+        className="scroll-region max-h-72 px-4 py-3"
+      >
         <ol className="space-y-1.5">
           {entries.map((entry, index) => (
             <li
@@ -74,7 +128,6 @@ export function ProgressLog({
             </li>
           ))}
         </ol>
-        <div ref={endRef} />
       </div>
     </section>
   );

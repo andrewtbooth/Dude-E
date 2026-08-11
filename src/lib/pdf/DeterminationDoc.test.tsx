@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { describe, expect, it } from "vitest";
 import {
@@ -66,17 +68,18 @@ describe("byte reproducibility", () => {
  * footer implying Chapter 99 had been considered, and a reader could not tell
  * that from "screened, nothing applies".
  */
+/** Render a determination and read its text back out. */
+async function textOf(view: Parameters<typeof DeterminationDoc>[0]["view"]) {
+  const { getDocumentProxy, extractText } = await import("unpdf");
+  const buffer = await renderToBuffer(<DeterminationDoc view={view} />);
+  const doc = await getDocumentProxy(new Uint8Array(buffer), { verbosity: 0 });
+  return (await extractText(doc, { mergePages: true })).text;
+}
+
+/** Section and callout titles are letter-spaced for display; compare without whitespace. */
+const squashed = (text: string) => text.replace(/\s+/g, "");
+
 describe("Chapter 99 disclosure", () => {
-  async function textOf(view: Parameters<typeof DeterminationDoc>[0]["view"]) {
-    const { getDocumentProxy, extractText } = await import("unpdf");
-    const buffer = await renderToBuffer(<DeterminationDoc view={view} />);
-    const doc = await getDocumentProxy(new Uint8Array(buffer), { verbosity: 0 });
-    return (await extractText(doc, { mergePages: true })).text;
-  }
-
-  /** Callout titles are letter-spaced for display; compare without whitespace. */
-  const squashed = (text: string) => text.replace(/\s+/g, "");
-
   /** The same fixture with nothing matched — the case that used to render blank. */
   function withNoChapter99() {
     const view = sampleDeterminationView();
@@ -253,6 +256,7 @@ describe("automated checks section", () => {
             { code: "9617.00.10.99", reason: "not present in this HTSUS revision" },
           ],
           corrections: [],
+          substitutedRecommendation: null,
         },
       }),
     );
@@ -272,13 +276,166 @@ describe("automated checks section", () => {
               field: "duty.general",
               modelValue: "3.4%",
               indexValue: "7.2%",
+              severity: "material" as const,
             },
           ],
+          substitutedRecommendation: null,
         },
       }),
     );
     expect(text).toContain("Values corrected from the tariff");
     expect(text).toContain("3.4%");
     expect(text).toContain("7.2%");
+  }, 30_000);
+
+  it("counts wording differences instead of itemising them", async () => {
+    // Every real correction seen so far has been a leading tariff number or a
+    // trailing colon on a description the model quoted. Listing those at full
+    // length pushed a genuine duty-rate correction off the reader's attention,
+    // so they are summarised — but not dropped, because the reader is entitled
+    // to know the model's transcription did not match the published text.
+    const text = await textOf(
+      sampleDeterminationView({
+        verification: {
+          rejectedCodes: [],
+          corrections: [
+            {
+              htsCode: "9617.00.10.00",
+              field: "description_path",
+              modelValue: "9617.00 Vacuum flasks and other vacuum vessels",
+              indexValue: "Vacuum flasks and other vacuum vessels:",
+              severity: "transcription" as const,
+            },
+          ],
+          substitutedRecommendation: null,
+        },
+      }),
+    );
+    const flat = squashed(text);
+    expect(flat).toContain("Wordingnormalised");
+    expect(flat).not.toContain("Valuescorrectedfromthetariff");
+    expect(flat).not.toContain("9617.00Vacuumflasks");
+  }, 30_000);
+});
+
+describe("the fixed footer and the space reserved for it", () => {
+  /**
+   * The footer is absolutely positioned, so the page reserves room for it by
+   * arithmetic — `paddingBottom` — and nothing pushes back when that number is
+   * too small. It was too small: an eight-line disclaimer at 7pt overlapped
+   * the last paragraph of body text on page one, printing both on top of each
+   * other. Every text assertion in this file passed throughout, because
+   * extracting text from a PDF does not care whether the glyphs collide.
+   *
+   * So this reads the source rather than the render. It cannot see overlap,
+   * but it can see the thing that caused it — a footer growing past the space
+   * set aside for it — and say so at the point where someone is editing the
+   * text.
+   */
+  const source = fs.readFileSync(
+    path.join(process.cwd(), "src/lib/pdf/DeterminationDoc.tsx"),
+    "utf8",
+  );
+
+  it("keeps the per-page footer to about two lines", () => {
+    const body = /<Text style={styles\.footerText}>([\s\S]*?)<\/Text>/.exec(
+      source,
+    )?.[1];
+    expect(body).toBeDefined();
+    const words = body!.trim().split(/\s+/).length;
+
+    // ~24 words fits two lines at 7pt across the reserved width. Well past
+    // that and `paddingBottom` on `styles.page` has to grow with it — and the
+    // rendered page has to be looked at, which no test here can do.
+    expect(words).toBeLessThan(40);
+  });
+
+  it("still says everything it used to, in a section", async () => {
+    // Moving the text out of the footer must not quietly drop any of it.
+    const text = squashed(await textOf(sampleDeterminationView()));
+    for (const clause of [
+      "SCOPE AND LIMITATIONS",
+      "not a ruling letter",
+      "self-asserted at sign-in and not authenticated",
+      "screened only partially",
+      "does not establish that none apply",
+      "19 CFR Part 177",
+      "confirm currency before filing",
+    ]) {
+      expect(text).toContain(squashed(clause));
+    }
+  }, 30_000);
+});
+
+describe("a recommendation the model did not actually make", () => {
+  /**
+   * When verification rejects the model's own pick, the application promotes
+   * the best surviving candidate — which is the right recovery and an invisible
+   * one. `recommended_hts_code` comes back populated either way, so months
+   * later a reader of this document has no way to tell the code above was a
+   * fallback rather than the analysis's conclusion. That matters more on paper
+   * than on screen: the screen had a run behind it, the document is all that
+   * is left.
+   */
+  it("says so, and names the code the model actually gave", async () => {
+    const view = sampleDeterminationView();
+    const text = squashed(
+      await textOf({
+        ...view,
+        verification: {
+          ...view.verification,
+          substitutedRecommendation: {
+            modelSaid: "9617.00.10.99",
+            using: "9617.00.10.00",
+          },
+        },
+      }),
+    );
+
+    expect(text).toContain(squashed("did not recommend the code it appeared to"));
+    expect(text).toContain("9617.00.10.99");
+    expect(text).toContain(squashed("Weigh the rest of the reasoning accordingly"));
+  }, 30_000);
+
+  it("stays silent when the model's own pick verified", async () => {
+    // The common case. This section appearing on every determination would
+    // make it furniture.
+    const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).not.toContain(squashed("did not recommend the code it appeared to"));
+  }, 30_000);
+});
+
+describe("a determination on a code with no published reporting number", () => {
+  /**
+   * Louder on paper than on screen, and deliberately so. An entry is filed
+   * against a ten-digit reporting number; this document prints a code under a
+   * heading that says DETERMINATION, and whoever reads it months from now has
+   * no way to know the schedule stopped short unless the page says so.
+   */
+  const onWatchProvision = () => {
+    const view = sampleDeterminationView();
+    return {
+      ...view,
+      selected: { ...view.selected, hts_code: "9101.11.40" },
+    };
+  };
+
+  it("says the schedule publishes no ten-digit number for it", async () => {
+    const text = squashed(await textOf(onWatchProvision()));
+    expect(text).toContain(squashed("NO TEN-DIGIT REPORTING NUMBER IS PUBLISHED"));
+    expect(text).toContain(squashed("terminates this provision at 8 digits"));
+  }, 30_000);
+
+  it("does not answer the filing question either way", async () => {
+    // The application's job is to say the schedule stopped short. Asserting
+    // the provision is or is not enterable would be this tool ruling on CBP
+    // practice from tariff text that does not settle it.
+    const text = await textOf(onWatchProvision());
+    expect(text).toContain("Confirm the entry number with the filer");
+  }, 30_000);
+
+  it("stays silent on an ordinary ten-digit line", async () => {
+    const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).not.toContain(squashed("NO TEN-DIGIT REPORTING NUMBER"));
   }, 30_000);
 });

@@ -164,6 +164,13 @@ export interface HtsusManifest {
    */
   isPartial: boolean;
   noteCount: number;
+  /**
+   * Which version of the parser's derivation rules built this snapshot.
+   *
+   * Absent on snapshots written before the field existed, which is itself the
+   * signal that they predate the current rules. See DERIVATION_VERSION.
+   */
+  derivationVersion?: number;
   scheduleBCount: number;
   /**
    * The Schedule B edition year, e.g. "2026". Census versions the export

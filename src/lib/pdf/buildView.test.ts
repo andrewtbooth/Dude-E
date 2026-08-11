@@ -61,7 +61,13 @@ function run(
       assumptions: ["Assumed stainless steel."],
       info_that_would_raise_confidence: [],
     },
-    verification: { verifiedCodes: [], rejectedCodes: [], corrections: [] },
+    verification: {
+        verifiedCodes: [],
+        rejectedCodes: [],
+        corrections: [],
+        substitutedRecommendation: null,
+        incompleteReportingNumbers: [],
+      },
     usage: {
       inputTokens: 1000,
       cacheWriteTokens: 2000,

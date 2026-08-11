@@ -17,7 +17,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="text-xs text-[var(--text-muted)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline disabled:opacity-50"
+      className="tap-target min-w-11 justify-center whitespace-nowrap px-1 text-xs text-[var(--text-muted)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline disabled:opacity-50"
     >
       {pending ? "Signing out…" : "Sign out"}
     </button>

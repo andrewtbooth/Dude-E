@@ -22,7 +22,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { ProgressEvent } from "./classify";
+import { backfillRunFields, type ProgressEvent } from "./classify";
 
 /** Marks a run as replayed. Appears in the PDF provenance block verbatim. */
 export const REPLAY_MODEL_PREFIX = "replay:";
@@ -118,7 +118,12 @@ export async function* replayCassette(
       const model = event.run.model.startsWith(REPLAY_MODEL_PREFIX)
         ? event.run.model
         : `${REPLAY_MODEL_PREFIX}${event.run.model}`;
-      yield { ...event, run: { ...event.run, model } };
+      // Same reason a stored determination gets backfilled: a cassette is a
+      // verbatim copy of a run from whenever it was recorded, so it is missing
+      // any field added since. Left alone, an old cassette exercises the UI
+      // with a shape production never produces — which is the opposite of what
+      // a fixture is for.
+      yield { ...event, run: backfillRunFields({ ...event.run, model }) };
       continue;
     }
     yield event;

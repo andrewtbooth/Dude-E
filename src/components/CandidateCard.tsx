@@ -2,6 +2,8 @@
 
 import { useId, useState } from "react";
 import type { Candidate } from "@/lib/agent/schema";
+import { hasPublishedReportingNumber } from "@/lib/hts/parse";
+import { HtsCode } from "./HtsCode";
 
 export function CandidateCard({
   candidate,
@@ -37,32 +39,54 @@ export function CandidateCard({
           : "rounded-lg border border-[var(--border)] bg-[var(--surface-1)] p-4"
       }
     >
-      <div className="flex items-start gap-3">
-        <input
-          type="radio"
-          id={inputId}
-          name="selected-candidate"
-          checked={selected}
-          onChange={onSelect}
-          className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent)]"
-        />
+      <div className="flex items-start gap-1">
+        {/* The radio itself measured 16x16 — the smallest control in the app,
+            and the one that decides which code a determination is written
+            against. The visible dot grows a little; the tappable area around
+            it grows to 44x44. */}
+        <label
+          htmlFor={inputId}
+          className="tap-icon -ml-1.5 shrink-0 cursor-pointer"
+          aria-label="Select this classification"
+        >
+          <input
+            type="radio"
+            id={inputId}
+            name="selected-candidate"
+            checked={selected}
+            onChange={onSelect}
+            className="h-5 w-5 accent-[var(--accent)]"
+          />
+        </label>
 
         <div className="min-w-0 flex-1">
           <label htmlFor={inputId} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="hts-code text-lg font-semibold text-[var(--text-primary)]">
-              {candidate.hts_code}
-            </span>
+            <HtsCode
+              code={candidate.hts_code}
+              className="text-[var(--text-primary)]"
+            />
             <ConfidenceBadge value={candidate.confidence} />
             {recommendedCode !== null &&
               candidate.hts_code.replace(/\D/g, "") ===
                 recommendedCode.replace(/\D/g, "") && (
-                <span className="rounded bg-[var(--accent-subtle)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--accent)]">
+                <span className="stamp text-[var(--accent)]">
                   Model&rsquo;s pick
                 </span>
               )}
           </label>
 
           <Breadcrumb path={candidate.description_path} />
+
+          {!hasPublishedReportingNumber(candidate.hts_code) && (
+            <p className="mt-2 border-l-2 border-[var(--warn)] pl-3 text-xs text-[var(--text-secondary)]">
+              <span className="font-medium text-[var(--warn)]">
+                No ten-digit reporting number published.{" "}
+              </span>
+              The schedule terminates this line at{" "}
+              {candidate.hts_code.replace(/\D/g, "").length} digits with no unit
+              of quantity. Confirm what your broker should key before filing.
+            </p>
+          )}
 
           <p className="mt-2.5 text-sm leading-relaxed text-[var(--text-secondary)]">
             {candidate.reasoning.justification}
@@ -113,7 +137,7 @@ export function CandidateCard({
             onClick={() => setShowReasoning((open) => !open)}
             aria-expanded={showReasoning}
             aria-controls={detailsId}
-            className="mt-3 text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+            className="tap-target mt-1 text-xs font-medium text-[var(--accent)] underline-offset-2 hover:underline"
           >
             {showReasoning ? "Hide" : "Show"} GRI analysis
             {candidate.reasoning.notes_applied.length > 0 &&
@@ -162,49 +186,71 @@ function ConfidenceBadge({ value }: { value: number }) {
   const pct = Math.round(Math.min(Math.max(value, 0), 1) * 100);
   const tone =
     pct >= 80
-      ? "bg-[var(--ok-subtle)] text-[var(--ok)]"
+      ? "text-[var(--ok)]"
       : pct >= 55
-        ? "bg-[var(--warn-subtle)] text-[var(--warn)]"
-        : "bg-[var(--danger-subtle)] text-[var(--danger)]";
+        ? "text-[var(--warn)]"
+        : "text-[var(--danger)]";
 
   return (
     <span
-      className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${tone}`}
+      className={`stamp ${tone}`}
       title="The model's own confidence. Treat anything below 80% as needing a second look."
     >
-      {pct}% confidence
+      <span className="hts-code font-semibold">{pct}%</span> confidence
     </span>
   );
 }
 
+/**
+ * The four rate columns as a ruled block, the way the schedule prints them.
+ *
+ * These are the numbers that get transcribed onto an entry, and they are read
+ * as a set — General against Column 2, rate against unit. Loose label/value
+ * pairs on a flex row let the eye pair a value with the wrong caption on a
+ * narrow screen; boxes sharing a rule do not.
+ */
 function DutyRow({ candidate }: { candidate: Candidate }) {
   return (
-    <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-xs">
-      <Duty label="General" value={candidate.tariff.duty.general || "—"} />
-      <Duty label="Special" value={candidate.tariff.duty.special || "—"} />
-      <Duty label="Column 2" value={candidate.tariff.duty.column_2 || "—"} />
-      <Duty
-        label="Unit"
-        value={candidate.tariff.unit_of_quantity.join(", ") || "—"}
-      />
+    <div className="mt-3">
+      <dl className="field-block text-xs">
+        <div className="field-grid">
+          <Duty label="General" value={candidate.tariff.duty.general || "—"} />
+          <Duty label="Column 2" value={candidate.tariff.duty.column_2 || "—"} />
+          <Duty
+            label="Unit of quantity"
+            value={candidate.tariff.unit_of_quantity.join(", ") || "—"}
+          />
+        </div>
+        {/* Special spans the full width, because it is not a figure. It is a
+            rate followed by the programs it applies under — "Free (A,AU,BH,CL,
+            CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,S,SG)" — and a quarter-width tabular
+            column broke that across eight lines of monospace with the
+            parentheses orphaned. Set in the text face for the same reason. */}
+        <div className="field">
+          <dt className="caption">Special (program rates)</dt>
+          <dd className="field-value">
+            {candidate.tariff.duty.special || "—"}
+          </dd>
+        </div>
+      </dl>
       {candidate.tariff.duty.rates_published_on && (
-        <div className="basis-full text-[11px] text-[var(--text-muted)]">
+        <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">
           Rates published on{" "}
           <span className="hts-code">{candidate.tariff.duty.rates_published_on}</span>{" "}
           and inherited by this statistical line.
-        </div>
+        </p>
       )}
-    </dl>
+    </div>
   );
 }
 
 function Duty({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
-        {label}
-      </dt>
-      <dd className="text-[var(--text-primary)]">{value}</dd>
+    <div className="field">
+      <dt className="caption">{label}</dt>
+      {/* Rates are figures and get read as figures — mono, tabular, so a
+          column of them lines up decimal under decimal. */}
+      <dd className="field-value hts-code">{value}</dd>
     </div>
   );
 }
@@ -341,7 +387,7 @@ function ScheduleB({ candidate }: { candidate: Candidate }) {
       </p>
       {scheduleB.considered.length > 0 && (
         <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-[var(--text-muted)]">
+          <summary className="tap-target cursor-pointer text-xs text-[var(--text-muted)]">
             {scheduleB.considered.length} other export code
             {scheduleB.considered.length === 1 ? "" : "s"} under this subheading
           </summary>

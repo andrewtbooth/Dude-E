@@ -10,7 +10,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { parseUsitcRows } from "../../src/lib/hts/parse";
+import { DERIVATION_VERSION, parseUsitcRows } from "../../src/lib/hts/parse";
 import {
   INDEX_FILENAME,
   MANIFEST_FILENAME,
@@ -41,6 +41,9 @@ const manifest: HtsusManifest = {
   noteCount: 3,
   scheduleBCount: FIXTURE_SCHEDULE_B.length,
   scheduleBEdition: null,
+  // Built by the same parser as a real snapshot, so it carries the same stamp
+  // — otherwise the boot check reads a freshly-seeded fixture as stale.
+  derivationVersion: DERIVATION_VERSION,
   warnings: [
     "This is a four-chapter development fixture, not a synced tariff edition. Any determination produced against it is meaningless. Run `npm run sync:htsus` for real data.",
   ],

@@ -11,7 +11,7 @@ export default async function SplashPage() {
   const revision = tryGetActiveRevision();
 
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className="flex min-h-dvh flex-col">
       <div className="flex justify-end p-5">
         <ThemeToggle />
       </div>
