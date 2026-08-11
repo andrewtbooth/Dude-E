@@ -304,6 +304,19 @@ export const classificationResultSchema = z.object({
     ),
   chapter_98_provisions: z
     .array(chapter98Schema)
+    /**
+     * Defaulted, unlike every other field, and for a measured reason.
+     *
+     * The output schema does not fit the API's grammar limit and never has, so
+     * on a live run the shape is enforced by the prompt and validated on
+     * return. Validation is all-or-nothing: a missing key throws, and the
+     * analyst loses a run that took minutes at max effort along with what it
+     * cost. Every other field has survived real runs; this one is new and
+     * unproven, and it is the one field whose absence has an obviously correct
+     * reading — no provision was named. Treating that as an empty list is what
+     * `backfillRunFields` already does for runs stored before it existed.
+     */
+    .default([])
     .describe(
       "Chapter 98 provisions the stated facts point at, if any. These are claimed alongside the classification on a particular entry — never instead of it — so never put one in candidates or in recommended_hts_code. Empty is the normal answer; only name one when something in the facts actually raises it.",
     ),
