@@ -138,6 +138,7 @@ export function sampleDeterminationView(
       rejectedCodes: [],
       corrections: [],
       substitutedRecommendation: null,
+      reportingNumberNotes: [],
     },
     model: "claude-opus-5",
     effort: "max",

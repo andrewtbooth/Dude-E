@@ -11,7 +11,10 @@ import {
   THINKING_BUDGET_TOKENS,
   config,
 } from "../config";
-import { hasPublishedReportingNumber } from "../hts/parse";
+import {
+  reportingNumberSource,
+  type ReportingNumberSource,
+} from "../hts/parse";
 import {
   getActiveRevision,
   lookupExact,
@@ -113,18 +116,26 @@ export interface ClassificationRun {
      */
     substitutedRecommendation: { modelSaid: string; using: string } | null;
     /**
-     * Verified codes for which the schedule publishes no ten-digit reporting
-     * number — see `hasPublishedReportingNumber`.
+     * Verified codes whose ten-digit reporting number is not printed on the
+     * line — see `reportingNumberSource`.
      *
-     * Not a rejection. These are the deepest lines the schedule publishes, so
-     * they are the most specific classification available and they stay on
-     * offer. But an entry is filed against a ten-digit number, and printing
-     * one of these as a finished answer hands a filer something their broker
-     * may not be able to key. Whether these particular provisions are filable
-     * as published is a question about CBP practice; the application's job is
-     * to say that the schedule stopped short, not to decide the question.
+     * Not a rejection, and not a defect in the code. These are the deepest
+     * lines the schedule publishes and they stay on offer; what is recorded
+     * here is that arriving at the number an entry is keyed against takes a
+     * step the line itself does not show. For the Chapter 91 watch provisions
+     * that step is chapter statistical note 1, which publishes the suffixes and
+     * requires the article to be reported as separately valued components.
+     *
+     * The footnote is kept verbatim so a determination can name the note the
+     * schedule actually pointed at rather than one this code inferred.
      */
-    incompleteReportingNumbers: { code: string; digits: number }[];
+    reportingNumberNotes: {
+      code: string;
+      digits: number;
+      source: Exclude<ReportingNumberSource, "on_the_line">;
+      /** The line's footnote, when it points at a note. */
+      footnote: string | null;
+    }[];
   };
   usage: {
     /** Uncached prompt tokens, billed at full rate. */
@@ -167,15 +178,30 @@ export function backfillRunFields(run: ClassificationRun): ClassificationRun {
     // is the honest reading — it does not claim there was none.
     run.verification.substitutedRecommendation = null;
   }
-  if (run.verification && !run.verification.incompleteReportingNumbers) {
-    // Recomputable, unlike the substitution above: the test is a property of
-    // the code itself, so a run stored before this existed can be told the
-    // truth about its own codes rather than assumed innocent.
-    run.verification.incompleteReportingNumbers = (
+  if (run.verification && !run.verification.reportingNumberNotes) {
+    // Recomputable, unlike the substitution above — but only against the index,
+    // because the answer lives in the line's footnotes and a stored run keeps
+    // codes, not lines. Runs written before this field existed carry the old
+    // `incompleteReportingNumbers`, whose entries asserted the wrong thing; they
+    // are dropped rather than translated, and the codes are re-examined here.
+    run.verification.reportingNumberNotes = (
       run.verification.verifiedCodes ?? []
-    )
-      .filter((code) => !hasPublishedReportingNumber(code))
-      .map((code) => ({ code, digits: code.replace(/\D/g, "").length }));
+    ).flatMap((code) => {
+      const line = lookupExact(code);
+      const source = reportingNumberSource(code, line?.footnotes ?? []);
+      if (source === "on_the_line") return [];
+      return [
+        {
+          code,
+          digits: code.replace(/\D/g, "").length,
+          source,
+          footnote:
+            line?.footnotes.find((footnote) =>
+              /statistical note/i.test(footnote),
+            ) ?? null,
+        },
+      ];
+    });
   }
   for (const correction of run.verification?.corrections ?? []) {
     if (correction.severity) continue;
@@ -985,7 +1011,8 @@ export function verifyAgainstTariff(result: ClassificationResult): {
   const verifiedCodes: string[] = [];
   const rejectedCodes: { code: string; reason: string }[] = [];
   const corrections: CodeCorrection[] = [];
-  const incompleteReportingNumbers: { code: string; digits: number }[] = [];
+  const reportingNumberNotes: ClassificationRun["verification"]["reportingNumberNotes"] =
+    [];
 
   const kept: Candidate[] = [];
 
@@ -1031,17 +1058,22 @@ export function verifyAgainstTariff(result: ClassificationResult): {
 
     verifiedCodes.push(line.htsNo);
 
-    // Verified is not the same as filable. With Chapters 98 and 99 excluded as
-    // classifications, what remains are the 95 Chapter 91 watch provisions: the
-    // deepest thing the schedule publishes, and still short of the ten-digit
-    // number an entry is filed against — see hasPublishedReportingNumber. They
-    // stay as candidates, because they are the most specific classification
-    // available, and are named here so nothing downstream prints one as a
-    // finished answer.
-    if (!hasPublishedReportingNumber(line.htsNo)) {
-      incompleteReportingNumbers.push({
+    // Classified is not the same as reportable-as-printed. With Chapters 98 and
+    // 99 excluded as classifications, what remains short are the 95 Chapter 91
+    // watch provisions, whose ten-digit suffixes are published in the chapter's
+    // statistical note rather than on the line. Recorded here, from the line's
+    // own footnote, so the screen and the determination can say where the
+    // reporting number comes from instead of guessing from the digit count.
+    const source = reportingNumberSource(line.htsNo, line.footnotes);
+    if (source !== "on_the_line") {
+      reportingNumberNotes.push({
         code: line.htsNo,
         digits: line.htsNo.replace(/\D/g, "").length,
+        source,
+        footnote:
+          line.footnotes.find((footnote) =>
+            /statistical note/i.test(footnote),
+          ) ?? null,
       });
     }
 
@@ -1157,7 +1189,7 @@ export function verifyAgainstTariff(result: ClassificationResult): {
       verifiedCodes,
       rejectedCodes,
       corrections,
-      incompleteReportingNumbers,
+      reportingNumberNotes,
       substitutedRecommendation:
         !modelDeclinedToRecommend && !recommendedStillValid && recommended
           ? { modelSaid: result.recommended_hts_code!, using: recommended }

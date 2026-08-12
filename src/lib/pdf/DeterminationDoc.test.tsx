@@ -257,6 +257,7 @@ describe("automated checks section", () => {
           ],
           corrections: [],
           substitutedRecommendation: null,
+          reportingNumberNotes: [],
         },
       }),
     );
@@ -280,6 +281,7 @@ describe("automated checks section", () => {
             },
           ],
           substitutedRecommendation: null,
+          reportingNumberNotes: [],
         },
       }),
     );
@@ -308,6 +310,7 @@ describe("automated checks section", () => {
             },
           ],
           substitutedRecommendation: null,
+          reportingNumberNotes: [],
         },
       }),
     );
@@ -405,37 +408,62 @@ describe("a recommendation the model did not actually make", () => {
   }, 30_000);
 });
 
-describe("a determination on a code with no published reporting number", () => {
+describe("a determination on a code whose reporting number is in a note", () => {
   /**
-   * Louder on paper than on screen, and deliberately so. An entry is filed
-   * against a ten-digit reporting number; this document prints a code under a
-   * heading that says DETERMINATION, and whoever reads it months from now has
-   * no way to know the schedule stopped short unless the page says so.
+   * Louder on paper than on screen, and deliberately so. This document prints
+   * a code under a heading that says DETERMINATION, and whoever reads it
+   * months from now has no way to know that keying it takes a step the code
+   * does not show unless the page says so.
+   *
+   * The page used to say the opposite of the truth — that no ten-digit number
+   * was published for the line. Chapter 91 statistical note 1 publishes them
+   * all, as suffixes on separately valued components, so what the document
+   * owes the reader is the scheme, not a warning.
    */
   const onWatchProvision = () => {
     const view = sampleDeterminationView();
     return {
       ...view,
       selected: { ...view.selected, hts_code: "9101.11.40" },
+      verification: {
+        ...view.verification,
+        reportingNumberNotes: [
+          {
+            code: "9101.11.40",
+            digits: 8,
+            source: "chapter_statistical_note" as const,
+            footnote: "See statistical note 1 to this chapter.",
+          },
+        ],
+      },
     };
   };
 
-  it("says the schedule publishes no ten-digit number for it", async () => {
+  it("names the note the schedule pointed at", async () => {
     const text = squashed(await textOf(onWatchProvision()));
-    expect(text).toContain(squashed("NO TEN-DIGIT REPORTING NUMBER IS PUBLISHED"));
-    expect(text).toContain(squashed("terminates this provision at 8 digits"));
+    expect(text).toContain(
+      squashed("REPORTING NUMBER IS BUILT FROM A CHAPTER STATISTICAL NOTE"),
+    );
+    expect(text).toContain(squashed("See statistical note 1 to this chapter."));
   }, 30_000);
 
-  it("does not answer the filing question either way", async () => {
-    // The application's job is to say the schedule stopped short. Asserting
-    // the provision is or is not enterable would be this tool ruling on CBP
-    // practice from tariff text that does not settle it.
-    const text = await textOf(onWatchProvision());
-    expect(text).toContain("Confirm the entry number with the filer");
+  it("explains the constructive separation the note requires", async () => {
+    // Without this the reader is told to go read a note and not why. The
+    // filing consequence — a line per component, including absent ones at
+    // zero — is the part that changes what they do.
+    const text = squashed(await textOf(onWatchProvision()));
+    expect(text).toContain(squashed("constructively separated into its components"));
+    expect(text).toContain(squashed("at zero quantity and value"));
+  }, 30_000);
+
+  it("no longer claims the schedule published nothing", async () => {
+    const text = squashed(await textOf(onWatchProvision()));
+    expect(text).not.toContain(squashed("NO TEN-DIGIT REPORTING NUMBER"));
   }, 30_000);
 
   it("stays silent on an ordinary ten-digit line", async () => {
     const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).not.toContain(squashed("CHAPTER STATISTICAL NOTE"));
     expect(text).not.toContain(squashed("NO TEN-DIGIT REPORTING NUMBER"));
   }, 30_000);
 });

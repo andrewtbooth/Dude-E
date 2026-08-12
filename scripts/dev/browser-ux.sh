@@ -62,13 +62,15 @@ echo ""
 echo "  mobile viewport — scroll containment, log follow, correction proportion"
 BASE="$BASE" node scripts/dev/browser-ux.mjs
 
-# --- second pass: a code the schedule publishes no reporting number for -------
+# --- second pass: a code whose reporting number lives in a chapter note -------
 #
-# 9101.11.40 is a real watch provision: the deepest line the schedule publishes,
-# eight digits, no unit of quantity. The interface has to say so, and the only
-# way to see that it does is to render it. Derived from the cassette above
-# rather than recorded, because it is the same run with a different code on it —
-# and cassettes are gitignored, so a committed fixture could not be used here.
+# 9101.11.40 is a real watch provision: eight digits, nothing beneath it in the
+# tree, no unit of quantity, and a footnote pointing at chapter statistical
+# note 1 — which publishes its ten-digit suffixes and requires the watch to be
+# reported as separately valued components. The interface has to say that, and
+# the only way to see that it does is to render it. Derived from the cassette
+# above rather than recorded, because it is the same run with a different code
+# on it — and cassettes are gitignored, so a committed fixture could not serve.
 VARIANT="/tmp/cassette-no-reporting-number.json"
 node -e '
   const fs = require("fs");
@@ -79,6 +81,10 @@ node -e '
     run.result.recommended_hts_code = "9101.11.40";
     for (const candidate of run.result.candidates) candidate.hts_code = "9101.11.40";
     run.verification.verifiedCodes = ["9101.11.40"];
+    // Dropped so the run is re-examined against the live snapshot on read,
+    // which is the same path a determination stored before the field existed
+    // takes when it is re-issued.
+    delete run.verification.reportingNumberNotes;
     delete run.verification.incompleteReportingNumbers;
   }
   fs.writeFileSync(process.argv[2], JSON.stringify(cassette));
@@ -101,7 +107,7 @@ for _ in $(seq 1 40); do
 done
 
 echo ""
-echo "  a code with no published ten-digit reporting number"
+echo "  a code whose reporting number comes from a chapter statistical note"
 BASE="$BASE" node scripts/dev/browser-ux-reporting-number.mjs
 
 # --- third pass: recovering a run the browser walked away from ---------------

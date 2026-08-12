@@ -199,35 +199,46 @@ chapter, it is true of nearly every product and therefore says nothing.
 Chapter 99 is different and stays: an additional duty is a consequence of the
 classification and the origin, so it belongs with the code.
 
-### Declarable is not the same as filable
+### The classification is not always the reporting number
 
-With Chapters 98 and 99 excluded as classifications, **95 lines** remain that are
-the deepest thing the schedule publishes and still stop short of the ten-digit
-number an entry is filed against — all of them Chapter 91 watch provisions. The
-evidence is uniform:
+With Chapters 98 and 99 excluded as classifications, **95 lines** remain that
+have nothing beneath them in the tariff tree and are still not the ten-digit
+number an entry is keyed against. All of them are Chapter 91 watch and clock
+provisions, and all 95 carry the same footnote:
 
-| | carries a unit of quantity |
-|---|---|
-| Every ten-digit leaf, Chapters 1–97 | **19,831 / 19,831** |
-| Chapter 91 ten-digit leaves | 82 / 82 |
-| **Chapter 91 eight-digit leaves** | **0 / 95** |
+> See statistical note 1 to this chapter.
 
-A reporting number reports a quantity, so a line with no unit is not one. And
-the schedule plainly *can* extend an eight-digit subheading when it wants to —
-8,019 of those 19,831 leaves are exactly that, `.00` appended because there is no
-statistical breakout. Where it declines to, it has published something that stops
-short.
+That note publishes their reporting numbers. It requires the article to be
+**constructively separated** into its components — movement, case, strap or band
+or bracelet, battery — each separately valued and reported on its own line, as
+the eight-digit subheading with a suffix from the note appended. A
+battery-powered watch classified in 9101.11.40 is reported as `9101.11.4010`,
+`.4020`, `.4030` and `.4040`; the component values sum to the value of the
+article; and a named component that is not in the shipment still gets a line, at
+zero quantity and value.
 
-Whether such a provision can nonetheless be keyed on an entry as published is a
-question about CBP practice, not about this data, and this application does not
-answer it. `hasPublishedReportingNumber` marks the line; the verdict card, the
-candidate card and the determination PDF all say the schedule stopped short and
-tell the analyst to confirm the entry number with the filer. The code stays
-selectable, because it is the most specific classification available and blocking
-it would be answering the question by refusing to.
+**This was wrong here, and shipped.** An earlier version counted digits, found
+these 95 short, and concluded the schedule published no reporting number for
+them — stating so on the verdict card, on the candidate card and in every
+exported determination. It offered the missing unit of quantity as corroboration
+(0 of 95, against 19,831 of 19,831 elsewhere). The unit is missing *because* of
+the scheme: there is no single quantity for the article, there is one per
+component. The strongest-looking evidence was a consequence of the thing it was
+taken to disprove.
 
-If your filing practice settles it in either direction, that is a one-line change
-to the helper and the wording that surrounds it.
+So the question the code asks is now *where* the number is published, not
+whether it exists, and it reads the answer from the line's own footnote rather
+than from its length: `reportingNumberSource` in `src/lib/hts/parse.ts` returns
+`on_the_line`, `chapter_statistical_note`, or `unpublished`. The result is
+recorded on the run as `verification.reportingNumberNotes`, keeping the footnote
+verbatim, and the three surfaces describe the reporting scheme instead of
+warning about a gap. Runs stored before the field existed are re-examined
+against the index when they are read back, so re-issuing an old watch
+determination corrects it.
+
+Nothing today lands on `unpublished` — every short leaf in Chapters 1–97 cites
+the note. It exists so that a line which genuinely carries no suffix scheme is
+reported as unknown rather than silently absorbed into the Chapter 91 story.
 
 ### Chapter 99 exposure
 

@@ -2,7 +2,6 @@
 
 import type { ClassificationRun } from "@/lib/agent/classify";
 import type { Candidate } from "@/lib/agent/schema";
-import { hasPublishedReportingNumber } from "@/lib/hts/parse";
 import { HtsCode } from "./HtsCode";
 
 /**
@@ -55,6 +54,15 @@ export function VerdictCard({
 
   const substituted = verification.substitutedRecommendation;
   const chapter99 = recommended.tariff.chapter_99;
+  // Read from the run rather than recomputed from the code: where a reporting
+  // number is published is a fact about the line's footnotes, which the screen
+  // does not have and the digit count cannot stand in for.
+  const reportingNumberNote =
+    verification.reportingNumberNotes?.find(
+      (note) =>
+        note.code.replace(/\D/g, "") ===
+        recommended.hts_code.replace(/\D/g, ""),
+    ) ?? null;
 
   return (
     <section
@@ -127,15 +135,35 @@ export function VerdictCard({
           </p>
         )}
 
-        {!hasPublishedReportingNumber(recommended.hts_code) && (
+        {reportingNumberNote && (
           <p className="mt-3 border-l-2 border-[var(--warn)] pl-3 text-xs text-[var(--text-secondary)]">
-            <span className="font-medium text-[var(--warn)]">
-              No ten-digit reporting number is published for this line.{" "}
-            </span>
-            The schedule stops here — no statistical breakout and no unit of
-            quantity, where every other classifiable line in Chapters 1&ndash;97
-            has both. It is the most specific classification available, but
-            confirm the reporting number your broker should key before filing.
+            {reportingNumberNote.source === "chapter_statistical_note" ? (
+              <>
+                <span className="font-medium text-[var(--warn)]">
+                  The reporting number is built from a chapter statistical
+                  note.{" "}
+                </span>
+                This classification is the {reportingNumberNote.digits}-digit
+                subheading. The ten-digit number an entry is keyed against is
+                formed by appending a statistical suffix published in the
+                chapter&rsquo;s note &mdash; the article is constructively
+                separated into its components, each separately valued and
+                reported on its own suffixed line, including any named component
+                absent from the shipment at zero quantity and value.{" "}
+                {reportingNumberNote.footnote ?? ""}
+              </>
+            ) : (
+              <>
+                <span className="font-medium text-[var(--warn)]">
+                  This line stops short of a reporting number.{" "}
+                </span>
+                The schedule terminates it at {reportingNumberNote.digits}{" "}
+                digits and this snapshot carries no note saying where the
+                statistical suffix comes from. It is the most specific
+                classification available; confirm the reporting number your
+                broker should key before filing.
+              </>
+            )}
           </p>
         )}
 

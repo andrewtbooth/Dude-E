@@ -1,8 +1,8 @@
 "use client";
 
 import { useId, useState } from "react";
+import type { ClassificationRun } from "@/lib/agent/classify";
 import type { Candidate } from "@/lib/agent/schema";
-import { hasPublishedReportingNumber } from "@/lib/hts/parse";
 import { HtsCode } from "./HtsCode";
 
 export function CandidateCard({
@@ -11,6 +11,7 @@ export function CandidateCard({
   onSelect,
   tariffRetrievedAt,
   recommendedCode,
+  reportingNumberNote,
 }: {
   candidate: Candidate;
   selected: boolean;
@@ -26,6 +27,14 @@ export function CandidateCard({
    * cases a rank-derived badge labels something the model did not pick.
    */
   recommendedCode: string | null;
+  /**
+   * Set when this code's ten-digit reporting number is not printed on the
+   * line. Passed in from the run's verification rather than derived from the
+   * code, because the answer is in the line's footnotes.
+   */
+  reportingNumberNote:
+    | ClassificationRun["verification"]["reportingNumberNotes"][number]
+    | null;
 }) {
   const [showReasoning, setShowReasoning] = useState(false);
   const inputId = useId();
@@ -77,14 +86,27 @@ export function CandidateCard({
 
           <Breadcrumb path={candidate.description_path} />
 
-          {!hasPublishedReportingNumber(candidate.hts_code) && (
+          {reportingNumberNote && (
             <p className="mt-2 border-l-2 border-[var(--warn)] pl-3 text-xs text-[var(--text-secondary)]">
-              <span className="font-medium text-[var(--warn)]">
-                No ten-digit reporting number published.{" "}
-              </span>
-              The schedule terminates this line at{" "}
-              {candidate.hts_code.replace(/\D/g, "").length} digits with no unit
-              of quantity. Confirm what your broker should key before filing.
+              {reportingNumberNote.source === "chapter_statistical_note" ? (
+                <>
+                  <span className="font-medium text-[var(--warn)]">
+                    Reporting number comes from a chapter statistical note.{" "}
+                  </span>
+                  The suffix is appended to this {reportingNumberNote.digits}
+                  -digit subheading, one line per separately valued component.
+                </>
+              ) : (
+                <>
+                  <span className="font-medium text-[var(--warn)]">
+                    No reporting number published.{" "}
+                  </span>
+                  The schedule terminates this line at{" "}
+                  {reportingNumberNote.digits} digits and this snapshot carries
+                  no note giving a suffix. Confirm what your broker should key
+                  before filing.
+                </>
+              )}
             </p>
           )}
 

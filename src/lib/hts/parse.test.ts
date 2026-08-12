@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatHtsNo,
-  hasPublishedReportingNumber,
+  reportingNumberSource,
   levelOf,
   parseUsitcRows,
   toDigits,
@@ -404,39 +404,56 @@ describe("indent jumps", () => {
   });
 });
 
-describe("hasPublishedReportingNumber", () => {
+describe("reportingNumberSource", () => {
   /**
-   * An entry is filed against a ten-digit statistical reporting number, and
-   * the schedule prints one for almost every classifiable line — including
-   * 8,019 that are an eight-digit subheading with `.00` appended precisely
-   * because there is no statistical breakout. So a line that stops at eight
-   * digits has not had its suffix omitted in parsing; the schedule published
-   * something that is not a reporting number.
-   *
-   * This does not decide whether such a line can be filed as published — that
-   * is a question about CBP practice. It decides only that the interface must
-   * not present one as though it were a complete reporting number.
+   * The question is where the ten-digit number is written, not whether one
+   * exists. This used to answer the latter by counting digits, which made the
+   * application state — on screen and in exported determinations — that the
+   * schedule publishes no reporting number for the Chapter 91 watch
+   * provisions. It publishes all 95 of them, in chapter statistical note 1, and
+   * every one of those lines carries a footnote saying so.
    */
-  it("accepts a ten-digit statistical line", () => {
-    expect(hasPublishedReportingNumber("8507.60.00.20")).toBe(true);
+  it("reads a ten-digit statistical line off the line", () => {
+    expect(reportingNumberSource("8507.60.00.20")).toBe("on_the_line");
   });
 
-  it("accepts an eight-digit subheading the schedule extended with .00", () => {
-    expect(hasPublishedReportingNumber("9617.00.10.00")).toBe(true);
+  it("reads an eight-digit subheading extended with .00 off the line", () => {
+    expect(reportingNumberSource("9617.00.10.00")).toBe("on_the_line");
   });
 
-  it("rejects a watch provision that terminates at eight digits", () => {
-    // 9101.11.40 is a leaf in the 2026 snapshot: no children, no unit of
-    // quantity, and no `.00` appended, unlike the rest of the schedule.
-    expect(hasPublishedReportingNumber("9101.11.40")).toBe(false);
+  it("sends a watch provision to the chapter statistical note", () => {
+    // The footnote is the signal, and it is the one 9101.11.40 actually
+    // carries in the 2026 snapshot. All 95 short leaves in Chapters 1-97 carry
+    // it and none of them is anything but Chapter 91.
+    expect(
+      reportingNumberSource("9101.11.40", [
+        "See statistical note 1 to this chapter.",
+      ]),
+    ).toBe("chapter_statistical_note");
   });
 
-  it("rejects a Chapter 98 provision that terminates at eight digits", () => {
-    expect(hasPublishedReportingNumber("9813.00.20")).toBe(false);
+  it("does not invent a note for a short line that carries none", () => {
+    expect(reportingNumberSource("9813.00.20", [])).toBe("unpublished");
+    // A footnote about something else is not a suffix scheme.
+    expect(reportingNumberSource("9813.00.20", ["See 9903.88.03."])).toBe(
+      "unpublished",
+    );
+  });
+
+  it("does not consult footnotes once the number is already ten digits", () => {
+    // 24 ten-digit leaves cite a statistical note for other reasons. Their
+    // reporting number is still printed on the line.
+    expect(
+      reportingNumberSource("7113.19.50.21", [
+        "See statistical note 1 to this chapter.",
+      ]),
+    ).toBe("on_the_line");
   });
 
   it("reads the digits, not the punctuation", () => {
-    expect(hasPublishedReportingNumber("8507600020")).toBe(true);
-    expect(hasPublishedReportingNumber("9101 11 40")).toBe(false);
+    expect(reportingNumberSource("8507600020")).toBe("on_the_line");
+    expect(reportingNumberSource("9101 11 40", ["See statistical note 1."])).toBe(
+      "chapter_statistical_note",
+    );
   });
 });

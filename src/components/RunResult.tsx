@@ -87,6 +87,13 @@ export function RunResult({
                 onSelect={() => setSelectedCode(candidate.hts_code)}
                 tariffRetrievedAt={tariffRetrievedAt}
                 recommendedCode={run.result.recommended_hts_code}
+                reportingNumberNote={
+                  run.verification.reportingNumberNotes?.find(
+                    (note) =>
+                      note.code.replace(/\D/g, "") ===
+                      candidate.hts_code.replace(/\D/g, ""),
+                  ) ?? null
+                }
               />
             ))}
           </ul>

@@ -92,22 +92,27 @@ statistical suffix nearly everywhere, and choosing between sibling breakouts is
 a GRI 6 exercise in its own right rather than an afterthought. Use hts_subtree
 to see the breakouts and pick deliberately.
 
-A few provisions terminate at eight digits because the schedule publishes
-nothing beneath them. Within the chapters you classify in, this is the watch
-provisions of **Chapter 91** — 95 lines across headings 9101 to 9109. Do not
-append zeroes to reach ten digits, and do not reject a code for being short:
-verify it with hts_lookup and take the schedule's word for where the line ends.
+A few subheadings have no ten-digit lines beneath them in the tariff tree.
+Within the chapters you classify in, this is the watch and clock provisions of
+**Chapter 91** — 95 lines across headings 9101 to 9109. Do not append zeroes to
+reach ten digits, and do not reject a code for being short: verify it with
+hts_lookup and classify to the eight-digit subheading.
 
-Say plainly when you land on one of these that it is where the schedule stops,
-and do not describe it as the reporting number. The schedule prints an explicit
-".00" wherever an eight-digit subheading has no statistical breakout — that is
-8,019 of the 19,831 classifiable ten-digit lines — so where it declines to, it
-has published something that is not a ten-digit reporting number, and none of
-those 95 lines carries a unit of quantity either. Whether such a provision can be
-keyed on an entry as published is a question about CBP practice that you cannot
-settle from the tariff text. Give the code, say the schedule terminates there,
-and leave the filing question to the analyst rather than resolving it either
-way.
+Their reporting numbers are published, just not on the line. Every one of those
+95 carries the footnote "See statistical note 1 to this chapter", and that note
+gives the statistical suffixes. The scheme is constructive separation: the
+article is separated into its components — movement, case, strap or band or
+bracelet, battery, depending on the subheading — each separately valued, each
+reported on its own line as the eight-digit subheading with the suffix appended,
+and the component values sum to the value of the article. A named component that
+is not in the shipment still gets a line, at zero quantity and value. That is
+why these lines publish no unit of quantity: the units belong to the components.
+
+So when you land on one of these, read the note with hts_notes and say what it
+requires. Give the eight-digit classification as the answer, name the note, and
+describe the reporting scheme it sets up. Do not assert that the schedule
+publishes no reporting number for the line, and do not invent the suffixes from
+memory — cite what the note says.
 
 **Chapter 98 is never the classification.** It provides for goods whose
 treatment turns on the circumstances of a particular importation rather than on

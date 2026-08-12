@@ -235,14 +235,9 @@ export function parseUsitcRows(
  * through here would allow a run to answer "9903.88.03" to "what is this
  * product", which is not a classification at all.
  *
- * Reportable is not the same as complete, and the Chapter 91 lines are why.
- * Every one of the 19,831 ten-digit leaves in Chapters 1-97 carries a unit of
- * quantity; not one of those 95 does, and the schedule declined to append the
- * `.00` it appends everywhere else. Whether a filer can key `9101.11.40` as
- * published is a question about CBP practice, not about this data, so nothing
- * here answers it — the line stays reportable, and
- * `hasPublishedReportingNumber` marks it as lacking a statistical suffix so
- * the interface and the determination can say so plainly.
+ * The Chapter 91 lines are terminal in the tree and still not the number an
+ * entry is keyed against, because their suffixes are published somewhere the
+ * line does not reach — see `reportingNumberSource`.
  */
 /**
  * Chapters whose provisions are claimed *alongside* a classification, never
@@ -296,27 +291,54 @@ const SECONDARY_CHAPTERS = new Set(["98", "99"]);
 export const DERIVATION_VERSION = 3;
 
 /**
- * Whether the schedule publishes a full ten-digit reporting number for a code.
+ * Where the ten-digit reporting number for a code is published.
  *
- * An entry is filed against a ten-digit statistical reporting number. For most
- * of the schedule that number is printed: 19,831 ten-digit leaves in Chapters
- * 1-97, of which 8,019 are an eight-digit subheading with `.00` appended
- * because it has no statistical breakout. So where the schedule *stops* at
- * eight digits it has not simply omitted the suffix — it has published
- * something that is not a reporting number, and every such line also lacks the
- * unit of quantity that a reporting number needs in order to report a quantity.
+ * An entry is filed against a ten-digit statistical reporting number, and for
+ * almost the whole schedule that number is printed on the line: 19,831
+ * ten-digit leaves in Chapters 1-97, of which 8,019 are an eight-digit
+ * subheading with `.00` appended because it has no statistical breakout.
  *
- * That is 469 lines outside Chapter 99: 374 in Chapter 98 and 95 in Chapter 91.
- * They are still the most specific classification available, so they are still
- * offered — but a determination that prints one as the answer, without saying
- * the schedule published no reporting number for it, hands a filer a number
- * their broker may not be able to key.
+ * 95 leaves in Chapters 1-97 stop at eight digits, all of them watch and clock
+ * provisions in Chapter 91. This function used to answer `false` for them and
+ * the application said, on screen and in every exported determination, that no
+ * ten-digit reporting number was published for the line. That was wrong. Every
+ * one of those 95 lines carries the footnote
  *
- * Derived from the code rather than stored, so it needs no re-sync and holds
- * for any snapshot.
+ *     See statistical note 1 to this chapter.
+ *
+ * and that note publishes the suffixes. It requires the article to be
+ * constructively separated into its components — movement, case, strap, battery
+ * — each separately valued and reported on its own line, with the suffix
+ * appended to the eight-digit subheading: a battery-powered watch under
+ * 9101.11.40 is reported as 9101.11.4010, .4020, .4030 and .4040, and the note
+ * is explicit that a named component absent from the shipment still gets a line,
+ * at zero quantity and value.
+ *
+ * Which is also why those lines carry no unit of quantity. There is no single
+ * quantity to report for the article; there are four, one per component. The
+ * missing unit was a consequence of the scheme, and it was read here as evidence
+ * against the scheme's existence.
+ *
+ * So the question this answers is not whether a number exists but where it is
+ * written, and the footnote is what says so. Derived from the code and the
+ * line's own footnotes rather than stored, so it needs no re-sync.
  */
-export function hasPublishedReportingNumber(htsCode: string): boolean {
-  return htsCode.replace(/\D/g, "").length >= 10;
+export type ReportingNumberSource =
+  /** Printed on the line itself — the ordinary case. */
+  | "on_the_line"
+  /** Built by appending a suffix published in a chapter statistical note. */
+  | "chapter_statistical_note"
+  /** Short, and nothing in the snapshot says where the suffix comes from. */
+  | "unpublished";
+
+export function reportingNumberSource(
+  htsCode: string,
+  footnotes: readonly string[] = [],
+): ReportingNumberSource {
+  if (htsCode.replace(/\D/g, "").length >= 10) return "on_the_line";
+  return footnotes.some((footnote) => /statistical note/i.test(footnote))
+    ? "chapter_statistical_note"
+    : "unpublished";
 }
 
 function resolveReportable(lines: HtsLine[]): void {

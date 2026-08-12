@@ -53,6 +53,21 @@ export interface DeterminationView {
      * available about how much weight the rest of it deserves.
      */
     substitutedRecommendation: { modelSaid: string; using: string } | null;
+    /**
+     * Verified codes whose ten-digit reporting number is published somewhere
+     * other than the line — for the Chapter 91 watch provisions, in the
+     * chapter's statistical note.
+     *
+     * Carried onto the document because the determination is what someone reads
+     * months later, with no access to the screen that explained it. A code that
+     * needs a note to become a reporting number should say so next to itself.
+     */
+    reportingNumberNotes: {
+      code: string;
+      digits: number;
+      source: "chapter_statistical_note" | "unpublished";
+      footnote: string | null;
+    }[];
   };
   /**
    * When the tariff snapshot was pulled. Chapter 99 duties are captured as

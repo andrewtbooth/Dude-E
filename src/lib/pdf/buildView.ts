@@ -104,6 +104,7 @@ export function buildDeterminationView(
       corrections: input.run.verification.corrections,
       substitutedRecommendation:
         input.run.verification.substitutedRecommendation ?? null,
+      reportingNumberNotes: input.run.verification.reportingNumberNotes ?? [],
     },
     model: input.model,
     effort: input.effort,

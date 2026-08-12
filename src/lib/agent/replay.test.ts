@@ -37,7 +37,7 @@ function doneEvent(model = "claude-sonnet-5"): ProgressEvent {
         rejectedCodes: [],
         corrections: [],
         substitutedRecommendation: null,
-        incompleteReportingNumbers: [],
+        reportingNumberNotes: [],
       },
       usage: {
         inputTokens: 12,

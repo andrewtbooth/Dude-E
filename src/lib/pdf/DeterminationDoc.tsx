@@ -7,7 +7,6 @@ import {
 } from "@react-pdf/renderer";
 import type { Candidate } from "../agent/schema";
 import { BRAND } from "../brand";
-import { hasPublishedReportingNumber } from "../hts/parse";
 import type { DeterminationView } from "./types";
 
 /**
@@ -356,6 +355,11 @@ function Subject({ view }: { view: DeterminationView }) {
 
 function FinalDetermination({ view }: { view: DeterminationView }) {
   const candidate = view.selected;
+  const reportingNumberNote =
+    view.verification.reportingNumberNotes?.find(
+      (note) =>
+        note.code.replace(/\D/g, "") === candidate.hts_code.replace(/\D/g, ""),
+    ) ?? null;
   return (
     /**
      * The section wraps; the headline does not.
@@ -395,25 +399,50 @@ function FinalDetermination({ view }: { view: DeterminationView }) {
         </View>
       </View>
 
-      {!hasPublishedReportingNumber(candidate.hts_code) && (
-        // Louder here than on screen, and deliberately so. An entry is filed
-        // against a ten-digit reporting number; this document prints a code
-        // under a heading that says DETERMINATION, and whoever reads it months
-        // from now has no way to know the schedule stopped short unless it
-        // says so on the page.
+      {reportingNumberNote && (
+        // Louder here than on screen, and deliberately so. This document prints
+        // a code under a heading that says DETERMINATION, and whoever reads it
+        // months from now has no way to know that keying it on an entry takes a
+        // step the code does not show unless the page says so.
         <View style={styles.callout}>
-          <Text style={styles.calloutTitle}>
-            NO TEN-DIGIT REPORTING NUMBER IS PUBLISHED FOR THIS LINE
-          </Text>
-          <Text style={{ fontSize: 8 }}>
-            {view.htsusRevision} terminates this provision at{" "}
-            {candidate.hts_code.replace(/\D/g, "").length} digits and publishes
-            no unit of quantity for it, where every classifiable line in
-            Chapters 1&ndash;97 carries both. It is the most specific
-            classification the schedule offers, and this determination is a
-            statement about classification, not about the reporting number to
-            key. Confirm the entry number with the filer before use.
-          </Text>
+          {reportingNumberNote.source === "chapter_statistical_note" ? (
+            <>
+              <Text style={styles.calloutTitle}>
+                THE REPORTING NUMBER IS BUILT FROM A CHAPTER STATISTICAL NOTE
+              </Text>
+              <Text style={{ fontSize: 8 }}>
+                This determination classifies the article to the{" "}
+                {reportingNumberNote.digits}-digit subheading above. In{" "}
+                {view.htsusRevision} that subheading carries the footnote &ldquo;
+                {reportingNumberNote.footnote ??
+                  "See statistical note 1 to this chapter."}
+                &rdquo;, and the note publishes the statistical suffixes that
+                complete it. The article is constructively separated into its
+                components, each separately valued, and each reported on its own
+                line under the eight-digit subheading with the suffix appended;
+                the values sum to the value of the article. A named component
+                absent from the shipment still gets a line, at zero quantity and
+                value. That is also why no single unit of quantity is published
+                on this line &mdash; there is one per component, not one for the
+                article. The suffixes themselves are in the chapter note and are
+                not reproduced here; read it before filing.
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.calloutTitle}>
+                NO TEN-DIGIT REPORTING NUMBER IS PUBLISHED FOR THIS LINE
+              </Text>
+              <Text style={{ fontSize: 8 }}>
+                {view.htsusRevision} terminates this provision at{" "}
+                {reportingNumberNote.digits} digits and carries no note giving a
+                statistical suffix for it. It is the most specific
+                classification the schedule offers, and this determination is a
+                statement about classification, not about the reporting number
+                to key. Confirm the entry number with the filer before use.
+              </Text>
+            </>
+          )}
         </View>
       )}
 

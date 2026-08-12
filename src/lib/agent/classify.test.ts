@@ -672,53 +672,68 @@ describe("backfillRunFields", () => {
   });
 });
 
-describe("verifyAgainstTariff — codes with no published reporting number", () => {
+describe("verifyAgainstTariff — where the reporting number is published", () => {
   /**
-   * 9101.11.40 is real: a watch provision that is the deepest line the
-   * schedule publishes, carries no unit of quantity, and never receives the
-   * `.00` the schedule appends to 8,019 other eight-digit subheadings. There
-   * are 95 like it in Chapter 91 and 374 in Chapter 98.
+   * 9101.11.40 is real: a watch provision with nothing beneath it in the
+   * tariff tree and no unit of quantity, and one of 95 like it in Chapter 91.
    *
-   * Task #14 made leaf-ness the test for declarability, which is right — those
-   * provisions were being wrongly rejected. But it also made these
-   * indistinguishable from a ten-digit statistical line, and an entry is filed
-   * against a ten-digit number. Whether these can be keyed as published is a
-   * question about CBP practice; verification's job is to say the schedule
-   * stopped short, not to answer it.
+   * The first version of this check counted digits and concluded the schedule
+   * published no reporting number for them. It publishes every one, in chapter
+   * statistical note 1, as a suffix appended to the eight-digit subheading —
+   * and the missing unit of quantity, offered at the time as corroboration, is
+   * a consequence of that scheme rather than evidence against it, because the
+   * article is reported as separately valued components with a unit each.
+   *
+   * So the recorded fact is where the number comes from, read from the
+   * footnote the line actually carries.
    */
-  it("keeps the code and records that no reporting number was published", () => {
+  it("records that the number comes from the chapter statistical note", () => {
     const { result: verified, verification } = verifyAgainstTariff(
       result([candidate({ hts_code: "9101.11.40" })]),
     );
 
     expect(verified.candidates.map((c) => c.hts_code)).toEqual(["9101.11.40"]);
     expect(verification.rejectedCodes).toEqual([]);
-    expect(verification.incompleteReportingNumbers).toEqual([
-      { code: "9101.11.40", digits: 8 },
+    expect(verification.reportingNumberNotes).toEqual([
+      {
+        code: "9101.11.40",
+        digits: 8,
+        source: "chapter_statistical_note",
+        footnote: "See statistical note 1 to this chapter.",
+      },
     ]);
   });
 
-  it("says nothing about a full ten-digit line", () => {
+  it("says nothing about a line that prints its own reporting number", () => {
     const { verification } = verifyAgainstTariff(result([candidate()]));
-    expect(verification.incompleteReportingNumbers).toEqual([]);
+    expect(verification.reportingNumberNotes).toEqual([]);
   });
 
-  it("recomputes the flag for a run stored before it existed", () => {
-    // Unlike the substituted recommendation, this is a property of the code
-    // itself, so an old determination can be told the truth about its own
-    // codes rather than assumed complete.
+  it("recomputes it for a run stored before the field existed", () => {
+    // Recoverable, unlike the substituted recommendation — but only against
+    // the index, since the answer is in the line's footnotes and a stored run
+    // keeps codes. Old runs carry `incompleteReportingNumbers`, whose entries
+    // asserted the wrong thing; they are re-examined rather than translated.
     const stored = {
       verification: {
         verifiedCodes: ["9101.11.40", "8507.60.00.20"],
         rejectedCodes: [],
         corrections: [],
         substitutedRecommendation: null,
+        incompleteReportingNumbers: [{ code: "9101.11.40", digits: 8 }],
       },
     } as unknown as ClassificationRun;
 
     expect(
-      backfillRunFields(stored).verification.incompleteReportingNumbers,
-    ).toEqual([{ code: "9101.11.40", digits: 8 }]);
+      backfillRunFields(stored).verification.reportingNumberNotes,
+    ).toEqual([
+      {
+        code: "9101.11.40",
+        digits: 8,
+        source: "chapter_statistical_note",
+        footnote: "See statistical note 1 to this chapter.",
+      },
+    ]);
   });
 });
 
