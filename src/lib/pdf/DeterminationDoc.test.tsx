@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import {
   sampleDeterminationView,
   sampleSelectedCandidate,
 } from "../../test/determination-fixture";
+import { resetStore } from "../hts/store";
 import { DeterminationDoc } from "./DeterminationDoc";
 
 /** PDF magic bytes. */
@@ -41,6 +43,74 @@ describe("byte reproducibility", () => {
       crypto.createHash("sha256").update(buffer).digest("hex");
 
     expect(hash(second)).toBe(hash(first));
+  }, 30_000);
+
+  it("renders identical bytes with no tariff snapshot loaded at all", async () => {
+    /**
+     * The document must be a function of the row and nothing else.
+     *
+     * Two inputs were not. `chapter99Scope` was read from the live snapshot at
+     * export time, and one of its counts is the number of declarable lines in
+     * the schedule — which every revision moves — so after any sync *every*
+     * determination in the system re-rendered to different bytes and the
+     * integrity check fired on all of them. And `reportingNumberNotes` was
+     * reconstructed on read for older runs, from whatever snapshot was loaded
+     * then, so a watch determination could re-issue asserting the opposite of
+     * the copy that circulated while still naming the original revision.
+     *
+     * Pointing the store at an empty directory is the sharpest form of the
+     * question: if rendering still succeeds and still produces the same bytes,
+     * nothing in the document is reaching for tariff data.
+     */
+    const view = sampleDeterminationView();
+    const withSnapshot = await renderToBuffer(<DeterminationDoc view={view} />);
+
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), "htsus-none-"));
+    const previous = process.env.HTSUS_DATA_DIR;
+    process.env.HTSUS_DATA_DIR = empty;
+    resetStore();
+    try {
+      const withoutSnapshot = await renderToBuffer(
+        <DeterminationDoc view={view} />,
+      );
+      const hash = (buffer: Buffer) =>
+        crypto.createHash("sha256").update(buffer).digest("hex");
+      expect(hash(withoutSnapshot)).toBe(hash(withSnapshot));
+    } finally {
+      if (previous === undefined) delete process.env.HTSUS_DATA_DIR;
+      else process.env.HTSUS_DATA_DIR = previous;
+      fs.rmSync(empty, { recursive: true, force: true });
+      resetStore();
+    }
+  }, 30_000);
+
+  it("moves the hash when the frozen scope figures differ", async () => {
+    // The mirror of the above, and the reason those figures have to live on the
+    // row: they do change the document, so reading them live meant a re-issue
+    // after any sync was a different document.
+    // With duties matched the document lists them and never prints the scope,
+    // so the case to test is the one where the scope is what the reader gets:
+    // nothing matched.
+    const base = sampleDeterminationView();
+    const view = {
+      ...base,
+      selected: {
+        ...base.selected,
+        tariff: { ...base.selected.tariff, chapter_99: [] },
+      },
+    };
+    const hash = async (v: typeof view) =>
+      crypto
+        .createHash("sha256")
+        .update(await renderToBuffer(<DeterminationDoc view={v} />))
+        .digest("hex");
+
+    expect(
+      await hash({
+        ...view,
+        chapter99Scope: { ...view.chapter99Scope!, declarableLines: 19_951 },
+      }),
+    ).not.toBe(await hash(view));
   }, 30_000);
 
   it("moves the hash when something on the row actually changes", async () => {
@@ -98,13 +168,38 @@ describe("Chapter 99 disclosure", () => {
     expect(squashed(text)).toContain(squashed("not a finding that none applies"));
   }, 30_000);
 
-  it("says how far the screening actually reaches", async () => {
-    // The count is what separates a caveat from a measurement: a reader can
-    // size 267 of 19,949 for themselves, where "may be incomplete" tells them
-    // nothing they can act on.
-    const text = await textOf(withNoChapter99());
-    expect(squashed(text)).toContain("267");
-    expect(squashed(text)).toContain(squashed("19,949"));
+  it("compares each count against its own unit", async () => {
+    // The count is what separates a caveat from a measurement — which is why
+    // getting it wrong was worse than omitting it. This printed 267 (a count of
+    // 8-digit subheadings) over 19,949 (a count of 10-digit lines) and called
+    // both "declarable subheadings": 1.3%, two different units, and only one of
+    // the two screening paths named. Each figure now sits beside a denominator
+    // of the same kind.
+    const text = squashed(await textOf(withNoChapter99()));
+    expect(text).toContain(squashed("267 of the 11,387 eight-digit subheadings"));
+    expect(text).toContain(squashed("2,034 of 19,949 declarable lines"));
+    expect(text).not.toContain(squashed("267 of 19,949"));
+  }, 30_000);
+
+  it("names both screening paths, because the app runs both", async () => {
+    // Quoting the notes path alone described a tool that does not exist, and
+    // understated its own reach roughly eightfold — 606 lines rather than the
+    // 2,034 the two paths reach together.
+    const text = squashed(await textOf(withNoChapter99()));
+    expect(text).toContain(squashed("subchapter notes"));
+    expect(text).toContain(squashed("See 9903.xx.xx."));
+    expect(text).toContain(squashed("They overlap"));
+  }, 30_000);
+
+  it("says it is unscreened when no scope was recorded", async () => {
+    // A determination decided before the scope was frozen has no figure that
+    // belongs to its revision. Filling one in from today's snapshot is the
+    // defect the freezing exists to close, so the document says so instead.
+    const text = squashed(
+      await textOf({ ...withNoChapter99(), chapter99Scope: null }),
+    );
+    expect(text).toContain(squashed("was not recorded for this determination"));
+    expect(text).toContain(squashed("Treat this section as unscreened"));
   }, 30_000);
 
   it("singles out Chinese-origin goods, where the gap actually bites", async () => {
@@ -240,10 +335,18 @@ describe("automated checks section", () => {
    */
   const squashed = (text: string) => text.replace(/\s+/g, "");
 
-  it("stays silent when the run passed every check", async () => {
-    // The common case. A disclaimer on every document teaches people to skip it.
-    const text = await textOf(sampleDeterminationView());
-    expect(squashed(text)).not.toContain("AUTOMATEDCHECKS");
+  it("states a clean pass as a finding rather than leaving it silent", async () => {
+    // This used to assert silence, on the reasoning that a disclaimer printed
+    // on every document teaches people to skip it. But a clean run is the
+    // common case, so the strongest guardrail in the application was invisible
+    // on most of what it produced — and silence reads identically whether every
+    // code was re-checked and matched or no check was ever run. Those are not
+    // close in what they are worth to a reader who was not there.
+    const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).toContain(squashed("AUTOMATED CHECKS AGAINST THE TARIFF"));
+    expect(text).toContain(squashed("Nothing was corrected or discarded"));
+    // Still an affirmative statement, not a hedge: it says what was checked.
+    expect(text).toContain(squashed("is the deepest line published under its subheading"));
   }, 30_000);
 
   it("records codes the tariff check discarded", async () => {
@@ -405,6 +508,102 @@ describe("a recommendation the model did not actually make", () => {
     // make it furniture.
     const text = squashed(await textOf(sampleDeterminationView()));
     expect(text).not.toContain(squashed("did not recommend the code it appeared to"));
+  }, 30_000);
+});
+
+describe("the model's pick when the analyst overrode it", () => {
+  /**
+   * The overridden code lands in the alternates list, which is right — a
+   * reader should see what was passed over and why. But verification clears
+   * `why_not_selected` on whatever the analysis recommended, correctly, since
+   * the analysis did not pass it over. So the code arrived here with an empty
+   * rationale and got the generic fallback: "Ranked lower".
+   *
+   * It ranked first. That is a false statement about the single alternate a
+   * reviewer reads hardest, on the document that records a human overruling
+   * the machine.
+   */
+  function withOverride() {
+    const view = sampleDeterminationView();
+    const [first, ...rest] = view.alternates;
+    return {
+      ...view,
+      overrodeRecommendation: true,
+      modelRecommendation: first.hts_code,
+      alternates: [
+        {
+          ...first,
+          reasoning: { ...first.reasoning, why_not_selected: null },
+        },
+        ...rest,
+      ],
+    };
+  }
+
+  it("does not describe the model's own pick as ranked lower", async () => {
+    const text = squashed(await textOf(withOverride()));
+    expect(text).toContain(squashed("Ranked first by the analysis"));
+    expect(text).toContain(squashed("passed over by the analyst"));
+    expect(text).not.toContain(squashed("Ranked lower; no specific rejection"));
+  }, 30_000);
+
+  it("still uses the generic wording for a genuinely lower-ranked code", async () => {
+    const view = sampleDeterminationView();
+    const [first, ...rest] = view.alternates;
+    const text = squashed(
+      await textOf({
+        ...view,
+        alternates: [
+          { ...first, reasoning: { ...first.reasoning, why_not_selected: null } },
+          ...rest,
+        ],
+      }),
+    );
+    expect(text).toContain(squashed("Ranked lower; no specific rejection"));
+  }, 30_000);
+});
+
+describe("what the document says about itself", () => {
+  it("attributes the confidence figure to the analysis, not the signer", async () => {
+    // Under a heading carrying the analyst's name and email, a bare "Stated
+    // confidence: 88%" reads as the analyst's professional confidence in their
+    // own determination — a claim no analyst made, borrowing the authority of
+    // the signature.
+    const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).toContain(squashed("The analysis stated 88% confidence"));
+    expect(text).toContain(squashed("not the analyst"));
+    expect(text).toContain(squashed("has not been calibrated"));
+  }, 30_000);
+
+  it("names Chapter 98 among what it did not evaluate", async () => {
+    // The scope paragraph names six other omissions, which made this one read
+    // as completeness. 9801 and 9802 turn on how an article was built and
+    // where it has been — durable facts a product library holds — so an
+    // importer filing from these determinations would waive them silently.
+    const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).toContain(squashed("Chapter 98 provisions"));
+    expect(text).toContain(squashed("not foreclosed here"));
+  }, 30_000);
+
+  it("says the importer's own duty of care is not discharged", async () => {
+    // "Not binding on CBP" and "does not discharge your obligation" are
+    // different statements, and the second is the one that surfaces in a
+    // penalty case.
+    const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).toContain(squashed("19 U.S.C. 1484"));
+  }, 30_000);
+
+  it("says when the alternates list was truncated", async () => {
+    const view = sampleDeterminationView();
+    const text = squashed(
+      await textOf({ ...view, alternatesConsidered: 7 }),
+    );
+    expect(text).toContain(squashed(`${view.alternates.length} OF 7 SHOWN`));
+  }, 30_000);
+
+  it("does not claim truncation when the list is complete", async () => {
+    const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).not.toContain(squashed("SHOWN"));
   }, 30_000);
 });
 

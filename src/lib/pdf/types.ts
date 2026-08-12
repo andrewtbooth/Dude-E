@@ -1,4 +1,5 @@
 import type { Candidate, ClassificationResult } from "../agent/schema";
+import type { Chapter99ScreeningScope } from "../hts/store";
 
 /**
  * Everything the determination PDF renders, assembled server-side.
@@ -34,6 +35,15 @@ export interface DeterminationView {
    * someone may rely on without having watched the run.
    */
   verification: {
+    /**
+     * Codes that were checked and matched.
+     *
+     * Carried so a clean run can be stated as a finding rather than left as an
+     * empty section. Optional because determinations recorded before this was
+     * on the view have no count to give, and a document that cannot say how
+     * many codes it checked should say "every code" rather than "0".
+     */
+    verifiedCodes?: string[];
     rejectedCodes: { code: string; reason: string }[];
     corrections: {
       htsCode: string;
@@ -76,14 +86,19 @@ export interface DeterminationView {
    */
   tariffRetrievedAt: Date | null;
   /**
-   * How far Chapter 99 screening reached in the snapshot behind this document,
-   * or null when it could not be established.
+   * How far Chapter 99 screening reached in the snapshot this was decided
+   * against, frozen on the determination row.
    *
-   * Printed so the reader can size the claim rather than infer one. A
-   * determination that shows no additional duties is making a statement about
-   * the screening as much as about the goods.
+   * Printed so the reader can size the claim rather than infer one: a
+   * determination showing no additional duties is making a statement about the
+   * screening as much as about the goods.
+   *
+   * Null for a determination recorded before it was frozen, and deliberately
+   * not filled in from today's snapshot: those rows were decided against an
+   * edition this deployment may no longer hold, and printing current coverage
+   * under an older revision label is the defect the freezing exists to close.
    */
-  chapter99Scope: { subheadingsWithAdditionalDuty: number; declarableLines: number } | null;
+  chapter99Scope: Chapter99ScreeningScope | null;
   model: string;
   effort: string;
   appVersion: string;
@@ -100,6 +115,14 @@ export interface DeterminationView {
 
   /** The top rejected alternates, with rejection rationale. */
   alternates: Candidate[];
+  /**
+   * How many candidates were passed over in total, before the list above was
+   * capped at MAX_ALTERNATES.
+   *
+   * The section is headed "considered and rejected" and silently dropped the
+   * sixth, so a reader could not tell a complete list from a truncated one.
+   */
+  alternatesConsidered: number;
 
   assumptions: string[];
   analystNote: string | null;
