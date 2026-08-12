@@ -1,5 +1,9 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupFixtureIndex, teardownFixtureIndex } from "../../test/htsus-fixture";
+import { resetStore } from "../hts/store";
 import { backfillRunFields, verifyAgainstTariff } from "./classify";
 import type { ClassificationRun } from "./classify";
 import type { Candidate, ClassificationResult } from "./schema";
@@ -778,6 +782,67 @@ describe("verifyAgainstTariff — where the reporting number is published", () =
         footnote: "See statistical note 1 to this chapter.",
       },
     ]);
+  });
+
+  /**
+   * Reconstruction is not verification.
+   *
+   * Verification looks a line up in the snapshot it verified the code against,
+   * so it can honestly say the schedule publishes no suffix scheme. Backfill is
+   * looking up a code verified against an edition this deployment may no longer
+   * hold — so an absence tells it nothing about the tariff, only about itself.
+   *
+   * Saying "no ten-digit reporting number is published for this line" on the
+   * strength of a failed lookup is the original Chapter 91 defect with a
+   * different cause: the strongest claim on the page, inferred from missing
+   * data. It stays out.
+   */
+  it("says nothing about a code the current snapshot does not have", () => {
+    const stored = {
+      verification: {
+        verifiedCodes: ["0000.00.00.00"],
+        rejectedCodes: [],
+        corrections: [],
+        substitutedRecommendation: null,
+      },
+    } as unknown as ClassificationRun;
+
+    expect(
+      backfillRunFields(stored).verification.reportingNumberNotes,
+    ).toEqual([]);
+  });
+
+  it("does not lose the whole record when no snapshot is loaded", () => {
+    // The moment the tariff data is missing or mid-swap is the moment the audit
+    // record most needs to be readable. This used to throw
+    // HtsusIndexMissingError straight out of parseRun, so exporting a
+    // determination stored months earlier answered 500.
+    const stored = () =>
+      ({
+        verification: {
+          verifiedCodes: ["9101.11.40"],
+          rejectedCodes: [],
+          corrections: [],
+          substitutedRecommendation: null,
+        },
+      }) as unknown as ClassificationRun;
+
+    teardownFixtureIndex();
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), "htsus-empty-"));
+    const previous = process.env.HTSUS_DATA_DIR;
+    process.env.HTSUS_DATA_DIR = empty;
+    resetStore();
+    try {
+      expect(() => backfillRunFields(stored())).not.toThrow();
+      expect(
+        backfillRunFields(stored()).verification.reportingNumberNotes,
+      ).toEqual([]);
+    } finally {
+      if (previous === undefined) delete process.env.HTSUS_DATA_DIR;
+      else process.env.HTSUS_DATA_DIR = previous;
+      fs.rmSync(empty, { recursive: true, force: true });
+      setupFixtureIndex();
+    }
   });
 });
 

@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import { UnauthenticatedError, requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
-import { lookupExact, tryGetActiveRevision } from "@/lib/hts/store";
+import {
+  getChapter99ScreeningScope,
+  lookupExact,
+  tryGetActiveRevision,
+} from "@/lib/hts/store";
 import {
   findCandidate,
   parseRun,
   selectAlternates,
 } from "@/lib/pdf/buildView";
+import { renderDetermination } from "@/lib/pdf/renderDetermination";
 
 export const runtime = "nodejs";
 
@@ -101,11 +106,23 @@ export async function POST(request: Request) {
   const activeRevision = tryGetActiveRevision();
   const line = lookupExact(selected.hts_code);
   if (!line || !line.isReportable) {
+    // Not "a declarable 10-digit line". Some classifiable lines are eight
+    // digits — the Chapter 91 watch provisions, whose reporting numbers come
+    // from a chapter statistical note — and telling an analyst their code is
+    // not ten digits reasserts, at the moment of signature, exactly the
+    // falsehood this application was corrected to stop printing. What is
+    // actually wrong in this branch is that the snapshot does not offer the
+    // code as the deepest line, which can equally mean the snapshot is stale.
     return NextResponse.json(
       {
         error:
-          `${selected.hts_code} is not a declarable 10-digit line in the ` +
-          `current tariff snapshot. Re-run the analysis against the current edition.`,
+          `${selected.hts_code} is not offered as a classifiable line by the ` +
+          `tariff snapshot loaded now` +
+          (activeRevision ? ` (${activeRevision.revision})` : "") +
+          `. The snapshot may have moved since the analysis ran, or may predate ` +
+          `a change in how lines are derived. Re-run the analysis against the ` +
+          `current edition; if it recurs on a code you believe is valid, the ` +
+          `snapshot needs re-syncing rather than the analysis re-running.`,
       },
       { status: 409 },
     );
@@ -147,8 +164,17 @@ export async function POST(request: Request) {
         selectAlternates(run.result.candidates, selected.hts_code),
       ),
       // Frozen copies — the analysis row they came from can still be re-run.
-      runJson: analysis.resultJson,
+      //
+      // The *backfilled* run, not the raw stored string. `parseRun` fills in
+      // fields the analysis predates, and one of them — where a code's
+      // reporting number is published — is read from the tariff index. Storing
+      // the raw string left that to be recomputed on every later read, against
+      // whatever snapshot the deployment held then, so a re-issued document
+      // could state the opposite of the one that circulated while still naming
+      // the revision on this row. Reconstruct once, here, and freeze it.
+      runJson: JSON.stringify(run),
       refinementsJson: analysis.refinementsJson,
+      chapter99ScopeJson: JSON.stringify(getChapter99ScreeningScope()),
       analystNote,
       // Frozen, not joined. The Analyst row keeps changing; this must not.
       analystName: session.name,
@@ -160,7 +186,34 @@ export async function POST(request: Request) {
       effort: analysis.effort,
       appVersion: analysis.appVersion,
     },
+    include: { analysis: true },
   });
+
+  // Hash the document now, not on first export.
+  //
+  // `pdfSha256` is the evidence that ties a circulated file back to this row,
+  // and it was recorded whenever someone first asked for the PDF — which could
+  // be weeks and a re-sync later. The baseline was therefore not the document
+  // that was decided; it was whatever the document had become by the time
+  // somebody looked. Anchoring it here is what makes a later mismatch mean
+  // something.
+  //
+  // A failure to render must not cost the analyst their determination: the row
+  // is the decision, the PDF is a view of it, and an unhashed row is a smaller
+  // loss than a lost decision. The export route still records a hash for a row
+  // that has none.
+  try {
+    const { sha256 } = await renderDetermination(determination);
+    await prisma.determination.update({
+      where: { id: determination.id },
+      data: { pdfSha256: sha256 },
+    });
+  } catch (error) {
+    console.error(
+      `Determination ${determination.id} was recorded but could not be ` +
+        `rendered for hashing: ${String(error)}`,
+    );
+  }
 
   return NextResponse.json({ determinationId: determination.id });
 }

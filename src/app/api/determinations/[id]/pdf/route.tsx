@@ -1,16 +1,7 @@
-import crypto from "node:crypto";
-import { renderToBuffer } from "@react-pdf/renderer";
 import { NextResponse } from "next/server";
-import type { Candidate } from "@/lib/agent/schema";
 import { UnauthenticatedError, requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
-import { DeterminationDoc } from "@/lib/pdf/DeterminationDoc";
-import { getChapter99ScreeningScope } from "@/lib/hts/store";
-import {
-  buildDeterminationView,
-  parseRefinements,
-  parseRun,
-} from "@/lib/pdf/buildView";
+import { renderDetermination } from "@/lib/pdf/renderDetermination";
 
 export const runtime = "nodejs";
 
@@ -78,47 +69,25 @@ export async function GET(
     );
   }
 
-  // Everything is read from the determination's own frozen copies rather than
-  // recomputed: re-issuing a PDF months later must reproduce what was decided,
-  // not what today's tariff or today's analyst name would say.
-  const view = buildDeterminationView({
-    determinationId: determination.id,
-    analyst: {
-      name: determination.analystName,
-      email: determination.analystEmail,
-    },
-    decidedAt: determination.decidedAt,
-    htsusRevision: determination.htsusRevision,
-    scheduleBEdition: determination.scheduleBEdition,
-    tariffRetrievedAt: determination.tariffRetrievedAt,
-    // Read from the snapshot at render time, not frozen on the row: it
-    // describes the screening this document's reader should trust, and the
-    // honest answer is what the deployment can screen now. A stale figure
-    // would understate or overstate a limitation, and both directions mislead.
-    chapter99Scope: getChapter99ScreeningScope(),
-    model: determination.model,
-    effort: determination.effort,
-    appVersion: determination.appVersion,
-    analystNote: determination.analystNote,
-    mode:
-      determination.analysis.mode === "PART_NUMBER"
-        ? "PART_NUMBER"
-        : "DESCRIPTION",
-    input: determination.analysis.input,
-    refinements: parseRefinements(determination.refinementsJson),
-    run: parseRun(determination.runJson),
-    selected: JSON.parse(determination.selectedCandidateJson) as Candidate,
-    alternates: JSON.parse(determination.alternatesJson) as Candidate[],
-  });
-
-  const buffer = await renderToBuffer(<DeterminationDoc view={view} />);
-  const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+  // Rendered by the same function that hashed it at decision time, from the
+  // determination's own frozen copies. Re-issuing a PDF months later must
+  // reproduce what was decided, not what today's tariff or today's analyst
+  // name would say.
+  const { buffer, sha256 } = await renderDetermination(determination);
 
   // Write-once. The hash exists so a PDF already in circulation can be tied
   // back to this row; overwriting it on a later re-issue would destroy exactly
-  // the evidence it was recorded to preserve. Every input to the document is
-  // frozen on the row, so a differing hash means something that should not
-  // have changed did — surface it rather than quietly adopting the new value.
+  // the evidence it was recorded to preserve.
+  //
+  // A mismatch is now worth acting on, which it was not before: the scope
+  // figures were read live, so every determination in the system drifted on
+  // every weekly sync and this branch fired on all of them. With every input
+  // frozen, a differing hash means something that should not have changed did.
+  // So it is recorded on the row and shown on /history, rather than written to
+  // a log line nobody tails — and the response says which hash is which,
+  // instead of handing the caller the drifted one as though it were the issued
+  // one.
+  let drifted = determination.pdfSha256Drifted;
   if (determination.pdfSha256 === null) {
     await prisma.determination
       .update({ where: { id: determination.id }, data: { pdfSha256: sha256 } })
@@ -126,6 +95,13 @@ export async function GET(
         // Delivering the document matters more than recording its hash.
       });
   } else if (determination.pdfSha256 !== sha256) {
+    drifted = sha256;
+    await prisma.determination
+      .update({
+        where: { id: determination.id },
+        data: { pdfSha256Drifted: sha256, pdfSha256DriftedAt: new Date() },
+      })
+      .catch(() => {});
     console.error(
       `Determination ${determination.id} re-rendered to ${sha256} but was ` +
         `issued as ${determination.pdfSha256}. The stored hash is unchanged. ` +
@@ -142,7 +118,15 @@ export async function GET(
       "Content-Disposition": `inline; filename="${filename}"`,
       "Content-Length": String(buffer.length),
       "Cache-Control": "private, no-store",
+      // The hash of *these* bytes, and separately the hash this determination
+      // was issued under. A verifier that only ever saw the first header could
+      // not tell a faithful re-issue from a drifted one, because a drifted
+      // document reports its own hash just as confidently.
       "X-Determination-SHA256": sha256,
+      ...(determination.pdfSha256
+        ? { "X-Determination-Issued-SHA256": determination.pdfSha256 }
+        : {}),
+      ...(drifted ? { "X-Determination-Drifted": "true" } : {}),
     },
   });
 }

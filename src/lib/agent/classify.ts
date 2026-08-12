@@ -170,6 +170,58 @@ export interface ClassificationRun {
  *
  * Mutates and returns the same object; callers own freshly-parsed JSON.
  */
+/**
+ * Rebuild `reportingNumberNotes` for a run stored before the field existed.
+ *
+ * Reconstruction is not verification, and the difference is the whole design
+ * here. `verifyAgainstTariff` looks a line up in the same snapshot it verified
+ * the code against, so it can say all three things: the number is on the line,
+ * it comes from a chapter note, or the schedule publishes no scheme for it.
+ * This function is looking up a code that was verified against a snapshot the
+ * deployment may no longer hold, so it can only say the first two.
+ *
+ * `unpublished` is therefore never produced here. A code missing from the
+ * current index, or one whose footnote has since been reworded away, yields no
+ * entry at all — the document goes quiet rather than announcing that no
+ * reporting number is published, which is the strongest claim on the page and
+ * would be inferred purely from data this deployment does not have. That was
+ * the shape of the original Chapter 91 defect and it does not get to return
+ * through the back door.
+ *
+ * Nothing is thrown, either. A missing or mid-swap snapshot is exactly when the
+ * audit record most needs to be readable; a determination that cannot be
+ * exported because the tariff data is gone loses the record to protect a
+ * footnote.
+ */
+function reconstructReportingNumberNotes(
+  verifiedCodes: string[],
+): ClassificationRun["verification"]["reportingNumberNotes"] {
+  return verifiedCodes.flatMap((code) => {
+    let line: ReturnType<typeof lookupExact> = null;
+    try {
+      line = lookupExact(code);
+    } catch {
+      return [];
+    }
+    if (!line) return [];
+
+    const source = reportingNumberSource(code, line.footnotes);
+    if (source !== "chapter_statistical_note") return [];
+
+    return [
+      {
+        code,
+        digits: code.replace(/\D/g, "").length,
+        source,
+        footnote:
+          line.footnotes.find((footnote) =>
+            /statistical note/i.test(footnote),
+          ) ?? null,
+      },
+    ];
+  });
+}
+
 export function backfillRunFields(run: ClassificationRun): ClassificationRun {
   if (run.verification && run.verification.substitutedRecommendation === undefined) {
     // Unknowable after the fact: whether the model's original recommendation
@@ -179,29 +231,9 @@ export function backfillRunFields(run: ClassificationRun): ClassificationRun {
     run.verification.substitutedRecommendation = null;
   }
   if (run.verification && !run.verification.reportingNumberNotes) {
-    // Recomputable, unlike the substitution above — but only against the index,
-    // because the answer lives in the line's footnotes and a stored run keeps
-    // codes, not lines. Runs written before this field existed carry the old
-    // `incompleteReportingNumbers`, whose entries asserted the wrong thing; they
-    // are dropped rather than translated, and the codes are re-examined here.
-    run.verification.reportingNumberNotes = (
-      run.verification.verifiedCodes ?? []
-    ).flatMap((code) => {
-      const line = lookupExact(code);
-      const source = reportingNumberSource(code, line?.footnotes ?? []);
-      if (source === "on_the_line") return [];
-      return [
-        {
-          code,
-          digits: code.replace(/\D/g, "").length,
-          source,
-          footnote:
-            line?.footnotes.find((footnote) =>
-              /statistical note/i.test(footnote),
-            ) ?? null,
-        },
-      ];
-    });
+    run.verification.reportingNumberNotes = reconstructReportingNumberNotes(
+      run.verification.verifiedCodes ?? [],
+    );
   }
   for (const correction of run.verification?.corrections ?? []) {
     if (correction.severity) continue;
