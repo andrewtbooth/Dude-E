@@ -1144,11 +1144,6 @@ export function verifyAgainstTariff(result: ClassificationResult): {
   const reRanked = kept.map((candidate, index) => ({
     ...candidate,
     rank: index + 1,
-    reasoning: {
-      ...candidate.reasoning,
-      why_not_selected:
-        index === 0 ? null : candidate.reasoning.why_not_selected,
-    },
   }));
 
   // A null recommendation is a deliberate answer, not a missing one: the schema
@@ -1179,10 +1174,30 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         // recorded below rather than passed off as the model's own answer.
         (reRanked[0]?.hts_code ?? null);
 
+  // `why_not_selected` is a rejection rationale, so it belongs on every
+  // candidate except the one that *was* selected. Keying that off rank 1 was
+  // right only when the model's own pick survived verification and led the
+  // list. When verification substituted a different code, or the model ranked
+  // its recommendation below first, rank 1 was stripped of a real rationale
+  // while the recommended code was presented with a note explaining why it had
+  // been passed over — printed under a heading claiming it as the answer. And a
+  // `needs_more_info` run, which selects nothing at all, still lost rank 1's.
+  const candidates = reRanked.map((candidate) => ({
+    ...candidate,
+    reasoning: {
+      ...candidate.reasoning,
+      why_not_selected:
+        recommended !== null &&
+        candidate.hts_code.replace(/\D/g, "") === recommended.replace(/\D/g, "")
+          ? null
+          : candidate.reasoning.why_not_selected,
+    },
+  }));
+
   return {
     result: {
       ...result,
-      candidates: reRanked,
+      candidates,
       recommended_hts_code: recommended,
     },
     verification: {

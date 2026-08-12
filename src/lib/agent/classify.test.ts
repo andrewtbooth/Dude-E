@@ -273,7 +273,14 @@ describe("verifyAgainstTariff", () => {
     ]);
   });
 
-  it("clears why_not_selected on whatever becomes rank 1", () => {
+  /**
+   * `why_not_selected` is a rejection rationale, so it belongs on every
+   * candidate except the one that was selected — which is the recommendation,
+   * not whatever ended up at rank 1. Keying it off the index agreed with the
+   * recommendation only in the common case, and disagreed in exactly the two
+   * cases worth getting right.
+   */
+  it("clears why_not_selected on the recommendation", () => {
     const { result: verified } = verifyAgainstTariff(
       result([
         candidate({ rank: 1, hts_code: "0000.00.00.00" }),
@@ -281,7 +288,44 @@ describe("verifyAgainstTariff", () => {
       ]),
     );
 
+    expect(verified.recommended_hts_code).toBe("9617.00.10.00");
     expect(verified.candidates[0].reasoning.why_not_selected).toBeNull();
+  });
+
+  it("leaves it on rank 1 when the model recommended something below it", () => {
+    // The rank-1 candidate here was genuinely passed over, and its rationale
+    // is the reader's account of why. Clearing it deleted that account, and
+    // left the recommended code carrying a note explaining why it lost —
+    // printed under a heading claiming it as the answer.
+    const base = result([
+      candidate({ rank: 1, hts_code: "9617.00.10.00", why_not_selected: "no vacuum flask body" }),
+      candidate({ rank: 2, hts_code: "7323.93.00.80", why_not_selected: "loses on GRI 3(b)" }),
+    ]);
+    base.recommended_hts_code = "7323.93.00.80";
+
+    const { result: verified } = verifyAgainstTariff(base);
+
+    expect(verified.candidates[0].reasoning.why_not_selected).toBe(
+      "no vacuum flask body",
+    );
+    expect(verified.candidates[1].reasoning.why_not_selected).toBeNull();
+  });
+
+  it("clears nothing when the run recommended nothing", () => {
+    // `needs_more_info` selects no code at all, so no candidate's rationale is
+    // spent — rank 1's was being cleared for a selection that never happened.
+    const base = result([
+      candidate({ rank: 1, hts_code: "9617.00.10.00", why_not_selected: "material unknown" }),
+    ]);
+    base.status = "needs_more_info";
+    base.recommended_hts_code = null;
+
+    const { result: verified } = verifyAgainstTariff(base);
+
+    expect(verified.recommended_hts_code).toBeNull();
+    expect(verified.candidates[0].reasoning.why_not_selected).toBe(
+      "material unknown",
+    );
   });
 
   it("promotes the recommendation when the recommended code was dropped", () => {
