@@ -306,22 +306,38 @@ export const DERIVATION_VERSION = 3;
  *
  *     See statistical note 1 to this chapter.
  *
- * and that note publishes the suffixes. It requires the article to be
- * constructively separated into its components — movement, case, strap, battery
- * — each separately valued and reported on its own line, with the suffix
- * appended to the eight-digit subheading: a battery-powered watch under
- * 9101.11.40 is reported as 9101.11.4010, .4020, .4030 and .4040, and the note
- * is explicit that a named component absent from the shipment still gets a line,
- * at zero quantity and value.
+ * and that note publishes the suffixes. It opens by saying what it is for:
+ * "the calculation of duties ... requires that these articles be constructively
+ * separated into their component parts and each component separately valued".
+ * Duty, not bookkeeping — 9101.11.40's Column 1 rate is 51 cents each plus
+ * 6.25% on the case and strap plus 5.3% on the battery, which cannot be
+ * computed without the split. Each component is then reported on its own line,
+ * the suffix appended to the eight-digit subheading, and the note is explicit
+ * that a named component absent from the shipment still gets a line at zero
+ * quantity and value.
  *
- * Which is also why those lines carry no unit of quantity. There is no single
- * quantity to report for the article; there are four, one per component. The
- * missing unit was a consequence of the scheme, and it was read here as evidence
+ * The component sets differ by subheading and there are several schemes. Under
+ * scheme (a), which covers 9101.11.40, they are movement / case / strap, band
+ * or bracelet / battery, so a battery-powered watch is reported as 9101.11.4010,
+ * .4020, .4030 and .4040. Scheme (b) is movement-and-case / battery — two lines,
+ * not four. Nothing here should assume a fixed set; read the note.
+ *
+ * Which is also why these lines carry no unit of quantity. There is no single
+ * quantity to report for the article, there is one per component. The missing
+ * unit was a consequence of the scheme, and it was read here as evidence
  * against the scheme's existence.
  *
  * So the question this answers is not whether a number exists but where it is
- * written, and the footnote is what says so. Derived from the code and the
- * line's own footnotes rather than stored, so it needs no re-sync.
+ * written, and the footnote is what says so. This function is evaluated at read
+ * time rather than stored, so changing it needs no re-sync and no
+ * DERIVATION_VERSION bump.
+ *
+ * The column it reads does not get the same exemption. `footnotes` is stored,
+ * and it has just gone from decorative to load-bearing for a statement printed
+ * on a signed artifact. A change to `coerceFootnotes` below, or to how the sync
+ * extracts footnotes, changes what this returns for rows already on disk — and
+ * *that* needs the bump. "Derived at read time" describes this function, not
+ * its inputs.
  */
 export type ReportingNumberSource =
   /** Printed on the line itself — the ordinary case. */

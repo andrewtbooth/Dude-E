@@ -111,7 +111,7 @@ export async function POST(request: Request) {
   if (priorAnalysisId) {
     const prior = await prisma.analysis.findUnique({
       where: { id: priorAnalysisId },
-      select: { analystId: true, refinementsJson: true },
+      select: { analystId: true },
     });
     if (!prior || prior.analystId !== session.id) {
       return NextResponse.json(
@@ -119,21 +119,36 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     }
-    mergedRefinements = mergeRefinements(
-      parseRefinements(safeParseJson(prior.refinementsJson)),
-      refinements,
-    );
   }
 
+  // The read and the merge happen inside the write.
+  //
+  // Merging in application memory between a `findUnique` and an `update` is a
+  // read-modify-write, and this is not a rare race: a round takes minutes, the
+  // form stays interactive, and a retried or double-submitted POST is ordinary.
+  // Two rounds in flight both read the same prior and the second write erases
+  // the first's answers — which is precisely the loss the merge was written to
+  // stop, reintroduced one layer down. The transaction is what makes "later
+  // answers win" true rather than "whichever write lands last wins".
   const analysis = priorAnalysisId
-    ? await prisma.analysis.update({
-        where: { id: priorAnalysisId },
-        data: {
-          status: "RUNNING",
-          refinementsJson: JSON.stringify(mergedRefinements),
-          error: null,
-          completedAt: null,
-        },
+    ? await prisma.$transaction(async (tx) => {
+        const current = await tx.analysis.findUniqueOrThrow({
+          where: { id: priorAnalysisId },
+          select: { refinementsJson: true },
+        });
+        mergedRefinements = mergeRefinements(
+          parseRefinements(safeParseJson(current.refinementsJson)),
+          refinements,
+        );
+        return tx.analysis.update({
+          where: { id: priorAnalysisId },
+          data: {
+            status: "RUNNING",
+            refinementsJson: JSON.stringify(mergedRefinements),
+            error: null,
+            completedAt: null,
+          },
+        });
       })
     : await prisma.analysis.create({
         data: {

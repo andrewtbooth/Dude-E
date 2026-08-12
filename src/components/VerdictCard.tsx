@@ -167,7 +167,22 @@ export function VerdictCard({
           </p>
         )}
 
-        {chapter99.length > 0 && (
+        {/*
+          Stated either way, because the document already is.
+
+          The exported determination prints a "screening is incomplete" callout
+          when nothing matched, on the reasoning that a reader cannot tell
+          "screened, nothing applies" from "not covered by the screening" — and
+          those carry opposite consequences at entry. That reasoning was never
+          carried to this screen, which rendered the block only on a hit.
+
+          So the analyst decided from a page showing a Column 1 rate and
+          nothing else, then signed a document telling its reader the screening
+          was incomplete and to treat absence as unscreened. The person whose
+          name goes on it was the last to know what it says. Whichever way the
+          asymmetry runs it is wrong, and this direction is the worse one.
+        */}
+        {chapter99.length > 0 ? (
           <p className="mt-3 border-l-2 border-[var(--warn)] pl-3 text-xs text-[var(--text-secondary)]">
             <span className="font-medium text-[var(--warn)]">
               Additional duties may apply.{" "}
@@ -177,7 +192,27 @@ export function VerdictCard({
               .join(", ")}
             . Details on the candidate below.
           </p>
+        ) : (
+          <p className="mt-3 border-l-2 border-[var(--warn)] pl-3 text-xs text-[var(--text-secondary)]">
+            <span className="font-medium text-[var(--warn)]">
+              No Chapter 99 duty matched &mdash; that is not a finding that none
+              applies.{" "}
+            </span>
+            Screening reaches a minority of the schedule and Section 301
+            coverage is known to be partial, so for Chinese-origin goods
+            especially, read this as unscreened rather than clear. Check
+            origin-based additional duties before filing. The exported
+            determination says so too.
+          </p>
         )}
+
+        <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+          Tariff classification only. Country of origin, valuation, FTA
+          eligibility, AD/CVD scope, quota and PGA requirements were not
+          analysed, and Chapter 98 provisions &mdash; 9801 goods returned, 9802
+          outward processing &mdash; are claimed per entry and were not
+          evaluated. Full scope is on the exported determination.
+        </p>
 
         <button
           type="button"
