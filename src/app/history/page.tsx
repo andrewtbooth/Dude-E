@@ -145,6 +145,33 @@ export default async function HistoryPage({
                     {determination.analystNote}
                   </p>
                 )}
+
+                {/*
+                  The integrity check, somewhere a human looks.
+
+                  A re-render that does not match the hash recorded at decision
+                  time used to write a console.error and nothing else — on Fly,
+                  a log line nobody tails — while the response handed the caller
+                  the *new* hash as though it were authoritative. Every input to
+                  the document is frozen on the row now, so this fires on real
+                  drift rather than on every weekly sync, which is what makes it
+                  worth showing at all.
+                */}
+                {determination.pdfSha256Drifted && (
+                  <p className="mt-1.5 border-l-2 border-[var(--danger)] pl-2.5 text-xs text-[var(--text-secondary)]">
+                    <span className="font-medium text-[var(--danger)]">
+                      This re-issues differently from the document that was
+                      signed.{" "}
+                    </span>
+                    Re-rendered on{" "}
+                    {determination.pdfSha256DriftedAt
+                      ? formatTimestamp(determination.pdfSha256DriftedAt)
+                      : "a later export"}{" "}
+                    to a different SHA-256 than the one recorded at decision.
+                    Every input is frozen on this row, so establish what changed
+                    before treating either copy as authoritative.
+                  </p>
+                )}
               </li>
             ))}
           </ul>

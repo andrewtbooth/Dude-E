@@ -11,7 +11,10 @@ import {
   THINKING_BUDGET_TOKENS,
   config,
 } from "../config";
-import { hasPublishedReportingNumber } from "../hts/parse";
+import {
+  reportingNumberSource,
+  type ReportingNumberSource,
+} from "../hts/parse";
 import {
   getActiveRevision,
   lookupExact,
@@ -113,18 +116,26 @@ export interface ClassificationRun {
      */
     substitutedRecommendation: { modelSaid: string; using: string } | null;
     /**
-     * Verified codes for which the schedule publishes no ten-digit reporting
-     * number — see `hasPublishedReportingNumber`.
+     * Verified codes whose ten-digit reporting number is not printed on the
+     * line — see `reportingNumberSource`.
      *
-     * Not a rejection. These are the deepest lines the schedule publishes, so
-     * they are the most specific classification available and they stay on
-     * offer. But an entry is filed against a ten-digit number, and printing
-     * one of these as a finished answer hands a filer something their broker
-     * may not be able to key. Whether these particular provisions are filable
-     * as published is a question about CBP practice; the application's job is
-     * to say that the schedule stopped short, not to decide the question.
+     * Not a rejection, and not a defect in the code. These are the deepest
+     * lines the schedule publishes and they stay on offer; what is recorded
+     * here is that arriving at the number an entry is keyed against takes a
+     * step the line itself does not show. For the Chapter 91 watch provisions
+     * that step is chapter statistical note 1, which publishes the suffixes and
+     * requires the article to be reported as separately valued components.
+     *
+     * The footnote is kept verbatim so a determination can name the note the
+     * schedule actually pointed at rather than one this code inferred.
      */
-    incompleteReportingNumbers: { code: string; digits: number }[];
+    reportingNumberNotes: {
+      code: string;
+      digits: number;
+      source: Exclude<ReportingNumberSource, "on_the_line">;
+      /** The line's footnote, when it points at a note. */
+      footnote: string | null;
+    }[];
   };
   usage: {
     /** Uncached prompt tokens, billed at full rate. */
@@ -159,6 +170,58 @@ export interface ClassificationRun {
  *
  * Mutates and returns the same object; callers own freshly-parsed JSON.
  */
+/**
+ * Rebuild `reportingNumberNotes` for a run stored before the field existed.
+ *
+ * Reconstruction is not verification, and the difference is the whole design
+ * here. `verifyAgainstTariff` looks a line up in the same snapshot it verified
+ * the code against, so it can say all three things: the number is on the line,
+ * it comes from a chapter note, or the schedule publishes no scheme for it.
+ * This function is looking up a code that was verified against a snapshot the
+ * deployment may no longer hold, so it can only say the first two.
+ *
+ * `unpublished` is therefore never produced here. A code missing from the
+ * current index, or one whose footnote has since been reworded away, yields no
+ * entry at all — the document goes quiet rather than announcing that no
+ * reporting number is published, which is the strongest claim on the page and
+ * would be inferred purely from data this deployment does not have. That was
+ * the shape of the original Chapter 91 defect and it does not get to return
+ * through the back door.
+ *
+ * Nothing is thrown, either. A missing or mid-swap snapshot is exactly when the
+ * audit record most needs to be readable; a determination that cannot be
+ * exported because the tariff data is gone loses the record to protect a
+ * footnote.
+ */
+function reconstructReportingNumberNotes(
+  verifiedCodes: string[],
+): ClassificationRun["verification"]["reportingNumberNotes"] {
+  return verifiedCodes.flatMap((code) => {
+    let line: ReturnType<typeof lookupExact> = null;
+    try {
+      line = lookupExact(code);
+    } catch {
+      return [];
+    }
+    if (!line) return [];
+
+    const source = reportingNumberSource(code, line.footnotes);
+    if (source !== "chapter_statistical_note") return [];
+
+    return [
+      {
+        code,
+        digits: code.replace(/\D/g, "").length,
+        source,
+        footnote:
+          line.footnotes.find((footnote) =>
+            /statistical note/i.test(footnote),
+          ) ?? null,
+      },
+    ];
+  });
+}
+
 export function backfillRunFields(run: ClassificationRun): ClassificationRun {
   if (run.verification && run.verification.substitutedRecommendation === undefined) {
     // Unknowable after the fact: whether the model's original recommendation
@@ -167,15 +230,10 @@ export function backfillRunFields(run: ClassificationRun): ClassificationRun {
     // is the honest reading — it does not claim there was none.
     run.verification.substitutedRecommendation = null;
   }
-  if (run.verification && !run.verification.incompleteReportingNumbers) {
-    // Recomputable, unlike the substitution above: the test is a property of
-    // the code itself, so a run stored before this existed can be told the
-    // truth about its own codes rather than assumed innocent.
-    run.verification.incompleteReportingNumbers = (
-      run.verification.verifiedCodes ?? []
-    )
-      .filter((code) => !hasPublishedReportingNumber(code))
-      .map((code) => ({ code, digits: code.replace(/\D/g, "").length }));
+  if (run.verification && !run.verification.reportingNumberNotes) {
+    run.verification.reportingNumberNotes = reconstructReportingNumberNotes(
+      run.verification.verifiedCodes ?? [],
+    );
   }
   for (const correction of run.verification?.corrections ?? []) {
     if (correction.severity) continue;
@@ -985,7 +1043,8 @@ export function verifyAgainstTariff(result: ClassificationResult): {
   const verifiedCodes: string[] = [];
   const rejectedCodes: { code: string; reason: string }[] = [];
   const corrections: CodeCorrection[] = [];
-  const incompleteReportingNumbers: { code: string; digits: number }[] = [];
+  const reportingNumberNotes: ClassificationRun["verification"]["reportingNumberNotes"] =
+    [];
 
   const kept: Candidate[] = [];
 
@@ -1031,17 +1090,22 @@ export function verifyAgainstTariff(result: ClassificationResult): {
 
     verifiedCodes.push(line.htsNo);
 
-    // Verified is not the same as filable. With Chapters 98 and 99 excluded as
-    // classifications, what remains are the 95 Chapter 91 watch provisions: the
-    // deepest thing the schedule publishes, and still short of the ten-digit
-    // number an entry is filed against — see hasPublishedReportingNumber. They
-    // stay as candidates, because they are the most specific classification
-    // available, and are named here so nothing downstream prints one as a
-    // finished answer.
-    if (!hasPublishedReportingNumber(line.htsNo)) {
-      incompleteReportingNumbers.push({
+    // Classified is not the same as reportable-as-printed. With Chapters 98 and
+    // 99 excluded as classifications, what remains short are the 95 Chapter 91
+    // watch provisions, whose ten-digit suffixes are published in the chapter's
+    // statistical note rather than on the line. Recorded here, from the line's
+    // own footnote, so the screen and the determination can say where the
+    // reporting number comes from instead of guessing from the digit count.
+    const source = reportingNumberSource(line.htsNo, line.footnotes);
+    if (source !== "on_the_line") {
+      reportingNumberNotes.push({
         code: line.htsNo,
         digits: line.htsNo.replace(/\D/g, "").length,
+        source,
+        footnote:
+          line.footnotes.find((footnote) =>
+            /statistical note/i.test(footnote),
+          ) ?? null,
       });
     }
 
@@ -1112,11 +1176,6 @@ export function verifyAgainstTariff(result: ClassificationResult): {
   const reRanked = kept.map((candidate, index) => ({
     ...candidate,
     rank: index + 1,
-    reasoning: {
-      ...candidate.reasoning,
-      why_not_selected:
-        index === 0 ? null : candidate.reasoning.why_not_selected,
-    },
   }));
 
   // A null recommendation is a deliberate answer, not a missing one: the schema
@@ -1147,17 +1206,37 @@ export function verifyAgainstTariff(result: ClassificationResult): {
         // recorded below rather than passed off as the model's own answer.
         (reRanked[0]?.hts_code ?? null);
 
+  // `why_not_selected` is a rejection rationale, so it belongs on every
+  // candidate except the one that *was* selected. Keying that off rank 1 was
+  // right only when the model's own pick survived verification and led the
+  // list. When verification substituted a different code, or the model ranked
+  // its recommendation below first, rank 1 was stripped of a real rationale
+  // while the recommended code was presented with a note explaining why it had
+  // been passed over — printed under a heading claiming it as the answer. And a
+  // `needs_more_info` run, which selects nothing at all, still lost rank 1's.
+  const candidates = reRanked.map((candidate) => ({
+    ...candidate,
+    reasoning: {
+      ...candidate.reasoning,
+      why_not_selected:
+        recommended !== null &&
+        candidate.hts_code.replace(/\D/g, "") === recommended.replace(/\D/g, "")
+          ? null
+          : candidate.reasoning.why_not_selected,
+    },
+  }));
+
   return {
     result: {
       ...result,
-      candidates: reRanked,
+      candidates,
       recommended_hts_code: recommended,
     },
     verification: {
       verifiedCodes,
       rejectedCodes,
       corrections,
-      incompleteReportingNumbers,
+      reportingNumberNotes,
       substitutedRecommendation:
         !modelDeclinedToRecommend && !recommendedStillValid && recommended
           ? { modelSaid: result.recommended_hts_code!, using: recommended }

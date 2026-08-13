@@ -141,9 +141,35 @@ model Determination {
   appVersion    String
   decidedAt     DateTime @default(now())
 
-  /// SHA-256 of the PDF bytes, recorded on first issue so a circulated file
+  /// How far Chapter 99 screening reached in the snapshot this was decided
+  /// against, as JSON.
+  ///
+  /// Frozen for the same reason `tariffRetrievedAt` is. It was read live at
+  /// render, which meant two things: a document re-issued after a sync stated
+  /// a coverage figure that did not belong to the revision printed beside it,
+  /// and — because one of the counts is the size of the whole schedule — every
+  /// determination in the system changed bytes on every sync, so the hash
+  /// below fired on all of them and could not distinguish real drift.
+  chapter99ScopeJson String?
+
+  /// SHA-256 of the PDF bytes, recorded at decision time so a circulated file
   /// can be tied back to this row. Write-once by design — see the PDF route.
+  ///
+  /// Written when the determination is recorded rather than on first export.
+  /// Recording it on first GET meant the baseline was whatever the document
+  /// happened to look like when someone first asked for it, which may already
+  /// have been after a re-sync — so the hash anchored to an arbitrary moment
+  /// rather than to the decision it exists to evidence.
   pdfSha256 String?
+
+  /// Set when a re-render did not match `pdfSha256`, with the hash it produced.
+  ///
+  /// The mismatch used to be a `console.error` and nothing else, while the
+  /// response handed the caller the *new* hash in a header as though it were
+  /// authoritative. A control nobody can see is not a control, so it is
+  /// recorded here and shown on /history.
+  pdfSha256Drifted   String?
+  pdfSha256DriftedAt DateTime?
 
   @@index([analystId, decidedAt])
   @@index([selectedHtsCode])

@@ -866,25 +866,99 @@ export function getIndexStats(): IndexStats {
 /**
  * How far Chapter 99 screening actually reaches in the loaded snapshot.
  *
+ * Every figure is a count of the same kind of thing as the figure it is
+ * compared against, which was not true before and produced a false statement on
+ * every determination: the count of *subheadings* named by a Chapter 99 note
+ * was printed over the count of declarable *lines*, and the sentence called
+ * both subheadings. That reported 1.3% coverage where the real combined figure
+ * is about 10%, and understated the tool's own reach by roughly eight times.
+ *
+ * Both screening paths are counted, because the app runs both and quoting one
+ * describes a tool that does not exist. They overlap partly, so `either` is the
+ * only figure that answers "how much of the schedule can this screen at all".
+ */
+export interface Chapter99ScreeningScope {
+  /** 8-digit subheadings a Chapter 99 note enumerates. */
+  subheadingsWithAdditionalDuty: number;
+  /** 8-digit subheadings that carry at least one declarable line. */
+  declarableSubheadings: number;
+  declarableLines: number;
+  /** Declarable lines under a subheading a note enumerates. */
+  linesReachedByNotes: number;
+  /** Declarable lines carrying a `See 9903.xx.xx.` footnote, or under one. */
+  linesReachedByFootnote: number;
+  /** Declarable lines either path reaches. The honest headline. */
+  linesReachedByEither: number;
+}
+
+/**
  * Read from the index rather than written down, for the same reason the tariff
  * revision is: a number stated on a determination has to be a fact about the
  * data that produced it, not a claim someone typed once and stopped
  * maintaining. Returns null when no snapshot is loaded.
  */
-export function getChapter99ScreeningScope(): {
-  subheadingsWithAdditionalDuty: number;
-  declarableLines: number;
-} | null {
+export function getChapter99ScreeningScope(): Chapter99ScreeningScope | null {
   try {
     const { db } = open();
-    const one = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
+
+    const coveredSubheadings = new Set(
+      (
+        db
+          .prepare(`SELECT DISTINCT base_digits AS d ${IMPOSING_COVERAGE_SQL}`)
+          .all() as { d: string }[]
+      ).map((row) => row.d),
+    );
+
+    // The footnote path reaches a line through any ancestor, because USITC
+    // publishes `See 9903.xx.xx.` on the rate line rather than on each
+    // statistical breakout beneath it — the same walk getChapter99ByFootnote
+    // does. Grouped by prefix length so this is a handful of set lookups per
+    // line rather than a scan per line.
+    const footnotePrefixesByLength = new Map<number, Set<string>>();
+    for (const row of db
+      .prepare(
+        `SELECT DISTINCT digits AS d FROM lines
+          WHERE footnotes LIKE '%9903.%' AND length(digits) > 0`,
+      )
+      .all() as { d: string }[]) {
+      const bucket = footnotePrefixesByLength.get(row.d.length) ?? new Set();
+      bucket.add(row.d);
+      footnotePrefixesByLength.set(row.d.length, bucket);
+    }
+
+    const declarable = db
+      .prepare("SELECT digits FROM lines WHERE is_reportable = 1")
+      .all() as { digits: string }[];
+
+    let linesReachedByNotes = 0;
+    let linesReachedByFootnote = 0;
+    let linesReachedByEither = 0;
+    const declarableSubheadings = new Set<string>();
+
+    for (const { digits } of declarable) {
+      declarableSubheadings.add(digits.slice(0, 8));
+
+      const byNotes = coveredSubheadings.has(digits.slice(0, 8));
+      let byFootnote = false;
+      for (const [length, prefixes] of footnotePrefixesByLength) {
+        if (length <= digits.length && prefixes.has(digits.slice(0, length))) {
+          byFootnote = true;
+          break;
+        }
+      }
+
+      if (byNotes) linesReachedByNotes++;
+      if (byFootnote) linesReachedByFootnote++;
+      if (byNotes || byFootnote) linesReachedByEither++;
+    }
+
     return {
-      subheadingsWithAdditionalDuty: one(
-        `SELECT COUNT(DISTINCT base_digits) AS n ${IMPOSING_COVERAGE_SQL}`,
-      ),
-      declarableLines: one(
-        "SELECT COUNT(*) AS n FROM lines WHERE is_reportable = 1",
-      ),
+      subheadingsWithAdditionalDuty: coveredSubheadings.size,
+      declarableSubheadings: declarableSubheadings.size,
+      declarableLines: declarable.length,
+      linesReachedByNotes,
+      linesReachedByFootnote,
+      linesReachedByEither,
     };
   } catch {
     return null;

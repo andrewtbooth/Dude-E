@@ -133,11 +133,19 @@ export function sampleDeterminationView(
     tariffRetrievedAt: new Date("2026-07-30T09:00:00Z"),
     // The real figures for the 2026 Rev 15 snapshot, so the fixture
     // renders the same shape of claim a live determination makes.
-    chapter99Scope: { subheadingsWithAdditionalDuty: 267, declarableLines: 19_949 },
+    chapter99Scope: {
+      subheadingsWithAdditionalDuty: 267,
+      declarableSubheadings: 11_387,
+      declarableLines: 19_949,
+      linesReachedByNotes: 606,
+      linesReachedByFootnote: 1_615,
+      linesReachedByEither: 2_034,
+    },
     verification: {
       rejectedCodes: [],
       corrections: [],
       substitutedRecommendation: null,
+      reportingNumberNotes: [],
     },
     model: "claude-opus-5",
     effort: "max",
@@ -160,6 +168,7 @@ export function sampleDeterminationView(
       ],
     },
     selected: sampleSelectedCandidate(),
+    alternatesConsidered: 2,
     alternates: [
       sampleAlternate(
         2,

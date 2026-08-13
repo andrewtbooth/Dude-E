@@ -2,7 +2,6 @@
 
 import type { ClassificationRun } from "@/lib/agent/classify";
 import type { Candidate } from "@/lib/agent/schema";
-import { hasPublishedReportingNumber } from "@/lib/hts/parse";
 import { HtsCode } from "./HtsCode";
 
 /**
@@ -55,6 +54,15 @@ export function VerdictCard({
 
   const substituted = verification.substitutedRecommendation;
   const chapter99 = recommended.tariff.chapter_99;
+  // Read from the run rather than recomputed from the code: where a reporting
+  // number is published is a fact about the line's footnotes, which the screen
+  // does not have and the digit count cannot stand in for.
+  const reportingNumberNote =
+    verification.reportingNumberNotes?.find(
+      (note) =>
+        note.code.replace(/\D/g, "") ===
+        recommended.hts_code.replace(/\D/g, ""),
+    ) ?? null;
 
   return (
     <section
@@ -127,19 +135,54 @@ export function VerdictCard({
           </p>
         )}
 
-        {!hasPublishedReportingNumber(recommended.hts_code) && (
+        {reportingNumberNote && (
           <p className="mt-3 border-l-2 border-[var(--warn)] pl-3 text-xs text-[var(--text-secondary)]">
-            <span className="font-medium text-[var(--warn)]">
-              No ten-digit reporting number is published for this line.{" "}
-            </span>
-            The schedule stops here — no statistical breakout and no unit of
-            quantity, where every other classifiable line in Chapters 1&ndash;97
-            has both. It is the most specific classification available, but
-            confirm the reporting number your broker should key before filing.
+            {reportingNumberNote.source === "chapter_statistical_note" ? (
+              <>
+                <span className="font-medium text-[var(--warn)]">
+                  The reporting number is built from a chapter statistical
+                  note.{" "}
+                </span>
+                This classification is the {reportingNumberNote.digits}-digit
+                subheading. The ten-digit number an entry is keyed against is
+                formed by appending a statistical suffix published in the
+                chapter&rsquo;s note &mdash; the article is constructively
+                separated into its components, each separately valued and
+                reported on its own suffixed line, including any named component
+                absent from the shipment at zero quantity and value.{" "}
+                {reportingNumberNote.footnote ?? ""}
+              </>
+            ) : (
+              <>
+                <span className="font-medium text-[var(--warn)]">
+                  This line stops short of a reporting number.{" "}
+                </span>
+                The schedule terminates it at {reportingNumberNote.digits}{" "}
+                digits and this snapshot carries no note saying where the
+                statistical suffix comes from. It is the most specific
+                classification available; confirm the reporting number your
+                broker should key before filing.
+              </>
+            )}
           </p>
         )}
 
-        {chapter99.length > 0 && (
+        {/*
+          Stated either way, because the document already is.
+
+          The exported determination prints a "screening is incomplete" callout
+          when nothing matched, on the reasoning that a reader cannot tell
+          "screened, nothing applies" from "not covered by the screening" — and
+          those carry opposite consequences at entry. That reasoning was never
+          carried to this screen, which rendered the block only on a hit.
+
+          So the analyst decided from a page showing a Column 1 rate and
+          nothing else, then signed a document telling its reader the screening
+          was incomplete and to treat absence as unscreened. The person whose
+          name goes on it was the last to know what it says. Whichever way the
+          asymmetry runs it is wrong, and this direction is the worse one.
+        */}
+        {chapter99.length > 0 ? (
           <p className="mt-3 border-l-2 border-[var(--warn)] pl-3 text-xs text-[var(--text-secondary)]">
             <span className="font-medium text-[var(--warn)]">
               Additional duties may apply.{" "}
@@ -149,7 +192,27 @@ export function VerdictCard({
               .join(", ")}
             . Details on the candidate below.
           </p>
+        ) : (
+          <p className="mt-3 border-l-2 border-[var(--warn)] pl-3 text-xs text-[var(--text-secondary)]">
+            <span className="font-medium text-[var(--warn)]">
+              No Chapter 99 duty matched &mdash; that is not a finding that none
+              applies.{" "}
+            </span>
+            Screening reaches a minority of the schedule and Section 301
+            coverage is known to be partial, so for Chinese-origin goods
+            especially, read this as unscreened rather than clear. Check
+            origin-based additional duties before filing. The exported
+            determination says so too.
+          </p>
         )}
+
+        <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+          Tariff classification only. Country of origin, valuation, FTA
+          eligibility, AD/CVD scope, quota and PGA requirements were not
+          analysed, and Chapter 98 provisions &mdash; 9801 goods returned, 9802
+          outward processing &mdash; are claimed per entry and were not
+          evaluated. Full scope is on the exported determination.
+        </p>
 
         <button
           type="button"

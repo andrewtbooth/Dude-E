@@ -1,5 +1,9 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupFixtureIndex, teardownFixtureIndex } from "../../test/htsus-fixture";
+import { resetStore } from "../hts/store";
 import { backfillRunFields, verifyAgainstTariff } from "./classify";
 import type { ClassificationRun } from "./classify";
 import type { Candidate, ClassificationResult } from "./schema";
@@ -273,7 +277,14 @@ describe("verifyAgainstTariff", () => {
     ]);
   });
 
-  it("clears why_not_selected on whatever becomes rank 1", () => {
+  /**
+   * `why_not_selected` is a rejection rationale, so it belongs on every
+   * candidate except the one that was selected — which is the recommendation,
+   * not whatever ended up at rank 1. Keying it off the index agreed with the
+   * recommendation only in the common case, and disagreed in exactly the two
+   * cases worth getting right.
+   */
+  it("clears why_not_selected on the recommendation", () => {
     const { result: verified } = verifyAgainstTariff(
       result([
         candidate({ rank: 1, hts_code: "0000.00.00.00" }),
@@ -281,7 +292,44 @@ describe("verifyAgainstTariff", () => {
       ]),
     );
 
+    expect(verified.recommended_hts_code).toBe("9617.00.10.00");
     expect(verified.candidates[0].reasoning.why_not_selected).toBeNull();
+  });
+
+  it("leaves it on rank 1 when the model recommended something below it", () => {
+    // The rank-1 candidate here was genuinely passed over, and its rationale
+    // is the reader's account of why. Clearing it deleted that account, and
+    // left the recommended code carrying a note explaining why it lost —
+    // printed under a heading claiming it as the answer.
+    const base = result([
+      candidate({ rank: 1, hts_code: "9617.00.10.00", why_not_selected: "no vacuum flask body" }),
+      candidate({ rank: 2, hts_code: "7323.93.00.80", why_not_selected: "loses on GRI 3(b)" }),
+    ]);
+    base.recommended_hts_code = "7323.93.00.80";
+
+    const { result: verified } = verifyAgainstTariff(base);
+
+    expect(verified.candidates[0].reasoning.why_not_selected).toBe(
+      "no vacuum flask body",
+    );
+    expect(verified.candidates[1].reasoning.why_not_selected).toBeNull();
+  });
+
+  it("clears nothing when the run recommended nothing", () => {
+    // `needs_more_info` selects no code at all, so no candidate's rationale is
+    // spent — rank 1's was being cleared for a selection that never happened.
+    const base = result([
+      candidate({ rank: 1, hts_code: "9617.00.10.00", why_not_selected: "material unknown" }),
+    ]);
+    base.status = "needs_more_info";
+    base.recommended_hts_code = null;
+
+    const { result: verified } = verifyAgainstTariff(base);
+
+    expect(verified.recommended_hts_code).toBeNull();
+    expect(verified.candidates[0].reasoning.why_not_selected).toBe(
+      "material unknown",
+    );
   });
 
   it("promotes the recommendation when the recommended code was dropped", () => {
@@ -672,44 +720,87 @@ describe("backfillRunFields", () => {
   });
 });
 
-describe("verifyAgainstTariff — codes with no published reporting number", () => {
+describe("verifyAgainstTariff — where the reporting number is published", () => {
   /**
-   * 9101.11.40 is real: a watch provision that is the deepest line the
-   * schedule publishes, carries no unit of quantity, and never receives the
-   * `.00` the schedule appends to 8,019 other eight-digit subheadings. There
-   * are 95 like it in Chapter 91 and 374 in Chapter 98.
+   * 9101.11.40 is real: a watch provision with nothing beneath it in the
+   * tariff tree and no unit of quantity, and one of 95 like it in Chapter 91.
    *
-   * Task #14 made leaf-ness the test for declarability, which is right — those
-   * provisions were being wrongly rejected. But it also made these
-   * indistinguishable from a ten-digit statistical line, and an entry is filed
-   * against a ten-digit number. Whether these can be keyed as published is a
-   * question about CBP practice; verification's job is to say the schedule
-   * stopped short, not to answer it.
+   * The first version of this check counted digits and concluded the schedule
+   * published no reporting number for them. It publishes every one, in chapter
+   * statistical note 1, as a suffix appended to the eight-digit subheading —
+   * and the missing unit of quantity, offered at the time as corroboration, is
+   * a consequence of that scheme rather than evidence against it, because the
+   * article is reported as separately valued components with a unit each.
+   *
+   * So the recorded fact is where the number comes from, read from the
+   * footnote the line actually carries.
    */
-  it("keeps the code and records that no reporting number was published", () => {
+  it("records that the number comes from the chapter statistical note", () => {
     const { result: verified, verification } = verifyAgainstTariff(
       result([candidate({ hts_code: "9101.11.40" })]),
     );
 
     expect(verified.candidates.map((c) => c.hts_code)).toEqual(["9101.11.40"]);
     expect(verification.rejectedCodes).toEqual([]);
-    expect(verification.incompleteReportingNumbers).toEqual([
-      { code: "9101.11.40", digits: 8 },
+    expect(verification.reportingNumberNotes).toEqual([
+      {
+        code: "9101.11.40",
+        digits: 8,
+        source: "chapter_statistical_note",
+        footnote: "See statistical note 1 to this chapter.",
+      },
     ]);
   });
 
-  it("says nothing about a full ten-digit line", () => {
+  it("says nothing about a line that prints its own reporting number", () => {
     const { verification } = verifyAgainstTariff(result([candidate()]));
-    expect(verification.incompleteReportingNumbers).toEqual([]);
+    expect(verification.reportingNumberNotes).toEqual([]);
   });
 
-  it("recomputes the flag for a run stored before it existed", () => {
-    // Unlike the substituted recommendation, this is a property of the code
-    // itself, so an old determination can be told the truth about its own
-    // codes rather than assumed complete.
+  it("recomputes it for a run stored before the field existed", () => {
+    // Recoverable, unlike the substituted recommendation — but only against
+    // the index, since the answer is in the line's footnotes and a stored run
+    // keeps codes. Old runs carry `incompleteReportingNumbers`, whose entries
+    // asserted the wrong thing; they are re-examined rather than translated.
     const stored = {
       verification: {
         verifiedCodes: ["9101.11.40", "8507.60.00.20"],
+        rejectedCodes: [],
+        corrections: [],
+        substitutedRecommendation: null,
+        incompleteReportingNumbers: [{ code: "9101.11.40", digits: 8 }],
+      },
+    } as unknown as ClassificationRun;
+
+    expect(
+      backfillRunFields(stored).verification.reportingNumberNotes,
+    ).toEqual([
+      {
+        code: "9101.11.40",
+        digits: 8,
+        source: "chapter_statistical_note",
+        footnote: "See statistical note 1 to this chapter.",
+      },
+    ]);
+  });
+
+  /**
+   * Reconstruction is not verification.
+   *
+   * Verification looks a line up in the snapshot it verified the code against,
+   * so it can honestly say the schedule publishes no suffix scheme. Backfill is
+   * looking up a code verified against an edition this deployment may no longer
+   * hold — so an absence tells it nothing about the tariff, only about itself.
+   *
+   * Saying "no ten-digit reporting number is published for this line" on the
+   * strength of a failed lookup is the original Chapter 91 defect with a
+   * different cause: the strongest claim on the page, inferred from missing
+   * data. It stays out.
+   */
+  it("says nothing about a code the current snapshot does not have", () => {
+    const stored = {
+      verification: {
+        verifiedCodes: ["0000.00.00.00"],
         rejectedCodes: [],
         corrections: [],
         substitutedRecommendation: null,
@@ -717,8 +808,41 @@ describe("verifyAgainstTariff — codes with no published reporting number", () 
     } as unknown as ClassificationRun;
 
     expect(
-      backfillRunFields(stored).verification.incompleteReportingNumbers,
-    ).toEqual([{ code: "9101.11.40", digits: 8 }]);
+      backfillRunFields(stored).verification.reportingNumberNotes,
+    ).toEqual([]);
+  });
+
+  it("does not lose the whole record when no snapshot is loaded", () => {
+    // The moment the tariff data is missing or mid-swap is the moment the audit
+    // record most needs to be readable. This used to throw
+    // HtsusIndexMissingError straight out of parseRun, so exporting a
+    // determination stored months earlier answered 500.
+    const stored = () =>
+      ({
+        verification: {
+          verifiedCodes: ["9101.11.40"],
+          rejectedCodes: [],
+          corrections: [],
+          substitutedRecommendation: null,
+        },
+      }) as unknown as ClassificationRun;
+
+    teardownFixtureIndex();
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), "htsus-empty-"));
+    const previous = process.env.HTSUS_DATA_DIR;
+    process.env.HTSUS_DATA_DIR = empty;
+    resetStore();
+    try {
+      expect(() => backfillRunFields(stored())).not.toThrow();
+      expect(
+        backfillRunFields(stored()).verification.reportingNumberNotes,
+      ).toEqual([]);
+    } finally {
+      if (previous === undefined) delete process.env.HTSUS_DATA_DIR;
+      else process.env.HTSUS_DATA_DIR = previous;
+      fs.rmSync(empty, { recursive: true, force: true });
+      setupFixtureIndex();
+    }
   });
 });
 

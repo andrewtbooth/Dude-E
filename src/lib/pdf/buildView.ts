@@ -1,5 +1,6 @@
 import { backfillRunFields, type ClassificationRun } from "../agent/classify";
 import type { Candidate, Refinement } from "../agent/schema";
+import type { Chapter99ScreeningScope } from "../hts/store";
 import type { DeterminationView } from "./types";
 
 /** How many rejected alternates the determination carries. */
@@ -66,10 +67,7 @@ export interface BuildViewInput {
   scheduleBEdition: string | null;
   /** When the tariff snapshot was pulled, for dating Chapter 99 duties. */
   tariffRetrievedAt: Date | null;
-  chapter99Scope?: {
-    subheadingsWithAdditionalDuty: number;
-    declarableLines: number;
-  } | null;
+  chapter99Scope?: Chapter99ScreeningScope | null;
   model: string;
   effort: string;
   appVersion: string;
@@ -100,10 +98,12 @@ export function buildDeterminationView(
     tariffRetrievedAt: input.tariffRetrievedAt,
     chapter99Scope: input.chapter99Scope ?? null,
     verification: {
+      verifiedCodes: input.run.verification.verifiedCodes,
       rejectedCodes: input.run.verification.rejectedCodes,
       corrections: input.run.verification.corrections,
       substitutedRecommendation:
         input.run.verification.substitutedRecommendation ?? null,
+      reportingNumberNotes: input.run.verification.reportingNumberNotes ?? [],
     },
     model: input.model,
     effort: input.effort,
@@ -119,6 +119,11 @@ export function buildDeterminationView(
     },
     selected: input.selected,
     alternates: input.alternates,
+    alternatesConsidered: input.run.result.candidates.filter(
+      (candidate) =>
+        candidate.hts_code.replace(/\D/g, "") !==
+        input.selected.hts_code.replace(/\D/g, ""),
+    ).length,
     assumptions: input.run.result.assumptions,
     analystNote: input.analystNote,
     overrodeRecommendation: overrode,

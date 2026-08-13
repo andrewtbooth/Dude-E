@@ -1,12 +1,15 @@
 /**
- * Does the interface say when the schedule published no reporting number?
+ * Does the interface say where a Chapter 91 reporting number comes from?
  *
- * 469 lines outside Chapter 99 are the deepest thing the schedule publishes and
- * still stop short of the ten-digit number an entry is filed against — 374 in
- * Chapter 98, 95 in the watch provisions of Chapter 91. Task #14 made those
- * declarable, correctly; the risk it introduced is that they now look exactly
- * like an ordinary statistical line, on a card that prints the code as the
- * answer.
+ * The 95 watch and clock provisions are eight digits with nothing beneath them,
+ * so on a card that prints the code as the answer they look exactly like an
+ * ordinary statistical line. They are not: chapter statistical note 1 publishes
+ * their ten-digit suffixes, and requires the watch to be constructively
+ * separated into components and reported on a line each.
+ *
+ * An earlier version of this file asserted the opposite — that the schedule
+ * published no reporting number for them — and passed, because the screen said
+ * it too. So these checks are also a guard against the wrong claim coming back.
  *
  * The predicate is unit-tested and the PDF is render-tested. This is the screen.
  */
@@ -48,37 +51,43 @@ try {
 
   const verdict = page.locator('section[aria-label="Recommended classification"]');
   check(
-    (await verdict.getByText("No ten-digit reporting number is published").count()) === 1,
-    "the verdict card says the schedule published no reporting number",
+    (await verdict.getByText("built from a chapter statistical note").count()) === 1,
+    "the verdict card says where the reporting number comes from",
   );
   check(
-    await verdict.getByText("confirm the reporting number your broker should key").isVisible(),
-    "and points at the person who has to key it",
+    await verdict.getByText("constructively separated").isVisible(),
+    "and says what the note requires of the entry",
+  );
+
+  // The claim this replaced. It was false, it was printed on the answer, and
+  // nothing should reintroduce it.
+  check(
+    (await page.getByText("No ten-digit reporting number is published").count()) === 0,
+    "and does not claim the schedule published nothing",
   );
 
   // The candidate list is where a code gets chosen, so the same fact has to be
   // there too — an analyst who scrolls past the card must not lose it.
   check(
-    (await page.getByText("No ten-digit reporting number published.").count()) >= 1,
+    (await page.getByText("Reporting number comes from a chapter statistical note.").count()) >= 1,
     "the candidate card carries it as well",
   );
 
-  // It must not be a blanket disclaimer. A warning on every code is a warning
-  // on none, and this one is true of 469 lines out of 19,831.
+  // It must not be a blanket disclaimer. A note on every code is a note on
+  // none, and this one is true of 95 lines out of 19,926. Read off the whole
+  // paragraph rather than the highlighted phrase, since the digit count is in
+  // the prose that follows it.
   check(
-    !(await page.getByText("No ten-digit reporting number").first().innerText()).includes(
-      "10 digits",
-    ),
-    "the warning names the actual digit count, not a fixed string",
+    (await verdict.innerText()).includes("8-digit subheading"),
+    "the note names the actual digit count, not a fixed string",
   );
 
-  // Selecting it must still be allowed: it is the most specific classification
-  // the schedule offers, and blocking it would be this tool deciding a question
-  // about CBP practice that the tariff text does not settle.
+  // Selecting it must still be allowed: the eight-digit subheading *is* the
+  // classification, and the suffixes are a reporting step on top of it.
   await page.locator('button:has-text("Select this code")').click();
   check(
     (await page.locator('input[type="radio"]:checked').count()) === 1,
-    "the code can still be selected — flagged, not blocked",
+    "the code can still be selected — annotated, not blocked",
   );
 } catch (e) {
   console.log("  FAIL  " + String(e.message || e).split("\n")[0]);

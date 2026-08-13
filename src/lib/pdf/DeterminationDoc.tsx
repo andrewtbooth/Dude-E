@@ -7,7 +7,6 @@ import {
 } from "@react-pdf/renderer";
 import type { Candidate } from "../agent/schema";
 import { BRAND } from "../brand";
-import { hasPublishedReportingNumber } from "../hts/parse";
 import type { DeterminationView } from "./types";
 
 /**
@@ -356,6 +355,11 @@ function Subject({ view }: { view: DeterminationView }) {
 
 function FinalDetermination({ view }: { view: DeterminationView }) {
   const candidate = view.selected;
+  const reportingNumberNote =
+    view.verification.reportingNumberNotes?.find(
+      (note) =>
+        note.code.replace(/\D/g, "") === candidate.hts_code.replace(/\D/g, ""),
+    ) ?? null;
   return (
     /**
      * The section wraps; the headline does not.
@@ -395,25 +399,50 @@ function FinalDetermination({ view }: { view: DeterminationView }) {
         </View>
       </View>
 
-      {!hasPublishedReportingNumber(candidate.hts_code) && (
-        // Louder here than on screen, and deliberately so. An entry is filed
-        // against a ten-digit reporting number; this document prints a code
-        // under a heading that says DETERMINATION, and whoever reads it months
-        // from now has no way to know the schedule stopped short unless it
-        // says so on the page.
+      {reportingNumberNote && (
+        // Louder here than on screen, and deliberately so. This document prints
+        // a code under a heading that says DETERMINATION, and whoever reads it
+        // months from now has no way to know that keying it on an entry takes a
+        // step the code does not show unless the page says so.
         <View style={styles.callout}>
-          <Text style={styles.calloutTitle}>
-            NO TEN-DIGIT REPORTING NUMBER IS PUBLISHED FOR THIS LINE
-          </Text>
-          <Text style={{ fontSize: 8 }}>
-            {view.htsusRevision} terminates this provision at{" "}
-            {candidate.hts_code.replace(/\D/g, "").length} digits and publishes
-            no unit of quantity for it, where every classifiable line in
-            Chapters 1&ndash;97 carries both. It is the most specific
-            classification the schedule offers, and this determination is a
-            statement about classification, not about the reporting number to
-            key. Confirm the entry number with the filer before use.
-          </Text>
+          {reportingNumberNote.source === "chapter_statistical_note" ? (
+            <>
+              <Text style={styles.calloutTitle}>
+                THE REPORTING NUMBER IS BUILT FROM A CHAPTER STATISTICAL NOTE
+              </Text>
+              <Text style={{ fontSize: 8 }}>
+                This determination classifies the article to the{" "}
+                {reportingNumberNote.digits}-digit subheading above. In{" "}
+                {view.htsusRevision} that subheading carries the footnote &ldquo;
+                {reportingNumberNote.footnote ??
+                  "See statistical note 1 to this chapter."}
+                &rdquo;, and the note publishes the statistical suffixes that
+                complete it. The article is constructively separated into its
+                components, each separately valued, and each reported on its own
+                line under the eight-digit subheading with the suffix appended;
+                the values sum to the value of the article. A named component
+                absent from the shipment still gets a line, at zero quantity and
+                value. That is also why no single unit of quantity is published
+                on this line &mdash; there is one per component, not one for the
+                article. The suffixes themselves are in the chapter note and are
+                not reproduced here; read it before filing.
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.calloutTitle}>
+                NO TEN-DIGIT REPORTING NUMBER IS PUBLISHED FOR THIS LINE
+              </Text>
+              <Text style={{ fontSize: 8 }}>
+                {view.htsusRevision} terminates this provision at{" "}
+                {reportingNumberNote.digits} digits and carries no note giving a
+                statistical suffix for it. It is the most specific
+                classification the schedule offers, and this determination is a
+                statement about classification, not about the reporting number
+                to key. Confirm the entry number with the filer before use.
+              </Text>
+            </>
+          )}
         </View>
       )}
 
@@ -508,11 +537,18 @@ function DutyCell({ label, value }: { label: string; value: string }) {
  * screening", and those carry opposite consequences at entry.
  *
  * So the negative is now printed, with the reach of the screening attached.
- * The number is not decoration: coverage in this snapshot is derived from the
- * Chapter 99 notes as parsed, and it reaches a few hundred subheadings out of
- * roughly nineteen thousand declarable lines. Section 301 List 3 resolves to
- * thirteen. Saying so in the document is the difference between a caveat and a
- * measurement.
+ *
+ * That number is the difference between a caveat and a measurement, which is
+ * precisely why the first version of it was worse than no number at all. It
+ * printed the count of *subheadings* a Chapter 99 note enumerates over the
+ * count of declarable *lines* in the schedule, and called both subheadings —
+ * "reaches 267 of 19,949 declarable subheadings", or 1.3%. Two different units,
+ * and it named only the notes path while the app also screens footnotes. The
+ * honest combined figure is about 10%. The one sentence on the page offered as
+ * a self-measurement understated the tool's own reach by roughly eight times,
+ * and a precise wrong number invites reliance in a way a hedge does not.
+ *
+ * Both paths are now stated, on the same basis, with the overlap named.
  */
 function Chapter99Section({
   view,
@@ -566,16 +602,26 @@ function Chapter99Section({
       </Text>
       <Text style={{ fontSize: 7.5 }}>
         {scope
-          ? `Screening is derived from the Chapter 99 notes as published, and in ` +
-            `this snapshot reaches ${scope.subheadingsWithAdditionalDuty.toLocaleString()} ` +
-            `of ${scope.declarableLines.toLocaleString()} declarable subheadings. ` +
-            `Coverage of the Section 301 lists in particular is known to be ` +
-            `partial. Screen origin-based additional duties independently before ` +
-            `filing — for Chinese-origin goods especially, absence here should be ` +
-            `read as unscreened rather than as clear.`
-          : `Screening is derived from the Chapter 99 notes as published and its ` +
-            `reach could not be established for this document. Screen ` +
-            `origin-based additional duties independently before filing.`}
+          ? `Screening runs two paths against this snapshot: the Chapter 99 ` +
+            `subchapter notes, which enumerate ` +
+            `${scope.subheadingsWithAdditionalDuty.toLocaleString()} of the ` +
+            `${scope.declarableSubheadings.toLocaleString()} eight-digit ` +
+            `subheadings that carry a declarable line and so reach ` +
+            `${scope.linesReachedByNotes.toLocaleString()} lines; and the ` +
+            `"See 9903.xx.xx." footnotes published on a line or an ancestor, ` +
+            `which reach ${scope.linesReachedByFootnote.toLocaleString()}. ` +
+            `They overlap. Together they reach ` +
+            `${scope.linesReachedByEither.toLocaleString()} of ` +
+            `${scope.declarableLines.toLocaleString()} declarable lines — so ` +
+            `most of the schedule is not screened at all, and coverage of the ` +
+            `Section 301 lists in particular is known to be partial. Screen ` +
+            `origin-based additional duties independently before filing — for ` +
+            `Chinese-origin goods especially, absence here should be read as ` +
+            `unscreened rather than as clear.`
+          : `Screening runs against the Chapter 99 notes and footnotes as ` +
+            `published, and its reach was not recorded for this determination. ` +
+            `Treat this section as unscreened and check origin-based additional ` +
+            `duties independently before filing.`}
       </Text>
       <Text style={{ fontSize: 7.5, marginTop: 2 }}>
         Provisions are {asPublished}
@@ -630,8 +676,20 @@ function GriSection({ candidate }: { candidate: Candidate }) {
         </View>
       )}
 
+      {/*
+        Whose confidence, said out loud. On screen this number is labelled the
+        model's and carries a tooltip; on a document headed with an analyst's
+        name and email it read as the analyst's professional confidence in
+        their own determination, which is a materially different claim and one
+        no analyst made. It is a self-report by the analysis, it has not been
+        calibrated against a measured accuracy baseline, and the document should
+        not let it borrow the signer's authority.
+      */}
       <Text style={{ marginTop: 6, fontSize: 8, color: COLORS.muted }}>
-        Stated confidence in this classification: {Math.round(candidate.confidence * 100)}%.
+        The analysis stated {Math.round(candidate.confidence * 100)}% confidence
+        in this code. That is the model&rsquo;s own estimate, not the
+        analyst&rsquo;s, and it has not been calibrated against a measured
+        accuracy baseline.
       </Text>
     </View>
   );
@@ -661,23 +719,44 @@ function AssumptionsSection({ view }: { view: DeterminationView }) {
 // --- 6. Alternates considered -----------------------------------------------
 
 /**
- * What the tariff check changed, on the record.
+ * What the tariff check found, on the record — including when it found nothing.
  *
- * Silent when the run was clean, which is the common case — this is not a
- * disclaimer to pad every document with. When it is not silent it is the most
- * important thing on the page: a code the model named that does not exist is
- * the strongest available evidence that the analysis needs a second look, and
- * the analyst who exported this saw it while the reader otherwise would not.
+ * This used to return null on a clean run, on the reasoning that a disclaimer
+ * repeated on every document is a disclaimer nobody reads. But a clean run is
+ * the common case, so the strongest guardrail in the application was invisible
+ * on most of what it produced, and a reader could not distinguish "every code
+ * was re-checked and matched" from "no check was ever run". Those are the two
+ * readings of silence and they are not close in what they are worth.
+ *
+ * So a clean pass now says so, in one line, affirmatively. The itemised
+ * findings — a code that does not exist, a duty rate the model mis-transcribed
+ * — still dominate the section when there are any.
  */
 function VerificationSection({ view }: { view: DeterminationView }) {
   const { rejectedCodes, corrections, substitutedRecommendation } =
     view.verification;
+
+  const verifiedCount = view.verification.verifiedCodes?.length ?? 0;
+
   if (
     rejectedCodes.length === 0 &&
     corrections.length === 0 &&
     !substitutedRecommendation
   ) {
-    return null;
+    return (
+      <View style={styles.section} wrap={false}>
+        <Text style={styles.sectionTitle}>AUTOMATED CHECKS AGAINST THE TARIFF</Text>
+        <Text style={{ fontSize: 8, color: COLORS.muted }}>
+          {verifiedCount > 0
+            ? `All ${verifiedCount} code${verifiedCount === 1 ? "" : "s"} in this analysis ${verifiedCount === 1 ? "was" : "were"} `
+            : "Every code in this analysis was "}
+          re-checked against {view.htsusRevision}: each exists, is the deepest
+          line published under its subheading, and carries the duty rates,
+          unit of quantity and description path shown above. Nothing was
+          corrected or discarded.
+        </Text>
+      </View>
+    );
   }
 
   // Only corrections that change what would be filed are itemised. Wording
@@ -780,9 +859,17 @@ function VerificationSection({ view }: { view: DeterminationView }) {
 
 function AlternatesSection({ view }: { view: DeterminationView }) {
   if (view.alternates.length === 0) return null;
+
+  const modelPick = view.modelRecommendation?.replace(/\D/g, "") ?? null;
+
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>ALTERNATES CONSIDERED AND REJECTED</Text>
+      <Text style={styles.sectionTitle}>
+        ALTERNATES CONSIDERED AND REJECTED
+        {view.alternatesConsidered > view.alternates.length
+          ? ` — ${view.alternates.length} OF ${view.alternatesConsidered} SHOWN`
+          : ""}
+      </Text>
       {view.alternates.map((candidate) => (
         <View key={candidate.hts_code} style={styles.alternate} wrap={false}>
           <View style={styles.alternateHead}>
@@ -793,8 +880,22 @@ function AlternatesSection({ view }: { view: DeterminationView }) {
             </Text>
           </View>
           <Text style={{ marginTop: 3 }}>
+            {/*
+              The analyst's override lands here, and the generic fallback was a
+              false statement about the one alternate a reviewer reads hardest.
+              Verification clears `why_not_selected` on the code the analysis
+              recommended — correctly, since it was not passed over by the
+              analysis — so when the analyst picks something else, that code
+              arrives in this list with an empty rationale and was described as
+              "Ranked lower". It ranked first. The reason it is not the answer is
+              the analyst's judgement, which is stated above.
+            */}
             {candidate.reasoning.why_not_selected ??
-              "Ranked lower; no specific rejection rationale was recorded."}
+              (modelPick !== null &&
+              candidate.hts_code.replace(/\D/g, "") === modelPick
+                ? "Ranked first by the analysis and passed over by the analyst — " +
+                  "see the determination above."
+                : "Ranked lower; no specific rejection rationale was recorded.")}
           </Text>
         </View>
       ))}
@@ -893,11 +994,33 @@ function ScopeSection() {
         screened only partially and must be verified independently; this
         document does not establish that none apply.
       </Text>
+      {/*
+        Chapter 98 was the loudest omission on the page precisely because the
+        paragraph above names six others. Excluding it as a *classification* is
+        right — 9801 turns on goods having been exported and returned, 9813 on
+        temporary importation under bond, and those are facts about a shipment
+        rather than properties of a product this determination is meant to
+        outlive. But 9802.00.80 and 9801.00.10 attach to how an article was
+        built and where its components came from, which is exactly the sort of
+        durable fact a product library holds. An importer running a catalogue
+        through this tool and filing against the output would waive them on
+        every line, silently, on a document that lists its other omissions by
+        name. Naming it costs a sentence and forecloses nothing.
+      */}
+      <Text style={styles.para}>
+        Chapter 98 provisions — including 9801 American goods returned and 9802
+        articles exported for processing and returned — were not evaluated. They
+        turn on the circumstances of a particular importation rather than on
+        what the article is, so they are claimed per entry alongside the
+        classification above. Eligibility may exist and is not foreclosed here.
+      </Text>
       <Text style={styles.para}>
         For high-value, high-volume, or genuinely ambiguous merchandise, request
         a binding ruling under 19 CFR Part 177 before entry. Duty rates are as
         published in the tariff edition named above and change frequently;
-        confirm currency before filing.
+        confirm currency before filing. Nothing in this document discharges the
+        importer&rsquo;s own obligation to exercise reasonable care under 19
+        U.S.C. 1484 in making entry.
       </Text>
     </View>
   );

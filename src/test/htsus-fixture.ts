@@ -108,11 +108,12 @@ export const FIXTURE_ROWS: UsitcRawRow[] = [
   // --- Chapter 91: a watch provision that terminates at eight digits ---
   //
   // Verbatim from the 2026 Rev 15 snapshot, and the reason this fixture needs
-  // it: 95 lines in Chapter 91 are the deepest thing the schedule publishes
-  // and still stop short of a ten-digit reporting number, with no unit of
-  // quantity, where all 19,831 classifiable ten-digit lines carry one. Without
-  // a line of this shape here, the code that flags them has nothing to run
-  // against and the fixture quietly implies the schedule is uniform.
+  // it: 95 lines in Chapter 91 are the deepest thing the tariff tree publishes
+  // and still are not the ten-digit number an entry is keyed against. Their
+  // suffixes live in chapter statistical note 1, which the footnote below
+  // points at — that footnote is the whole signal, so a fixture without it
+  // would let the code fall back to counting digits and quietly imply the
+  // schedule simply stops here.
   {
     htsno: "9101",
     indent: "0",
@@ -131,6 +132,7 @@ export const FIXTURE_ROWS: UsitcRawRow[] = [
     indent: "2",
     description: "Having no jewels or only one jewel in the movement",
     units: [],
+    footnotes: [{ value: "See statistical note 1 to this chapter." }],
     general: "51¢ each + 6.25% on the case and strap, band or bracelet",
     special:
       "Free (AU,BH,CL,CO,D,E,IL,JO,KR,MA,OM,P,PA,PE,SG)",

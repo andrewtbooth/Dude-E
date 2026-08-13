@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION, config } from "@/lib/config";
 import { classify } from "@/lib/agent/classify";
-import type { AnalysisMode, Refinement } from "@/lib/agent/schema";
+import type { AnalysisMode } from "@/lib/agent/schema";
 import { UnauthenticatedError, requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { tryGetActiveRevision } from "@/lib/hts/store";
 import { clientKey, rateLimit } from "@/lib/rateLimit";
+import {
+  mergeRefinements,
+  parseRefinements,
+  safeParseJson,
+} from "./refinements";
 
 export const runtime = "nodejs";
 /** A max-effort run with tool use legitimately takes minutes. */
@@ -16,22 +21,6 @@ interface AnalyzeRequest {
   input?: unknown;
   analysisId?: unknown;
   refinements?: unknown;
-}
-
-function parseRefinements(raw: unknown): Refinement[] {
-  if (!Array.isArray(raw)) return [];
-  const parsed: Refinement[] = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== "object") continue;
-    const record = entry as Record<string, unknown>;
-    const questionId = typeof record.questionId === "string" ? record.questionId : "";
-    const question = typeof record.question === "string" ? record.question : "";
-    const answer = typeof record.answer === "string" ? record.answer.trim() : "";
-    if (questionId && question && answer) {
-      parsed.push({ questionId, question, answer });
-    }
-  }
-  return parsed;
 }
 
 export async function POST(request: Request) {
@@ -117,6 +106,8 @@ export async function POST(request: Request) {
   // holding an id can rewrite someone else's run": this row's result is the
   // reasoning behind a determination, and an unscoped update would let one
   // analyst overwrite another's record of what was considered.
+  let mergedRefinements = refinements;
+
   if (priorAnalysisId) {
     const prior = await prisma.analysis.findUnique({
       where: { id: priorAnalysisId },
@@ -130,15 +121,34 @@ export async function POST(request: Request) {
     }
   }
 
+  // The read and the merge happen inside the write.
+  //
+  // Merging in application memory between a `findUnique` and an `update` is a
+  // read-modify-write, and this is not a rare race: a round takes minutes, the
+  // form stays interactive, and a retried or double-submitted POST is ordinary.
+  // Two rounds in flight both read the same prior and the second write erases
+  // the first's answers — which is precisely the loss the merge was written to
+  // stop, reintroduced one layer down. The transaction is what makes "later
+  // answers win" true rather than "whichever write lands last wins".
   const analysis = priorAnalysisId
-    ? await prisma.analysis.update({
-        where: { id: priorAnalysisId },
-        data: {
-          status: "RUNNING",
-          refinementsJson: JSON.stringify(refinements),
-          error: null,
-          completedAt: null,
-        },
+    ? await prisma.$transaction(async (tx) => {
+        const current = await tx.analysis.findUniqueOrThrow({
+          where: { id: priorAnalysisId },
+          select: { refinementsJson: true },
+        });
+        mergedRefinements = mergeRefinements(
+          parseRefinements(safeParseJson(current.refinementsJson)),
+          refinements,
+        );
+        return tx.analysis.update({
+          where: { id: priorAnalysisId },
+          data: {
+            status: "RUNNING",
+            refinementsJson: JSON.stringify(mergedRefinements),
+            error: null,
+            completedAt: null,
+          },
+        });
       })
     : await prisma.analysis.create({
         data: {
@@ -203,7 +213,10 @@ export async function POST(request: Request) {
         for await (const event of classify({
           mode,
           input,
-          refinements,
+          // The merged set, not the request body's. The model is re-run from
+          // scratch on every round, so anything left out here is a fact it was
+          // told once and is no longer being told.
+          refinements: mergedRefinements,
           signal: request.signal,
         })) {
           // One line per tool call and status change. A run takes minutes and

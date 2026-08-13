@@ -199,35 +199,57 @@ chapter, it is true of nearly every product and therefore says nothing.
 Chapter 99 is different and stays: an additional duty is a consequence of the
 classification and the origin, so it belongs with the code.
 
-### Declarable is not the same as filable
+### The classification is not always the reporting number
 
-With Chapters 98 and 99 excluded as classifications, **95 lines** remain that are
-the deepest thing the schedule publishes and still stop short of the ten-digit
-number an entry is filed against — all of them Chapter 91 watch provisions. The
-evidence is uniform:
+With Chapters 98 and 99 excluded as classifications, **95 lines** remain that
+have nothing beneath them in the tariff tree and are still not the ten-digit
+number an entry is keyed against. All of them are Chapter 91 watch and clock
+provisions, and all 95 carry the same footnote:
 
-| | carries a unit of quantity |
-|---|---|
-| Every ten-digit leaf, Chapters 1–97 | **19,831 / 19,831** |
-| Chapter 91 ten-digit leaves | 82 / 82 |
-| **Chapter 91 eight-digit leaves** | **0 / 95** |
+> See statistical note 1 to this chapter.
 
-A reporting number reports a quantity, so a line with no unit is not one. And
-the schedule plainly *can* extend an eight-digit subheading when it wants to —
-8,019 of those 19,831 leaves are exactly that, `.00` appended because there is no
-statistical breakout. Where it declines to, it has published something that stops
-short.
+That note publishes their reporting numbers, and it opens by saying what the
+exercise is for: *"the calculation of duties … requires that these articles be
+constructively separated into their component parts and each component
+separately valued."* Duty, not bookkeeping. 9101.11.40's Column 1 rate is
+`51¢ each + 6.25% on the case and strap, band or bracelet + 5.3% on the battery`
+— a rate nobody can compute without the split.
 
-Whether such a provision can nonetheless be keyed on an entry as published is a
-question about CBP practice, not about this data, and this application does not
-answer it. `hasPublishedReportingNumber` marks the line; the verdict card, the
-candidate card and the determination PDF all say the schedule stopped short and
-tell the analyst to confirm the entry number with the filer. The code stays
-selectable, because it is the most specific classification available and blocking
-it would be answering the question by refusing to.
+Each component is reported on its own line, as the eight-digit subheading with a
+suffix from the note appended; the component values sum to the value of the
+article; and a named component that is not in the shipment still gets a line, at
+zero quantity and value.
 
-If your filing practice settles it in either direction, that is a one-line change
-to the helper and the wording that surrounds it.
+**The component sets differ by subheading.** The note carries several schemes.
+Scheme (a) covers 9101.11.40 and is movement / case / strap, band or bracelet /
+battery, so a battery-powered watch is reported as `9101.11.4010`, `.4020`,
+`.4030` and `.4040`. Scheme (b) is movement-and-case / battery — two lines, not
+four. An earlier draft of this section named the four-component set as though it
+were universal, which is the same over-generalisation from one example that
+produced the original defect, one layer up.
+
+**This was wrong here, and shipped.** An earlier version counted digits, found
+these 95 short, and concluded the schedule published no reporting number for
+them — stating so on the verdict card, on the candidate card and in every
+exported determination. It offered the missing unit of quantity as corroboration
+(0 of 95, against 19,831 of 19,831 elsewhere). The unit is missing *because* of
+the scheme: there is no single quantity for the article, there is one per
+component. The strongest-looking evidence was a consequence of the thing it was
+taken to disprove.
+
+So the question the code asks is now *where* the number is published, not
+whether it exists, and it reads the answer from the line's own footnote rather
+than from its length: `reportingNumberSource` in `src/lib/hts/parse.ts` returns
+`on_the_line`, `chapter_statistical_note`, or `unpublished`. The result is
+recorded on the run as `verification.reportingNumberNotes`, keeping the footnote
+verbatim, and the three surfaces describe the reporting scheme instead of
+warning about a gap. Runs stored before the field existed are re-examined
+against the index when they are read back, so re-issuing an old watch
+determination corrects it.
+
+Nothing today lands on `unpublished` — every short leaf in Chapters 1–97 cites
+the note. It exists so that a line which genuinely carries no suffix scheme is
+reported as unknown rather than silently absorbed into the Chapter 91 story.
 
 ### Chapter 99 exposure
 
@@ -255,6 +277,31 @@ Two deliberate limits. Each note block is bounded at the tariff table that
 follows it — an unbounded block runs into the table and treats every code
 printed there as enumerated (667 spurious codes from one block). And this is a
 **flag, not a determination**: see Known limitations.
+
+#### How far the two paths actually reach
+
+The determination states this on its face, so the figures have to compare like
+with like. They did not. It printed the count of *subheadings* a note enumerates
+over the count of declarable *lines* in the schedule and called both
+subheadings — "267 of 19,949 declarable subheadings", 1.3% — and named only the
+notes path, while the app screens both. Against 2026 Revision 15:
+
+| | reaches | of |
+|---|---|---|
+| Notes path, by subheading | **267** | 11,387 eight-digit subheadings carrying a declarable line |
+| Notes path, by line | 606 | 19,949 declarable lines |
+| Footnote path, by line | 1,615 | 19,949 declarable lines |
+| **Either path, by line** | **2,034** | **19,949 declarable lines — about 10%** |
+
+The counts filter to notes that impose rather than relieve, so the numerator is
+conservative by design. The two paths overlap, which is why the combined figure
+is not the sum. Roughly nine tenths of the schedule is not screened at all, and
+that is the number the document now prints.
+
+A wrong self-measurement is worse than none: a hedge invites a second look,
+where a precise figure invites reliance. This one understated the tool's own
+reach by roughly eight times, in the one sentence on the page offered as
+evidence of diligence.
 
 ### The export side
 
@@ -445,6 +492,45 @@ directory and swap it in, so a rebuild is never half-visible, and the app
 re-checks the manifest periodically rather than holding one handle for the life
 of the process — otherwise it would keep serving the old index *and* keep
 stamping the old revision after a sync, silently.
+
+### A determination has to render the same way twice
+
+The row stores a SHA-256 of the PDF so a circulated file can be tied back to it.
+For that to be evidence rather than decoration, two things have to hold, and
+neither did.
+
+**Every input has to be frozen.** Two were not. `chapter99Scope` was read from
+the live snapshot at export, and one of its counts is the number of declarable
+lines in the schedule — which every revision moves. So after any sync *every*
+determination re-rendered to different bytes, the mismatch branch fired on all
+of them, and real drift was indistinguishable from a background rate of ~100%.
+And `reportingNumberNotes` was reconstructed on every read for runs stored
+before the field existed, from whatever snapshot was loaded then: a watch
+determination issued under one revision could re-issue saying the opposite about
+how its reporting number is published, while still printing the original
+revision's name beside the claim. There is no edition under which that sentence
+is true. Both are now columns on the row, written at decision time.
+
+**The baseline has to be the decision.** `pdfSha256` was written on the first
+*export*, which could be weeks and a sync later — so the "as issued" hash was
+whatever the document had become by the time somebody first asked for it. It is
+now written when the determination is recorded, by the same
+`renderDetermination` both routes call.
+
+A mismatch is now worth acting on, so it is recorded on the row and shown in
+`/history` rather than written to a log line nobody tails, and the response
+carries the issued hash alongside the rendered one — a drifted document reports
+its own hash just as confidently as a faithful one.
+
+**Reconstruction is not verification.** `backfillRunFields` can still fill in a
+field for an older run, but it may only report what it can positively establish.
+A code missing from the current snapshot, or a footnote since reworded away,
+yields *no* entry — never "no reporting number is published for this line",
+which is the strongest claim on the page and would be inferred from data this
+deployment does not have. That was the shape of the original Chapter 91 defect
+and it does not get to return through the back door. It also no longer throws:
+a missing or mid-swap snapshot is exactly when the audit record most needs to be
+readable.
 
 ---
 
@@ -709,9 +795,10 @@ scripts/
   effective and expiry dates, granted exclusions, carve-outs — and some notes
   enumerate goods that are *exempt* rather than covered. A hit means "read this
   note", and the note's operative sentence travels with it so the reader can.
-  Neither linkage is complete: footnotes reach 771 of 35,789 lines, the notes
-  reach 1,217 subheadings, and they overlap only partly, so "none found" still
-  means "not detected in this revision", never "none apply".
+  Neither linkage is complete, and together they reach about a tenth of the
+  declarable schedule — 2,034 of 19,949 lines in Revision 15, counted in "How
+  far the two paths actually reach" above. "None found" means "not detected in
+  this revision", never "none apply".
 - **Schedule B needs an analyst's eye, not just a lookup.** The export code is
   reached through the shared HS-6 subheading and then chosen by description —
   see "The export side" above. Roughly 0.6% of tariff numbers sit under a
