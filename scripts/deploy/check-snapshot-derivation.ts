@@ -26,6 +26,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DERIVATION_VERSION } from "../../src/lib/hts/parse";
+import { resolveLatestRevisionDir } from "../../src/lib/hts/store";
 import type { HtsusManifest } from "../../src/lib/hts/types";
 
 const MANIFEST_FILENAME = "manifest.json";
@@ -35,26 +36,51 @@ function dataDir(): string {
 }
 
 /**
- * Every snapshot directory under the data root, not just the newest.
+ * The one snapshot the app would actually serve.
  *
- * The staleness question is about what the app might serve, and the store picks
- * its directory by its own ordering rules. Checking all of them means the
- * answer does not depend on reimplementing that choice here and getting it
- * subtly different.
+ * This used to check every directory under the data root and fail if any of
+ * them mismatched — on the reasoning that checking all of them avoids
+ * reimplementing the store's choice and getting it subtly different. The
+ * reasoning was right and the effect was not, because syncs do not prune: a
+ * new revision lands beside the old ones, `fly.toml` explicitly sizes the
+ * volume to keep a previous revision, and every retired directory keeps its
+ * original derivation stamp forever.
+ *
+ * So the first re-sync after a rule change satisfies nothing. The freshly
+ * built snapshot is current, the retired ones next to it are not, the check
+ * exits 1 on every boot from then on, and the entrypoint downloads sixty
+ * megabytes it already has — once per boot, for the life of the volume. The
+ * "snapshot present and current" branch becomes unreachable, and a signal
+ * added to catch a real problem now fires unconditionally.
+ *
+ * Asking the store which directory it would open keeps the original intent
+ * (no reimplemented ordering) without judging snapshots nothing will read.
  */
-function snapshotDirs(root: string): string[] {
-  if (!fs.existsSync(root)) return [];
-  return fs
-    .readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(root, entry.name))
-    .filter((dir) => fs.existsSync(path.join(dir, MANIFEST_FILENAME)));
+function activeSnapshotDir(root: string): string | null {
+  if (!fs.existsSync(root)) return null;
+  try {
+    const dir = resolveLatestRevisionDir(root);
+    return fs.existsSync(path.join(dir, MANIFEST_FILENAME)) ? dir : null;
+  } catch {
+    // No readable snapshot at all. The entrypoint handles the empty case
+    // first, so this is a half-finished sync.
+    return null;
+  }
 }
 
 function derivationVersionOf(dir: string): number | null {
-  const parsed = JSON.parse(
-    fs.readFileSync(path.join(dir, MANIFEST_FILENAME), "utf8"),
-  ) as Partial<HtsusManifest>;
+  // A manifest mid-write is the case this script's own reasoning anticipates,
+  // and an uncaught SyntaxError here prints a Node stack into the boot log —
+  // which reads like the container crashed rather than like a snapshot that
+  // needs re-syncing. Same outcome, said plainly.
+  let parsed: Partial<HtsusManifest>;
+  try {
+    parsed = JSON.parse(
+      fs.readFileSync(path.join(dir, MANIFEST_FILENAME), "utf8"),
+    ) as Partial<HtsusManifest>;
+  } catch {
+    return null;
+  }
   // Absent means the snapshot predates the field, which means it predates the
   // rule change that introduced it. That is stale by definition, not unknown.
   return typeof parsed.derivationVersion === "number"
@@ -64,34 +90,30 @@ function derivationVersionOf(dir: string): number | null {
 
 function main(): void {
   const root = dataDir();
-  const dirs = snapshotDirs(root);
+  const dir = activeSnapshotDir(root);
 
-  if (dirs.length === 0) {
+  if (dir === null) {
     // Nothing to compare. The empty-directory case is the entrypoint's to
-    // handle and it handles it first, so reaching here means a directory with
-    // no readable manifest — a half-finished sync, most likely.
+    // handle and it handles it first, so reaching here means no readable
+    // manifest — a half-finished sync, most likely.
     console.log(`No readable snapshot manifest under ${root}.`);
     process.exit(1);
   }
 
-  const stale: string[] = [];
-  for (const dir of dirs) {
-    const version = derivationVersionOf(dir);
-    if (version !== DERIVATION_VERSION) {
-      stale.push(
-        `  ${path.basename(dir)}: built by derivation ${version ?? "(unversioned)"}, ` +
-          `this build is ${DERIVATION_VERSION}`,
-      );
-    }
-  }
-
-  if (stale.length > 0) {
-    console.log("Tariff snapshot predates this build's derivation rules:");
-    for (const line of stale) console.log(line);
+  const version = derivationVersionOf(dir);
+  if (version !== DERIVATION_VERSION) {
+    console.log(
+      `Tariff snapshot predates this build's derivation rules:\n` +
+        `  ${path.basename(dir)}: built by derivation ` +
+        `${version ?? "(unversioned)"}, this build is ${DERIVATION_VERSION}`,
+    );
     process.exit(1);
   }
 
-  console.log(`Snapshot derivation ${DERIVATION_VERSION} matches this build.`);
+  console.log(
+    `Snapshot derivation ${DERIVATION_VERSION} matches this build ` +
+      `(${path.basename(dir)}).`,
+  );
 }
 
 main();

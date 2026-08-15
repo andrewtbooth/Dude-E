@@ -272,7 +272,7 @@ let cached: OpenIndex | null = null;
  * under HTSUS_DATA_DIR; we pick by manifest `retrievedAt` rather than by
  * directory name so a re-pull of the same revision wins.
  */
-function resolveLatestRevisionDir(root: string): string {
+export function resolveLatestRevisionDir(root: string): string {
   if (!fs.existsSync(root)) throw new HtsusIndexMissingError(root);
 
   const candidates = fs
