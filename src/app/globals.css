@@ -290,6 +290,66 @@ body {
 }
 
 /* ===========================================================================
+   EDITABLE vs. REFERENCE
+   ---------------------------------------------------------------------------
+   A peer using the app could not tell at a glance which boxes they could type
+   in. That is this stylesheet's fault rather than theirs: `.field` above is a
+   ruled box holding a value you cannot change, and an input styled with the
+   same hairline border on the same white surface is visually identical to it.
+   The page ends up looking like a form where most of the form is inert.
+
+   So editable controls get their own treatment and reference boxes keep the
+   flat one. Three differences, none of them decorative:
+
+   - A recessed surface. `--surface-2` against the `--surface-1` cards reads as
+     a well cut into the card. It inverts correctly in dark mode, where
+     surface-2 is the *lighter* of the two — still a distinct plane, which is
+     what carries the meaning.
+   - The heavier rule. `--border-strong` is the weight this palette already
+     reserves for bounding a box rather than dividing one.
+   - An inset hairline, so the edge has a direction. A flat outline reads as a
+     drawn box; a recessed one reads as somewhere to put something.
+
+   Focus is a 2px accent ring rather than a border colour change, so it is
+   visible against both surfaces and does not shift layout.
+   ======================================================================== */
+
+.input-control {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.06);
+  color: var(--text-primary);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.input-control::placeholder {
+  color: var(--text-muted);
+}
+
+.input-control:focus,
+.input-control:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 1px 2px rgb(0 0 0 / 0.04),
+    0 0 0 2px var(--accent-subtle);
+}
+
+.input-control[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+/* The label above an editable control. Heavier than reference copy, because
+   the thing it names is something you do rather than something you read. */
+.input-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ===========================================================================
    TOUCH
    ---------------------------------------------------------------------------
    Measured, not guessed: `scripts/dev/audit-touch-targets.mjs` walks every

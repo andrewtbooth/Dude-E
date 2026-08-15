@@ -321,14 +321,8 @@ export function AnalyzeClient({
               autoCapitalize={mode === "PART_NUMBER" ? "characters" : "sentences"}
               autoCorrect={mode === "PART_NUMBER" ? "off" : "on"}
               spellCheck={mode !== "PART_NUMBER"}
-              className="w-full resize-y rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none disabled:opacity-60"
+              className="input-control w-full resize-y px-3 py-2.5 text-sm disabled:opacity-60"
             />
-            <p
-              id="product-input-hint"
-              className="mt-1.5 text-xs text-[var(--text-muted)]"
-            >
-              {activeMode.hint}
-            </p>
           </div>
         </fieldset>
 
@@ -355,6 +349,23 @@ export function AnalyzeClient({
             </span>
           )}
         </div>
+
+        {/*
+          What to type, said after the box you type it in.
+          Peer feedback: an analyst who has used this before is scanning for
+          the field, and guidance placed above it is a paragraph between them
+          and the control every single time. It still needs to be on the page
+          — the part-number and description modes want genuinely different
+          input — so it moves rather than going away, and stays wired to the
+          textarea through aria-describedby so a screen reader reaches it at
+          the field regardless of where it sits visually.
+        */}
+        <p
+          id="product-input-hint"
+          className="text-xs text-[var(--text-muted)]"
+        >
+          {activeMode.hint}
+        </p>
       </form>
 
       {error && (

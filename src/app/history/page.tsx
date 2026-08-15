@@ -78,7 +78,7 @@ export default async function HistoryPage({
               placeholder="HTS code or product"
               aria-label="Search determinations"
               enterKeyHint="search"
-              className="min-h-11 min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none sm:flex-none sm:w-56"
+              className="input-control min-h-11 min-w-0 flex-1 px-3 sm:w-56 sm:flex-none"
             />
             <button
               type="submit"

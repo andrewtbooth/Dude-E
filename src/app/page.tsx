@@ -18,8 +18,16 @@ export default async function SplashPage() {
 
       <div className="mx-auto flex w-full max-w-5xl flex-1 items-center px-5 pb-24">
         <div className="grid w-full gap-12 md:grid-cols-[1.1fr_1fr] md:items-center">
-          {/* Left: what this is and why it asks who you are. */}
-          <div>
+          {/*
+            The card comes first in the DOM and the prose is pulled back to the
+            left on desktop, so a phone opens on the thing you came to do.
+
+            Peer feedback, and the reasoning generalises: this is an internal
+            tool whose users have all read the pitch once. Explaining before
+            asking is right the first time somebody arrives and wrong every
+            time after, and the every-time-after case is nearly all of them.
+          */}
+          <div className="md:order-first">
             <p className="text-xs font-medium uppercase tracking-widest text-[var(--text-muted)]">
               Import Compliance
             </p>
@@ -56,17 +64,20 @@ export default async function SplashPage() {
             </dl>
           </div>
 
-          {/* Right: the sign-in card. */}
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-1)] p-6 shadow-[var(--shadow)]">
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">
               Identify yourself
             </h2>
-            <p className="mt-1 mb-5 text-sm text-[var(--text-secondary)]">
+
+            <div className="mt-4">
+              <SignInForm />
+            </div>
+
+            {/* Why it asks, after it has asked. */}
+            <p className="mt-5 border-t border-[var(--border)] pt-4 text-sm text-[var(--text-secondary)]">
               A classification is only defensible if it says who made it. There
               is no password &mdash; this records the analyst of record.
             </p>
-
-            <SignInForm />
 
             {!revision && (
               <p className="mt-5 rounded-md bg-[var(--warn-subtle)] px-3 py-2 text-xs text-[var(--warn)]">
