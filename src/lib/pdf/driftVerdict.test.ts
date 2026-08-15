@@ -18,10 +18,27 @@ const ISSUED = "a".repeat(64);
 const RENDERED = "b".repeat(64);
 
 describe("driftVerdict", () => {
-  it("takes the first render as the baseline", () => {
+  it("takes a late baseline when the decision-time render failed", () => {
+    // The row carries a template version because creation stamps one before
+    // attempting the render, so the missing hash means that render threw.
+    expect(
+      driftVerdict(
+        { pdfSha256: null, pdfTemplateVersion: DETERMINATION_TEMPLATE_VERSION },
+        RENDERED,
+      ),
+    ).toEqual({ kind: "baseline" });
+  });
+
+  it("refuses to invent a baseline for a determination signed before hashing", () => {
+    // The old export route wrote the hash on first GET, so a determination
+    // recorded then and never exported has none. Storing today's render as
+    // `pdfSha256` would put a document produced under a template that did not
+    // exist at signing on the record as the bytes that *were* signed — a false
+    // claim, not a weak one, and the same move as reconstructing a fact from a
+    // snapshot that never saw it.
     expect(
       driftVerdict({ pdfSha256: null, pdfTemplateVersion: null }, RENDERED),
-    ).toEqual({ kind: "baseline" });
+    ).toEqual({ kind: "never_hashed" });
   });
 
   it("is quiet when the same document produces the same bytes", () => {

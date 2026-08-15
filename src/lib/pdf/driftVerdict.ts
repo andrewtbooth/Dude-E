@@ -20,8 +20,21 @@ import { DETERMINATION_TEMPLATE_VERSION } from "./DeterminationDoc";
  * and this needs neither, and because getting it wrong is silent.
  */
 export type DriftVerdict =
-  /** No hash recorded yet — this render becomes the baseline. */
+  /**
+   * Recorded by a build that stamps the template version, but the
+   * decision-time render did not complete. This render becomes the baseline.
+   */
   | { kind: "baseline" }
+  /**
+   * Signed before this application hashed anything at decision time.
+   *
+   * There is no baseline to establish. Hashing the current render and storing
+   * it as `pdfSha256` would record a document produced today — under a template
+   * that did not exist when this was signed — as the bytes that were signed.
+   * That is not a weak claim, it is a false one, and it is the same move as
+   * reconstructing a reporting number from a snapshot that never saw it.
+   */
+  | { kind: "never_hashed" }
   /** Same document, same bytes. */
   | { kind: "matches" }
   /**
@@ -37,7 +50,15 @@ export function driftVerdict(
   renderedSha256: string,
   currentTemplateVersion: number = DETERMINATION_TEMPLATE_VERSION,
 ): DriftVerdict {
-  if (stored.pdfSha256 === null) return { kind: "baseline" };
+  if (stored.pdfSha256 === null) {
+    // The template version is stamped when the row is created, before the
+    // render is attempted, precisely so these two cases can be told apart: a
+    // row this build made whose render failed, versus a row that predates
+    // decision-time hashing altogether.
+    return stored.pdfTemplateVersion === null
+      ? { kind: "never_hashed" }
+      : { kind: "baseline" };
+  }
   if (stored.pdfSha256 === renderedSha256) return { kind: "matches" };
   if (stored.pdfTemplateVersion !== currentTemplateVersion) {
     return {

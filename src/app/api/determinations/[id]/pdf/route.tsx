@@ -106,17 +106,26 @@ export async function GET(
   let drifted = determination.pdfSha256Drifted;
 
   if (verdict.kind === "baseline") {
+    // This row was created by a build that hashes at decision time; the render
+    // must have failed then. Recording it now is a late baseline for the same
+    // document, which is honest.
     await prisma.determination
-      .update({
-        where: { id: determination.id },
-        data: {
-          pdfSha256: sha256,
-          pdfTemplateVersion: DETERMINATION_TEMPLATE_VERSION,
-        },
-      })
+      .update({ where: { id: determination.id }, data: { pdfSha256: sha256 } })
       .catch(() => {
         // Delivering the document matters more than recording its hash.
       });
+  } else if (verdict.kind === "never_hashed") {
+    // Nothing is written. This determination was signed before the application
+    // hashed anything at decision time, so there is no baseline to recover —
+    // and storing today's render as `pdfSha256` would put a document produced
+    // under a template that did not then exist on the record as the bytes that
+    // were signed. Leaving the field null says "never hashed", which is true.
+    console.info(
+      `Determination ${determination.id} predates decision-time hashing; ` +
+        `re-rendered to ${sha256} under document version ` +
+        `${DETERMINATION_TEMPLATE_VERSION}. No baseline recorded, because the ` +
+        `bytes that were signed are not recoverable.`,
+    );
   } else if (verdict.kind === "rerendered_under_new_document") {
     console.info(
       `Determination ${determination.id} re-rendered to ${sha256} under ` +
