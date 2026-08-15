@@ -165,6 +165,39 @@ const styles = StyleSheet.create({
   },
 });
 
+/**
+ * Which version of this document produced a determination's bytes.
+ *
+ * `Determination.pdfSha256` alarms when a re-render disagrees with the hash
+ * recorded at decision time. Freezing every *input* on the row made that alarm
+ * meaningful — but only against a fixed document. The template is the other
+ * variable, and changing it changes the bytes of every determination ever
+ * recorded, which would fire the alarm on all of them at once. That is the same
+ * cries-wolf failure the freezing was meant to end, arriving from the other
+ * direction.
+ *
+ * So the version travels with the row. A stored version equal to this one means
+ * the bytes should match and a difference is real drift; a stored version that
+ * differs — or is absent, for a determination recorded before this existed —
+ * means the document itself moved and a byte difference says nothing.
+ *
+ * `appVersion` cannot stand in for this. It is a hand-maintained constant that
+ * did not change across the release that rewrote half of these sections, so
+ * comparing it would have reported every historical determination as drifted.
+ *
+ * Bump it whenever a change here alters what renders. Forgetting is fail-safe
+ * in the sense that matters: the alarm fires when it should not, which is the
+ * behaviour being fixed and not a new way to miss real drift.
+ *
+ * 1. Everything up to and including the Chapter 91 reporting-number release.
+ * 2. Reporting numbers described from the chapter statistical note; Chapter 99
+ *    coverage stated in matching units and naming both screening paths; a clean
+ *    verification pass stated rather than left silent; confidence attributed to
+ *    the analysis; Chapter 98 and 19 U.S.C. 1484 named in scope; alternates
+ *    labelled when truncated.
+ */
+export const DETERMINATION_TEMPLATE_VERSION = 2;
+
 export function DeterminationDoc({ view }: { view: DeterminationView }) {
   return (
     <Document

@@ -11,6 +11,7 @@ import {
   parseRun,
   selectAlternates,
 } from "@/lib/pdf/buildView";
+import { DETERMINATION_TEMPLATE_VERSION } from "@/lib/pdf/DeterminationDoc";
 import { renderDetermination } from "@/lib/pdf/renderDetermination";
 
 export const runtime = "nodejs";
@@ -206,7 +207,12 @@ export async function POST(request: Request) {
     const { sha256 } = await renderDetermination(determination);
     await prisma.determination.update({
       where: { id: determination.id },
-      data: { pdfSha256: sha256 },
+      data: {
+        pdfSha256: sha256,
+        // Stamped alongside the hash, because the hash is only comparable
+        // against a render of the same document.
+        pdfTemplateVersion: DETERMINATION_TEMPLATE_VERSION,
+      },
     });
   } catch (error) {
     console.error(

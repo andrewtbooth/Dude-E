@@ -162,6 +162,19 @@ model Determination {
   /// rather than to the decision it exists to evidence.
   pdfSha256 String?
 
+  /// Which version of the determination document rendered `pdfSha256`.
+  ///
+  /// The hash below can only mean "these bytes are the bytes that were signed"
+  /// if the document that produces them is fixed too. It is not — sections get
+  /// rewritten — and a template change moves the bytes of every determination
+  /// ever recorded. Without this, the first release to touch the document would
+  /// flag the entire history as drifted.
+  ///
+  /// Null for a determination recorded before this column existed. Those cannot
+  /// be compared at all: their hash came from a document this build no longer
+  /// renders.
+  pdfTemplateVersion Int?
+
   /// Set when a re-render did not match `pdfSha256`, with the hash it produced.
   ///
   /// The mismatch used to be a `console.error` and nothing else, while the
