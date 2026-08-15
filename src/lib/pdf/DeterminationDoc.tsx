@@ -372,8 +372,18 @@ function Subject({ view }: { view: DeterminationView }) {
               <Text style={styles.bulletMark}>—</Text>
               <Text style={styles.bulletText}>
                 {refinement.question} {""}
+                {/*
+                  A declination reads as a declination. Printing an empty
+                  answer would make a question the analyst was unable to settle
+                  look like one nobody bothered with — and the assumption the
+                  analysis rests on downstream is only defensible if the page
+                  shows it was reached deliberately.
+                */}
                 <Text style={{ fontFamily: "Helvetica-Bold" }}>
-                  {refinement.answer}
+                  {refinement.answer ||
+                    (refinement.declined
+                      ? "Asked; the analyst could not establish this."
+                      : "")}
                 </Text>
               </Text>
             </View>

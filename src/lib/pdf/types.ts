@@ -107,7 +107,13 @@ export interface DeterminationView {
     mode: "PART_NUMBER" | "DESCRIPTION";
     input: string;
     researched: ClassificationResult["researched_product"];
-    refinements: { question: string; answer: string }[];
+    /**
+     * What the analyst was asked and what they said — including where they
+     * said they could not establish it. A declination is not an empty answer;
+     * it is a senior analyst's statement about what is knowable, and it is why
+     * an assumption downstream is stated rather than silent.
+     */
+    refinements: { question: string; answer: string; declined?: boolean }[];
   };
 
   /** The code the analyst selected. */

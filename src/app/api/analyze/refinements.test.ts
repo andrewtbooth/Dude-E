@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { mergeRefinements } from "./refinements";
+import { mergeRefinements, parseRefinements } from "./refinements";
 
 const material = {
   questionId: "q1",
@@ -57,6 +57,18 @@ describe("mergeRefinements", () => {
     expect(mergeRefinements([material], [reused])).toEqual([material, reused]);
   });
 
+  it("lets a real answer supersede an earlier declination", () => {
+    const declined = { ...material, answer: "", declined: true };
+    expect(mergeRefinements([declined], [material])).toEqual([material]);
+  });
+
+  it("lets a declination supersede an earlier answer", () => {
+    // Rarer, but it is a correction like any other: the analyst realises the
+    // thing they wrote down was not actually established.
+    const declined = { ...material, answer: "", declined: true };
+    expect(mergeRefinements([material], [declined])).toEqual([declined]);
+  });
+
   it("is a no-op on a first round", () => {
     expect(mergeRefinements([], [material, endUse])).toEqual([material, endUse]);
   });
@@ -65,5 +77,37 @@ describe("mergeRefinements", () => {
     // Answering is optional — the form lets an analyst skip every question and
     // proceed on stated assumptions. That must not read as a retraction.
     expect(mergeRefinements([material, endUse], [])).toEqual([material, endUse]);
+  });
+});
+
+describe("parseRefinements", () => {
+  it("keeps an explicit declination", () => {
+    // The form promises a blank is carried into the determination as a stated
+    // assumption. It was filtered out here, which is where that promise died:
+    // an analyst who was asked and could not say became indistinguishable from
+    // one who was never asked.
+    expect(
+      parseRefinements([
+        { questionId: "q1", question: "Material?", answer: "", declined: true },
+      ]),
+    ).toEqual([
+      { questionId: "q1", question: "Material?", answer: "", declined: true },
+    ]);
+  });
+
+  it("still drops an entry that says nothing at all", () => {
+    // Neither answered nor declined is not a fact about the product; it is a
+    // malformed submission.
+    expect(
+      parseRefinements([{ questionId: "q1", question: "Material?", answer: "" }]),
+    ).toEqual([]);
+  });
+
+  it("prefers the answer when both are present", () => {
+    expect(
+      parseRefinements([
+        { questionId: "q1", question: "Material?", answer: "Steel", declined: true },
+      ]),
+    ).toEqual([{ questionId: "q1", question: "Material?", answer: "Steel" }]);
   });
 });

@@ -354,13 +354,35 @@ export function buildUserTurn({
       : `Product description to classify:\n\n${input}`,
   );
 
-  if (refinements.length > 0) {
-    const answered = refinements
-      .map((r) => `- ${r.question}\n  Analyst's answer: ${r.answer}`)
-      .join("\n");
+  const answered = refinements.filter((r) => r.answer);
+  const declined = refinements.filter((r) => !r.answer && r.declined);
+
+  if (answered.length > 0) {
     parts.push(
       `The analyst has answered your earlier questions. Incorporate these and ` +
-        `re-run the analysis; do not re-ask what has been answered.\n\n${answered}`,
+        `re-run the analysis; do not re-ask what has been answered.\n\n` +
+        answered
+          .map((r) => `- ${r.question}\n  Analyst's answer: ${r.answer}`)
+          .join("\n"),
+    );
+  }
+
+  if (declined.length > 0) {
+    // The run starts from scratch every round, so an unanswered question is
+    // invisible unless it is said out loud. Silence reads as "never asked",
+    // and the two are not the same: a senior analyst declining to assert a
+    // material fact is itself evidence, and the interface has always promised
+    // to carry it into the determination as a stated assumption.
+    parts.push(
+      `The analyst was asked the following and could not establish the ` +
+        `answer. Do not re-ask them. Proceed on the most defensible ` +
+        `assumption you can state, name that assumption explicitly in ` +
+        `\`assumptions\`, and lower your confidence to reflect that the ` +
+        `classification turns on a fact nobody has confirmed. If a question ` +
+        `below is genuinely decisive — different answers give different ` +
+        `codes — say so in \`info_that_would_raise_confidence\` rather than ` +
+        `picking one and presenting it as settled.\n\n` +
+        declined.map((r) => `- ${r.question}`).join("\n"),
     );
   }
 
