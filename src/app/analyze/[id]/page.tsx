@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { BottomNav } from "@/components/BottomNav";
+import { RefineSavedAnalysis } from "@/components/RefineSavedAnalysis";
 import { RunningWatcher } from "@/components/RunningWatcher";
 import { Masthead } from "@/components/Masthead";
 import { RunResult } from "@/components/RunResult";
@@ -20,9 +21,14 @@ export const dynamic = "force-dynamic";
  * rendered through the same component the live page uses, so what an analyst
  * reads here is what they would have read while it streamed.
  *
- * Read-only with respect to the model: selecting a code and recording a
- * determination work, because those act on the stored run. Answering a
- * clarifying question does not, because that means running the analysis again.
+ * Not read-only with respect to the model, and it used to be. Selecting a code
+ * and recording a determination act on the stored run, so those always worked;
+ * answering a clarifying question means running the analysis again, and this
+ * page simply did not offer it. That made a `needs_more_info` run unrecoverable
+ * the moment nobody was watching the stream — the run cannot be recorded,
+ * because the model declined to conclude, and it could not be answered either.
+ * A full max-effort spend, stranded, with retyping the description as a fresh
+ * analysis the only way on. See RefineSavedAnalysis.
  */
 export default async function SavedAnalysisPage({
   params,
@@ -135,6 +141,21 @@ export default async function SavedAnalysisPage({
             analysisId={analysis.id}
             tariffRetrievedAt={
               revision ? new Date(revision.retrievedAt).toISOString().slice(0, 10) : null
+            }
+            // Answering re-runs the analysis rather than streaming it here, so
+            // the questions are handed to a component that starts the run and
+            // lets this page's own watcher pick it up. Suppressed while a run
+            // is already in flight: the questions on screen belong to the round
+            // that has just been superseded.
+            questionsSlot={
+              analysis.status === "RUNNING" ? undefined : (
+                <RefineSavedAnalysis
+                  analysisId={analysis.id}
+                  mode={analysis.mode === "PART_NUMBER" ? "PART_NUMBER" : "DESCRIPTION"}
+                  input={analysis.input}
+                  questions={run.result.clarifying_questions}
+                />
+              )
             }
           />
         ) : (

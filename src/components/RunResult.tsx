@@ -18,8 +18,12 @@ import { VerdictCard } from "./VerdictCard";
  * rendering would drift, and the direction it drifts in is a determination
  * exported from a screen that disagreed with the one the analyst read.
  *
- * `onRefine` is absent on the saved view: answering a question means running
- * the analysis again, which belongs to the page that owns the stream.
+ * Answering a question means running the analysis again, so the two views
+ * differ in *how* rather than in whether: the live page passes `onRefine` and
+ * streams the re-run itself; the saved page passes `renderQuestions` and lets
+ * its own watcher follow a run it does not consume. Neither is read-only, and
+ * the saved page used to be — which stranded every run that asked a question
+ * while nobody was watching.
  */
 export function RunResult({
   run,
@@ -27,6 +31,7 @@ export function RunResult({
   tariffRetrievedAt,
   busy = false,
   onRefine,
+  questionsSlot,
 }: {
   run: ClassificationRun;
   analysisId: string | null;
@@ -34,6 +39,20 @@ export function RunResult({
   tariffRetrievedAt: string | null;
   busy?: boolean;
   onRefine?: (refinements: Refinement[]) => void;
+  /**
+   * Replace the clarifying-question block wholesale.
+   *
+   * The saved-analysis view answers questions by starting a fresh run and
+   * letting its own watcher follow it, rather than streaming here — so it
+   * supplies the whole block, not just a submit handler. Without this the saved
+   * view fell through to `ReadOnlyQuestions`, which told the analyst the work
+   * happens on the analysis page while they were standing on it.
+   *
+   * An already-rendered node rather than a render function, because the caller
+   * is a server component: React refuses to serialise a function across that
+   * boundary, and the page 500s. An element crosses it fine.
+   */
+  questionsSlot?: React.ReactNode;
 }) {
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
 
@@ -54,7 +73,9 @@ export function RunResult({
       />
 
       {run.result.clarifying_questions.length > 0 &&
-        (onRefine ? (
+        (questionsSlot ? (
+          questionsSlot
+        ) : onRefine ? (
           <ClarifyingQuestions
             questions={run.result.clarifying_questions}
             busy={busy}
@@ -220,18 +241,18 @@ function ExportBar({
       >
         Analyst note <span className="font-normal text-[var(--text-muted)]">(optional)</span>
       </label>
-      <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-        Worth filling in if you are overriding the model&rsquo;s pick — the
-        reason belongs in the record, not in someone&rsquo;s memory.
-      </p>
       <textarea
         id="analyst-note"
         value={note}
         onChange={(event) => setNote(event.target.value)}
         rows={2}
         disabled={issued !== null}
-        className="mt-2 w-full resize-y rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none disabled:opacity-60"
+        className="input-control mt-2 w-full resize-y px-3 py-2 text-sm disabled:opacity-60"
       />
+      <p className="mt-1 text-xs text-[var(--text-muted)]">
+        Worth filling in if you are overriding the model&rsquo;s pick — the
+        reason belongs in the record, not in someone&rsquo;s memory.
+      </p>
 
       {error && (
         <p role="alert" className="mt-2 text-xs text-[var(--danger)]">
