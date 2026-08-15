@@ -25,6 +25,20 @@ if ! npx tsx scripts/deploy/check-determination-uniqueness.ts; then
   exit 1
 fi
 
+# What `db push --accept-data-loss` is about to do, before it does it.
+#
+# The flag says out loud that it will not stop for data loss, and until now
+# nothing else stopped either: a rename reaches Prisma as a drop and an add, so
+# renaming a column on a signed determination would have destroyed its contents
+# on the next boot, printed "applying database schema", and served — with the
+# health check reporting ok. Additive changes still apply unattended, which is
+# every change this repository has made so far.
+if ! npx tsx scripts/deploy/check-schema-additive.ts; then
+  echo "==> FATAL: the pending schema change is not purely additive."
+  echo "    Refusing to apply it unattended against the audit database."
+  exit 1
+fi
+
 echo "==> applying database schema"
 # No --skip-generate: Prisma 7 removed the flag, because `db push` no longer
 # triggers a client generation for it to skip. Passing it exits 1, and under
