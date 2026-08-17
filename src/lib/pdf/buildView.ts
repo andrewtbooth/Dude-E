@@ -115,6 +115,7 @@ export function buildDeterminationView(
       refinements: input.refinements.map((refinement) => ({
         question: refinement.question,
         answer: refinement.answer,
+        declined: refinement.declined,
       })),
     },
     selected: input.selected,

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { DERIVATION_VERSION } from "@/lib/hts/parse";
 import { tryGetActiveRevision } from "@/lib/hts/store";
 
 export const runtime = "nodejs";
@@ -67,12 +68,38 @@ export async function GET() {
   const ageDays = Math.floor(ageMs / 86_400_000);
   const stale = ageDays >= STALE_AFTER_DAYS;
 
+  /**
+   * Whether the snapshot was built by the rules this build holds.
+   *
+   * A snapshot is the USITC payload run through the parser with the results
+   * *stored*, so a rule change ships inert until a sync runs again. The
+   * entrypoint checks this and re-syncs in the background — which means there
+   * is a window, right after a deploy, where the app is serving data derived by
+   * the previous rules.
+   *
+   * The deploy workflow polls this endpoint and stops as soon as it says `ok`.
+   * Without this field it said `ok` immediately, because the snapshot was
+   * eleven days old against a twenty-one day threshold — so the run summary
+   * announced "Deployment complete, tariff loaded" while the re-derive was
+   * still going, or after it had failed outright. That is precisely the
+   * silent-green failure DERIVATION_VERSION exists to prevent, relocated one
+   * level up into the pipeline, and the release it hid turned entirely on
+   * whether the re-derive had happened.
+   */
+  const derivationCurrent = revision.derivationVersion === DERIVATION_VERSION;
+
+  const reason = !derivationCurrent
+    ? `Snapshot was built by derivation ${revision.derivationVersion ?? "(unversioned)"}, ` +
+      `this build is ${DERIVATION_VERSION}. A re-sync is running or has failed; ` +
+      `until it lands, derived fields reflect the previous rules.`
+    : stale
+      ? `Snapshot is ${ageDays} days old. HTSUS revisions ship every few weeks; re-run the sync.`
+      : undefined;
+
   return NextResponse.json(
     {
-      status: stale ? "degraded" : "ok",
-      reason: stale
-        ? `Snapshot is ${ageDays} days old. HTSUS revisions ship every few weeks; re-run the sync.`
-        : undefined,
+      status: stale || !derivationCurrent ? "degraded" : "ok",
+      reason,
       build,
       snapshot: {
         revision: revision.revision,
@@ -81,6 +108,9 @@ export async function GET() {
         ageDays,
         isPartial: revision.isPartial,
         warnings: revision.warnings.length,
+        derivationVersion: revision.derivationVersion ?? null,
+        derivationExpected: DERIVATION_VERSION,
+        derivationCurrent,
       },
     },
     { status: 200 },

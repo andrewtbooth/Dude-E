@@ -11,6 +11,7 @@ import {
   parseRun,
   selectAlternates,
 } from "@/lib/pdf/buildView";
+import { DETERMINATION_TEMPLATE_VERSION } from "@/lib/pdf/DeterminationDoc";
 import { renderDetermination } from "@/lib/pdf/renderDetermination";
 
 export const runtime = "nodejs";
@@ -185,6 +186,12 @@ export async function POST(request: Request) {
       model: analysis.model,
       effort: analysis.effort,
       appVersion: analysis.appVersion,
+      // Stamped at creation, before the render is attempted, so that a row
+      // whose decision-time render failed can be told apart from one that
+      // predates decision-time hashing entirely. The export route may
+      // establish a baseline for the first and must not invent one for the
+      // second — see driftVerdict.
+      pdfTemplateVersion: DETERMINATION_TEMPLATE_VERSION,
     },
     include: { analysis: true },
   });
@@ -206,6 +213,8 @@ export async function POST(request: Request) {
     const { sha256 } = await renderDetermination(determination);
     await prisma.determination.update({
       where: { id: determination.id },
+      // The template version is already on the row from creation; the hash is
+      // only comparable against a render of that same document.
       data: { pdfSha256: sha256 },
     });
   } catch (error) {

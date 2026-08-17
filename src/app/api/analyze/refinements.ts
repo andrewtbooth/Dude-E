@@ -17,8 +17,16 @@ export function parseRefinements(raw: unknown): Refinement[] {
     const questionId = typeof record.questionId === "string" ? record.questionId : "";
     const question = typeof record.question === "string" ? record.question : "";
     const answer = typeof record.answer === "string" ? record.answer.trim() : "";
-    if (questionId && question && answer) {
-      parsed.push({ questionId, question, answer });
+    const declined = record.declined === true;
+    // An answer or an explicit declination; not neither. A declination is a
+    // fact about what the analyst could establish, and it is the thing the
+    // form promises to carry — see Refinement.
+    if (questionId && question && (answer || declined)) {
+      parsed.push(
+        answer
+          ? { questionId, question, answer }
+          : { questionId, question, answer: "", declined: true },
+      );
     }
   }
   return parsed;

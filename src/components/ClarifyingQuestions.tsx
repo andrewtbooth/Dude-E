@@ -27,13 +27,22 @@ export function ClarifyingQuestions({
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
-    const refinements: Refinement[] = questions
-      .filter((question) => (answers[question.id] ?? "").trim())
-      .map((question) => ({
-        questionId: question.id,
-        question: question.question,
-        answer: answers[question.id].trim(),
-      }));
+    // Every question that was asked is submitted, answered or not. A blank is
+    // not an absence of input — it is a senior analyst saying they cannot
+    // establish this — and the copy above promises it will be carried into the
+    // determination as a stated assumption. Dropping blanks here is where that
+    // promise used to be broken, one line into its own implementation.
+    const refinements: Refinement[] = questions.map((question) => {
+      const answer = (answers[question.id] ?? "").trim();
+      return answer
+        ? { questionId: question.id, question: question.question, answer }
+        : {
+            questionId: question.id,
+            question: question.question,
+            answer: "",
+            declined: true,
+          };
+    });
     onSubmit(refinements);
   }
 
@@ -45,11 +54,6 @@ export function ClarifyingQuestions({
       <h2 className="text-sm font-semibold text-[var(--text-primary)]">
         These answers would settle the classification
       </h2>
-      <p className="mt-1 max-w-prose text-sm text-[var(--text-secondary)]">
-        Answer what you can. Anything you leave blank is carried into the
-        determination as a stated assumption rather than a silent guess.
-      </p>
-
       <ol className="mt-4 space-y-5">
         {questions.map((question, index) => (
           <li key={question.id}>
@@ -86,7 +90,7 @@ export function ClarifyingQuestions({
                         ? question.options.join(", ")
                         : "Your answer"
                     }
-                    className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none"
+                    className="input-control w-full px-3 py-2 text-sm"
                   />
                 )}
               </div>
@@ -107,6 +111,24 @@ export function ClarifyingQuestions({
           {answeredCount} of {questions.length} answered
         </span>
       </div>
+
+      {/*
+        Below the questions, not above them. The analyst arrived here to answer
+        something; the standing rule about blanks is what they need once they
+        hit one they cannot answer, which is after they have read the question.
+
+        And the promise is now kept. Every question is submitted whether or not
+        it was answered, a blank travels as an explicit declination, and the
+        re-run is told a human was asked and could not establish it — see
+        Refinement and buildUserTurn. Until that landed this sentence was the
+        one thing on the screen that was not true.
+      */}
+      <p className="mt-4 max-w-prose border-t border-[var(--info)]/30 pt-3 text-xs text-[var(--text-secondary)]">
+        Answer what you can. Anything you leave blank is recorded as a question
+        you were asked and could not settle: the re-run is told so, works from a
+        stated assumption instead of a silent guess, and the determination says
+        which.
+      </p>
     </form>
   );
 }

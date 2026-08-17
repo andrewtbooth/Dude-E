@@ -310,11 +310,30 @@ export type ClarifyingQuestion = z.infer<typeof clarifyingQuestionSchema>;
 export type ResearchedProduct = z.infer<typeof researchedProductSchema>;
 export type ClassificationResult = z.infer<typeof classificationResultSchema>;
 
-/** Answer supplied by the analyst to a clarifying question. */
+/**
+ * What the analyst said when asked a clarifying question — including that they
+ * could not say.
+ *
+ * `declined` is the whole reason this is not just a string. The form has always
+ * told the analyst that answering is optional and that "anything you leave
+ * blank is carried into the determination as a stated assumption rather than a
+ * silent guess". It was not: blanks were filtered client-side, filtered again
+ * on the way in, and the re-run — which starts from scratch every round — was
+ * never told a question had been put to a human who could not establish the
+ * answer.
+ *
+ * So the one thing the copy promised was the one thing that did not happen, and
+ * on exactly the goods where it matters: a senior analyst declining to assert a
+ * material fact is evidence, and it was being discarded in favour of silence
+ * the model could only read as "not asked".
+ */
 export interface Refinement {
   questionId: string;
   question: string;
+  /** Empty when the analyst was asked and could not establish the fact. */
   answer: string;
+  /** True when the analyst explicitly left this unanswered. */
+  declined?: boolean;
 }
 
 export type AnalysisMode = "PART_NUMBER" | "DESCRIPTION";

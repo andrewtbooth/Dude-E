@@ -87,7 +87,7 @@ function Field({
     <div>
       <label
         htmlFor={id}
-        className="block text-sm font-medium text-[var(--text-primary)]"
+        className="input-label"
       >
         {label}
       </label>
@@ -101,7 +101,7 @@ function Field({
         placeholder={placeholder}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : hintId}
-        className="mt-1.5 min-h-11 w-full rounded-md border border-[var(--border)] bg-[var(--surface-1)] px-3 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none"
+        className="input-control mt-1.5 min-h-11 w-full px-3"
       />
       {error ? (
         <p id={errorId} role="alert" className="mt-1 text-xs text-[var(--danger)]">
