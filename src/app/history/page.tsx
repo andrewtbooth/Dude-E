@@ -42,11 +42,15 @@ export default async function HistoryPage({
     where: {
       ...(mineOnly ? { analystId: session.id } : {}),
       determinations: { none: {} },
-      // RUNNING belongs here too. A run whose stream was dropped — the phone
-      // locked, the tab was backgrounded — stays RUNNING forever, and leaving
-      // it out of this list meant the one place an analyst goes to find loose
-      // work silently hid exactly the runs most likely to be lost.
-      status: { in: ["RUNNING", "COMPLETE", "NEEDS_MORE_INFO", "FAILED"] },
+      // Every state that is loose work, which is every state but a recorded
+      // decision. RUNNING because a run whose stream was dropped stays that way
+      // until it lands; CANCELLED because a run the analyst stopped is
+      // resumable from its own page, and those are the ones they most mean to
+      // come back to. This list is the only place an analyst goes to find work
+      // they left behind, so anything it omits is work that disappears.
+      status: {
+        in: ["RUNNING", "COMPLETE", "NEEDS_MORE_INFO", "FAILED", "CANCELLED"],
+      },
     },
     include: { analyst: true },
     orderBy: { createdAt: "desc" },

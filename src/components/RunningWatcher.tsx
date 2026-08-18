@@ -32,10 +32,23 @@ const GIVE_UP_MS = 20 * 60 * 1000;
 export function RunningWatcher({
   analysisId,
   startedAt,
+  stalledSlot,
 }: {
   analysisId: string;
   /** ISO timestamp the run was created, for the give-up window. */
   startedAt: string;
+  /**
+   * What to offer once waiting has been ruled out.
+   *
+   * The give-up point is the one place in the app that knows a RUNNING row has
+   * nothing driving it any more, and it used to end the sentence with "or run
+   * it again" while offering no way to do that. The page supplies the offer,
+   * because building it here would mean this component knowing what an analysis
+   * is; deciding *when* stays here, because this is where the clock lives — and
+   * a server component cannot read one during render without lying about being
+   * pure.
+   */
+  stalledSlot?: React.ReactNode;
 }) {
   const router = useRouter();
   const [gaveUp, setGaveUp] = useState(false);
@@ -83,12 +96,14 @@ export function RunningWatcher({
 
   if (gaveUp) {
     return (
-      <p className="mt-1.5 text-xs text-[var(--text-secondary)]">
-        Still marked as running after twenty minutes, which is longer than a run
-        takes. The machine may have restarted mid-analysis, which leaves the row
-        this way with nothing left to finish it. Reload to check, or run it
-        again.
-      </p>
+      <>
+        <p className="mt-1.5 text-xs text-[var(--text-secondary)]">
+          Still marked as running after twenty minutes, which is longer than a
+          run takes. The machine may have restarted mid-analysis, which leaves
+          the row this way with nothing left to finish it.
+        </p>
+        {stalledSlot && <div className="mt-3">{stalledSlot}</div>}
+      </>
     );
   }
 

@@ -59,8 +59,10 @@ export function AnalyzeClient({
    */
   const [detached, setDetached] = useState<{
     id: string;
-    reason: "dropped" | "stopped";
+    reason: "dropped" | "stopped" | "cancelled";
   } | null>(null);
+
+  const [cancelling, setCancelling] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const activeMode = MODES.find((entry) => entry.value === mode)!;
@@ -200,14 +202,60 @@ export function AnalyzeClient({
   }
 
   /**
-   * Detach from the stream. This is not a cancel, and it used to say it was.
+   * Stop the run itself, on the server.
    *
-   * Aborting the fetch only closes this end of the pipe; the route keeps the
-   * run alive on purpose, so the analysis still finishes, still costs what it
-   * was always going to cost, and still lands in the database. Calling that
-   * "Cancel" told the analyst they had stopped a run and saved the spend when
-   * neither was true — and then hid the result, because the abort path never
-   * offered a way back to it.
+   * The counterpart to `stopWatching`, and the reason it can now be honest.
+   * Detaching from the stream used to abort the run as a side effect, so the
+   * two intentions — "I do not want to watch this" and "I do not want to pay
+   * for this" — were the same gesture and the analyst got whichever they had
+   * not meant. This is the second one, said out loud.
+   */
+  async function cancelRun() {
+    if (!analysisId) return;
+    setCancelling(true);
+    try {
+      const response = await fetch(`/api/analyses/${analysisId}/cancel`, {
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        cancelled?: boolean;
+        message?: string;
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        setError(payload?.error ?? "Could not stop the run.");
+        return;
+      }
+
+      abortRef.current?.abort();
+      setRunning(false);
+      setEntries((prev) => [
+        ...prev,
+        {
+          kind: "warning",
+          text:
+            payload?.cancelled === false
+              ? (payload.message ?? "Nothing to stop.")
+              : "Run stopped. You can start it again from this page.",
+        },
+      ]);
+      setDetached({ id: analysisId, reason: "cancelled" });
+    } catch {
+      setError("Could not reach the server to stop the run.");
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  /**
+   * Detach from the stream. This is not a cancel, and it used to be one.
+   *
+   * Aborting the fetch closes this end of the pipe. That used to abort the run
+   * too — the route handed `request.signal` to the model call, so disconnecting
+   * killed the analysis — while this button told the analyst the opposite. The
+   * run now holds its own controller, so the words below are finally true:
+   * leaving costs the progress log, not the analysis.
    */
   /**
    * Clear the result and put the form back.
@@ -343,6 +391,22 @@ export function AnalyzeClient({
               Stop watching
             </button>
           )}
+          {/*
+            Separated from "Stop watching" by more than a label, because the
+            two used to be the same action wearing different words. This one
+            costs the analyst the run; the other costs them the progress log.
+            Danger-toned and second, so the cheap one is the easy one to hit.
+          */}
+          {running && analysisId && (
+            <button
+              type="button"
+              onClick={() => void cancelRun()}
+              disabled={cancelling}
+              className="tap-target rounded-md border border-[var(--danger)] px-3 text-sm text-[var(--danger)] transition-colors hover:bg-[var(--danger-subtle)] disabled:opacity-60"
+            >
+              {cancelling ? "Stopping…" : "Cancel run"}
+            </button>
+          )}
           {running && (
             <span className="text-xs text-[var(--text-muted)]">
               A thorough run takes several minutes.
@@ -383,13 +447,23 @@ export function AnalyzeClient({
           className="rounded-lg border border-[var(--warn)] bg-[var(--warn-subtle)] px-4 py-3"
         >
           <p className="text-sm text-[var(--text-primary)]">
-            {detached.reason === "stopped"
-              ? "You stopped watching this run."
-              : "The connection to this run dropped before it finished reporting."}
+            {detached.reason === "cancelled"
+              ? "You stopped this run."
+              : detached.reason === "stopped"
+                ? "You stopped watching this run."
+                : "The connection to this run dropped before it finished reporting."}
           </p>
+          {/*
+            Three outcomes, and the middle one used to be described in the words
+            of the first while behaving like it too. Detaching leaves the run
+            alive; cancelling ends it. Saying "nothing has been lost" over a run
+            the analyst just cancelled would be the same false reassurance in a
+            new place.
+          */}
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
-            The analysis kept running on the server. Nothing has been lost and
-            nothing needs re-running — open it once it settles.
+            {detached.reason === "cancelled"
+              ? "It will not finish and no result will be written. The analysis page keeps your answers and can start it again."
+              : "The analysis kept running on the server. Nothing has been lost and nothing needs re-running — open it once it settles."}
           </p>
           <a
             href={`/analyze/${detached.id}`}

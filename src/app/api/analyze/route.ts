@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION, config } from "@/lib/config";
 import { classify } from "@/lib/agent/classify";
+import { registerRun, releaseRun } from "@/lib/agent/runRegistry";
 import type { AnalysisMode } from "@/lib/agent/schema";
 import { UnauthenticatedError, requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
@@ -180,16 +181,26 @@ export async function POST(request: Request) {
    * thing again, and *that* is the error that reaches the analyst and the
    * database. The genuine failure, if there was one, is gone.
    *
-   * So writes become no-ops once the consumer is gone. The run itself is
-   * deliberately *not* cancelled here: by the time a browser drops, most of the
-   * cost of an analysis has already been incurred, and abandoning it converts
-   * money already spent into nothing at all. Letting it finish means the result
-   * still lands in the database and shows up under History, so a closed tab
-   * costs the analyst their place in the progress log rather than their
-   * analysis. (If the platform tears the request down it will abort via
-   * `request.signal` regardless — that part is not ours to decide.)
+   * So writes become no-ops once the consumer is gone. The run itself is not
+   * cancelled: by the time a browser drops, most of the cost of an analysis has
+   * already been incurred, and abandoning it converts money already spent into
+   * nothing at all. Letting it finish means the result still lands in the
+   * database and shows up under History, so a closed tab costs the analyst
+   * their place in the progress log rather than their analysis.
+   *
+   * That was the intent from the beginning and it was not what happened. The
+   * run was given `request.signal`, which Next aborts the moment the client
+   * disconnects — so closing the tab killed the analysis and wrote the row
+   * FAILED, while this comment and the "Stop watching" button both said the
+   * opposite. The run now carries its own controller (see runRegistry), and the
+   * only things that abort it are an explicit cancel and a newer run replacing
+   * it.
    */
   let consumerGone = false;
+
+  // Registered before the stream opens so a cancel arriving in the first
+  // seconds of a run has something to find.
+  const runController = registerRun(analysis.id);
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -217,7 +228,10 @@ export async function POST(request: Request) {
           // scratch on every round, so anything left out here is a fact it was
           // told once and is no longer being told.
           refinements: mergedRefinements,
-          signal: request.signal,
+          // The run's own signal, never the request's. This is the whole
+          // difference between a closed tab costing the analyst their progress
+          // log and costing them the analysis.
+          signal: runController.signal,
         })) {
           // One line per tool call and status change. A run takes minutes and
           // can fail deep inside it; without this the only evidence of how far
@@ -231,8 +245,13 @@ export async function POST(request: Request) {
 
           if (event.type === "done") {
             const { run } = event;
-            await prisma.analysis.update({
-              where: { id: analysis.id },
+            // Scoped to a row still RUNNING. A cancel writes CANCELLED and then
+            // aborts, but the abort can lose the race with a result already on
+            // its way back — and a cancelled analysis that quietly turns
+            // COMPLETE is a run the analyst stopped, presented as one they
+            // waited for.
+            await prisma.analysis.updateMany({
+              where: { id: analysis.id, status: "RUNNING" },
               data: {
                 status:
                   run.result.status === "needs_more_info"
@@ -262,8 +281,8 @@ export async function POST(request: Request) {
             );
             send({ type: "done", analysisId: analysis.id, run });
           } else if (event.type === "error") {
-            await prisma.analysis.update({
-              where: { id: analysis.id },
+            await prisma.analysis.updateMany({
+              where: { id: analysis.id, status: "RUNNING" },
               data: {
                 status: "FAILED",
                 error: event.message,
@@ -279,6 +298,22 @@ export async function POST(request: Request) {
         const message =
           error instanceof Error ? error.message : "The analysis failed.";
 
+        // An abort is not a failure, and the reason it stopped is already on
+        // the row: the cancel route wrote CANCELLED before it reached in here.
+        // Recording "FAILED: This operation was aborted" over the top would
+        // describe a deliberate act as a malfunction, and put a stack-shaped
+        // message in front of an analyst who pressed a button.
+        if (runController.signal.aborted) {
+          console.warn(
+            `[analyze] ${analysis.id} aborted after ${Date.now() - startedAt}ms`,
+          );
+          send({
+            type: "error",
+            message: "This run was stopped. You can resume it from the analysis page.",
+          });
+          return;
+        }
+
         // Server-side too: when the consumer has gone there is nobody left to
         // show this to, and the row below is the only record of what happened.
         console.error(
@@ -288,8 +323,8 @@ export async function POST(request: Request) {
         );
 
         await prisma.analysis
-          .update({
-            where: { id: analysis.id },
+          .updateMany({
+            where: { id: analysis.id, status: "RUNNING" },
             data: { status: "FAILED", error: message, completedAt: new Date() },
           })
           .catch(() => {
@@ -297,6 +332,7 @@ export async function POST(request: Request) {
           });
         send({ type: "error", message });
       } finally {
+        releaseRun(analysis.id, runController);
         try {
           controller.close();
         } catch {
@@ -307,8 +343,9 @@ export async function POST(request: Request) {
     },
 
     cancel() {
-      // The consumer went away. Stop writing to a stream nobody is reading,
-      // but let the run finish so its result is still recorded.
+      // The consumer went away — a closed tab, a locked phone, "Stop watching".
+      // Stop writing to a stream nobody is reading. The run is untouched: it
+      // holds its own controller, and only an explicit cancel aborts it.
       consumerGone = true;
       console.warn(
         `[analyze] ${analysis.id} client disconnected after ` +
