@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { BottomNav } from "@/components/BottomNav";
 import { RefineSavedAnalysis } from "@/components/RefineSavedAnalysis";
+import { ResumeAnalysis } from "@/components/ResumeAnalysis";
 import { RunningWatcher } from "@/components/RunningWatcher";
 import { Masthead } from "@/components/Masthead";
 import { RunResult } from "@/components/RunResult";
@@ -50,6 +51,21 @@ export default async function SavedAnalysisPage({
   // reasoning behind someone's signed determination; it is not a shared
   // document, and an id is not an access grant.
   if (analysis.analystId !== session.id) notFound();
+
+  /**
+   * Why this analysis is stopped, when it is.
+   *
+   * Deliberately does not include "still marked RUNNING but nothing is driving
+   * it". That needs a clock, a server component may not read one during render,
+   * and RunningWatcher already owns the question — it polls, and it knows when
+   * it has given up. The offer is built here and handed to it.
+   */
+  const resumeReason =
+    analysis.status === "CANCELLED"
+      ? ("cancelled" as const)
+      : analysis.status === "FAILED"
+        ? ("failed" as const)
+        : null;
 
   const revision = tryGetActiveRevision();
   const run = parseRun(analysis.resultJson);
@@ -117,22 +133,43 @@ export default async function SavedAnalysisPage({
             <RunningWatcher
               analysisId={analysis.id}
               startedAt={analysis.createdAt.toISOString()}
+              stalledSlot={
+                <ResumeAnalysis
+                  analysisId={analysis.id}
+                  mode={analysis.mode === "PART_NUMBER" ? "PART_NUMBER" : "DESCRIPTION"}
+                  input={analysis.input}
+                  reason="stalled"
+                />
+              }
             />
           </div>
         )}
 
-        {analysis.status === "FAILED" && (
+        {analysis.status === "FAILED" && analysis.error && (
           <div
             role="alert"
             className="rounded-lg border border-[var(--danger)] bg-[var(--danger-subtle)] px-4 py-3"
           >
             <p className="text-sm text-[var(--danger)]">This analysis failed.</p>
-            {analysis.error && (
-              <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                {analysis.error}
-              </p>
-            )}
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">
+              {analysis.error}
+            </p>
           </div>
+        )}
+
+        {/*
+          A stopped run is an offer to start again, not a dead end. Before this,
+          the only route onward from a cancelled or failed analysis was retyping
+          the description into a fresh one — losing the row, and with it every
+          answer already given across every round.
+        */}
+        {resumeReason && (
+          <ResumeAnalysis
+            analysisId={analysis.id}
+            mode={analysis.mode === "PART_NUMBER" ? "PART_NUMBER" : "DESCRIPTION"}
+            input={analysis.input}
+            reason={resumeReason}
+          />
         )}
 
         {run ? (
@@ -148,7 +185,7 @@ export default async function SavedAnalysisPage({
             // is already in flight: the questions on screen belong to the round
             // that has just been superseded.
             questionsSlot={
-              analysis.status === "RUNNING" ? undefined : (
+              analysis.status === "RUNNING" || resumeReason !== null ? undefined : (
                 <RefineSavedAnalysis
                   analysisId={analysis.id}
                   mode={analysis.mode === "PART_NUMBER" ? "PART_NUMBER" : "DESCRIPTION"}
@@ -160,7 +197,7 @@ export default async function SavedAnalysisPage({
           />
         ) : (
           analysis.status !== "RUNNING" &&
-          analysis.status !== "FAILED" && (
+          resumeReason === null && (
             <p className="text-sm text-[var(--text-secondary)]">
               No result was stored for this analysis.
             </p>

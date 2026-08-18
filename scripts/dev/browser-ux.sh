@@ -110,7 +110,31 @@ echo ""
 echo "  a code whose reporting number comes from a chapter statistical note"
 BASE="$BASE" node scripts/dev/browser-ux-reporting-number.mjs
 
-# --- third pass: recovering a run the browser walked away from ---------------
+# --- third pass: a run that outlives its browser, and a cancel that stops it --
+#
+# Needs a slow replay: the whole question is what happens to a run that is still
+# going when the socket closes, and at 1ms per event there is no "still going".
+stop_servers
+rm -f "$DB"
+DATABASE_URL="file:./$DB" npx prisma db push >/dev/null
+
+DATABASE_URL="file:./$DB" \
+CLASSIFIER_REPLAY="$CASSETTE" \
+CLASSIFIER_REPLAY_DELAY_MS=1200 \
+SESSION_SECRET="browser-ux-only-not-a-real-secret-00000000000" \
+ANTHROPIC_API_KEY="unused-in-replay" \
+  nohup npx next dev -p "$PORT" > "/tmp/browser-ux-survive.log" 2>&1 &
+
+for _ in $(seq 1 40); do
+  if curl -s --max-time 2 -o /dev/null "${BASE}/api/health"; then break; fi
+  sleep 1
+done
+
+echo ""
+echo "  a run that outlives its browser, and a cancel that does not"
+BASE="$BASE" node scripts/dev/browser-ux-survive.mjs
+
+# --- fourth pass: recovering a run the browser walked away from --------------
 stop_servers
 rm -f "$DB"
 DATABASE_URL="file:./$DB" npx prisma db push >/dev/null

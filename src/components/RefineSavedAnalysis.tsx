@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { AnalysisMode, ClarifyingQuestion, Refinement } from "@/lib/agent/schema";
+import { startRunDetached } from "@/lib/startRun";
 import { ClarifyingQuestions } from "./ClarifyingQuestions";
 
 /**
@@ -52,25 +53,16 @@ export function RefineSavedAnalysis({
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, input, refinements, analysisId }),
+      const started = await startRunDetached({
+        analysisId,
+        mode,
+        input,
+        refinements,
       });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        setError(payload?.error ?? `Request failed (${response.status}).`);
+      if (!started.ok) {
+        setError(started.error);
         return;
       }
-
-      // The row is set RUNNING before the stream opens, so a 200 here means
-      // the re-run is under way. Releasing the body tells the route its
-      // consumer is gone, which it treats as a reason to keep going rather
-      // than to stop — the same path a closed tab takes.
-      await response.body?.cancel();
 
       // Re-render the server component: the analysis is RUNNING now, so the
       // page picks up its own watcher and refreshes again when it finishes.
