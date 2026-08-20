@@ -111,6 +111,22 @@ export interface EvalReport {
   totalInputTokens: number;
   totalOutputTokens: number;
 
+  /**
+   * The same accuracy figures, cut by where a case came from and what tension
+   * it exercises.
+   *
+   * The headline number over a mixed set is close to meaningless, because the
+   * difficulty range is enormous. A laptop named almost verbatim in the
+   * schedule and a composite article turning on essential character are not
+   * the same measurement, and averaging them lets the easy cases carry the
+   * hard ones — which is exactly the direction that flatters the tool, since
+   * the easy cases are also the ones retrieval favours.
+   *
+   * "82% overall" is not a sentence anyone can act on. "97% on eo nomine, 54%
+   * on GRI 3(b)" tells an analyst which goods to check by hand.
+   */
+  slices: EvalSlice[];
+
   /** Per-case detail, for reading the failures rather than just counting them. */
   rows: {
     caseId: string;
@@ -121,6 +137,17 @@ export interface EvalReport {
     rankOfExpected: number;
     status: EvalOutcome["status"];
   }[];
+}
+
+export interface EvalSlice {
+  /** "source" or "tag". */
+  kind: "source" | "tag";
+  label: string;
+  count: number;
+  exact: number;
+  toRateLine: number;
+  recallAnyRank: number;
+  confidentlyWrong: number;
 }
 
 const BANDS: [number, number][] = [
@@ -150,6 +177,7 @@ export function scoreEval(
   let rankCount = 0;
 
   const graded: { confidence: number; correct: boolean }[] = [];
+  const sliceMap = new Map<string, EvalSlice>();
 
   for (const outcome of outcomes) {
     if (!byId.has(outcome.caseId)) continue;
@@ -192,6 +220,42 @@ export function scoreEval(
       rankOfExpected: rank,
       status: outcome.status,
     });
+
+    // One case contributes to its source slice and to every tag it carries, so
+    // tag slices deliberately overlap — a GRI 3(b) case about a textile belongs
+    // in both, and forcing a single bucket would mean choosing which question
+    // you are allowed to ask.
+    const item = byId.get(outcome.caseId)!;
+    const correct = level === "exact";
+    const confidentlyWrong =
+      outcome.status === "complete" &&
+      outcome.confidence !== null &&
+      outcome.confidence > 0.9 &&
+      !correct;
+
+    for (const [kind, label] of [
+      ["source", item.source] as const,
+      ...(item.tags ?? []).map((tag) => ["tag", tag] as const),
+    ]) {
+      const key = `${kind}:${label}`;
+      const slice =
+        sliceMap.get(key) ??
+        ({
+          kind,
+          label,
+          count: 0,
+          exact: 0,
+          toRateLine: 0,
+          recallAnyRank: 0,
+          confidentlyWrong: 0,
+        } satisfies EvalSlice);
+      slice.count += 1;
+      if (correct) slice.exact += 1;
+      if (level === "exact" || level === "rate_line") slice.toRateLine += 1;
+      if (rank > 0) slice.recallAnyRank += 1;
+      if (confidentlyWrong) slice.confidentlyWrong += 1;
+      sliceMap.set(key, slice);
+    }
   }
 
   return {
@@ -206,6 +270,14 @@ export function scoreEval(
     recallAnyRank,
     meanRankWhenFound: rankCount === 0 ? null : rankSum / rankCount,
     runsWithRejectedCodes,
+    // Sources first, then tags; each group by size, so the biggest slice — the
+    // one most responsible for the headline — reads first.
+    slices: [...sliceMap.values()].sort(
+      (a, b) =>
+        (a.kind === b.kind ? 0 : a.kind === "source" ? -1 : 1) ||
+        b.count - a.count ||
+        a.label.localeCompare(b.label),
+    ),
     calibration: calibrate(graded),
     totalDurationMs: sum(outcomes.map((o) => o.durationMs)),
     totalInputTokens: sum(outcomes.map((o) => o.inputTokens)),
@@ -283,6 +355,36 @@ export function formatReport(report: EvalReport, label: string): string {
     lines.push(`  mean rank when offered:            ${report.meanRankWhenFound.toFixed(2)}`);
   }
   lines.push(`  runs where the tariff check discarded a code: ${report.runsWithRejectedCodes}`);
+  if (report.slices.length > 0) {
+    lines.push("");
+    lines.push("By provenance and tension — where the headline comes from:");
+    lines.push(
+      "  " +
+        "slice".padEnd(30) +
+        "n".padStart(4) +
+        "exact".padStart(9) +
+        "rate line".padStart(12) +
+        "offered".padStart(10) +
+        "conf. wrong".padStart(13),
+    );
+    let lastKind: string | null = null;
+    for (const slice of report.slices) {
+      if (lastKind !== null && slice.kind !== lastKind) lines.push("");
+      lastKind = slice.kind;
+      const share = (n: number) =>
+        `${((n / slice.count) * 100).toFixed(0)}%`.padStart(9);
+      lines.push(
+        "  " +
+          `${slice.kind === "source" ? "" : "#"}${slice.label}`.padEnd(30) +
+          String(slice.count).padStart(4) +
+          share(slice.exact) +
+          share(slice.toRateLine).padStart(12) +
+          share(slice.recallAnyRank).padStart(10) +
+          String(slice.confidentlyWrong).padStart(13),
+      );
+    }
+  }
+
   lines.push("");
   lines.push("Calibration — does stated confidence track being right?");
   for (const b of report.calibration.buckets) {

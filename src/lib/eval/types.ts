@@ -34,7 +34,26 @@ export interface EvalCase {
   citation?: string;
   /** Why this case is worth having — the tension it exercises. */
   note?: string;
-  /** Answers to supply if the model asks clarifying questions. */
+  /**
+   * What this case is testing, for slicing the report.
+   *
+   * A blended accuracy figure over a mixed case set is close to meaningless
+   * here, because the difficulty range is enormous: a laptop named almost
+   * verbatim in the schedule and a composite article turning on essential
+   * character are not the same measurement, and averaging them lets the easy
+   * cases carry the hard ones. Tags are how "82% overall" becomes "97% on eo
+   * nomine, 54% on GRI 3(b)", which is the sentence someone can act on.
+   *
+   * Free-form on purpose — the tensions worth tracking are the ones your own
+   * catalogue actually contains. `eval/README.md` lists the ones in use.
+   */
+  tags?: string[];
+  /**
+   * Answers to supply if the model asks clarifying questions.
+   *
+   * A case with none is also a test: it measures what the tool does with an
+   * under-specified description, which is most of what an analyst types.
+   */
   refinements?: { question: string; answer: string }[];
 }
 
