@@ -195,8 +195,10 @@ const styles = StyleSheet.create({
  *    verification pass stated rather than left silent; confidence attributed to
  *    the analysis; Chapter 98 and 19 U.S.C. 1484 named in scope; alternates
  *    labelled when truncated.
+ * 3. Gaps the analysis named and nobody closed are printed, so a determination
+ *    with three open questions stops reading exactly like one with none.
  */
-export const DETERMINATION_TEMPLATE_VERSION = 2;
+export const DETERMINATION_TEMPLATE_VERSION = 3;
 
 export function DeterminationDoc({ view }: { view: DeterminationView }) {
   return (
@@ -226,6 +228,7 @@ export function DeterminationDoc({ view }: { view: DeterminationView }) {
         <FinalDetermination view={view} />
         <GriSection candidate={view.selected} />
         <AssumptionsSection view={view} />
+      <UnresolvedGapsSection view={view} />
         <VerificationSection view={view} />
         <AlternatesSection view={view} />
         <AuthoritiesSection view={view} />
@@ -753,6 +756,40 @@ function AssumptionsSection({ view }: { view: DeterminationView }) {
         <View key={index} style={styles.bulletRow}>
           <Text style={styles.bulletMark}>—</Text>
           <Text style={styles.bulletText}>{assumption}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * Gaps the analysis named and nobody closed.
+ *
+ * Distinct from the assumptions above, and the distinction is the point. An
+ * assumption is something the analysis decided to take as given; this is
+ * something it said it wanted and did not get. A reader deciding how much
+ * weight to put on the determination needs both, and only one of them used to
+ * be here — so a classification with three open gaps read exactly like one with
+ * none.
+ *
+ * Silent when the list is empty, which is a real finding rather than an absence
+ * of one: it means the analysis asked for nothing further.
+ */
+function UnresolvedGapsSection({ view }: { view: DeterminationView }) {
+  if (view.unresolvedGaps.length === 0) return null;
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>NOT ESTABLISHED — WOULD HAVE FIRMED THIS UP</Text>
+      <Text style={[styles.para, { color: COLORS.muted, fontSize: 8 }]}>
+        The analysis identified these as facts that would have strengthened the
+        classification. They were not decisive — it reached a conclusion without
+        them — and they were not supplied. Each one is somewhere this
+        determination could be challenged.
+      </Text>
+      {view.unresolvedGaps.map((gap, index) => (
+        <View key={index} style={styles.bulletRow}>
+          <Text style={styles.bulletMark}>—</Text>
+          <Text style={styles.bulletText}>{gap}</Text>
         </View>
       ))}
     </View>

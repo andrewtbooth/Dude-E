@@ -126,6 +126,10 @@ export function buildDeterminationView(
         input.selected.hts_code.replace(/\D/g, ""),
     ).length,
     assumptions: input.run.result.assumptions,
+    // The final run's list is by definition what is still open: answering an
+    // item re-runs the analysis, and the new run reports whatever it still
+    // wants. No diffing required.
+    unresolvedGaps: input.run.result.info_that_would_raise_confidence,
     analystNote: input.analystNote,
     overrodeRecommendation: overrode,
     modelRecommendation,
