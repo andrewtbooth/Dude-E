@@ -17,6 +17,7 @@
     "dev:pdf": "tsx scripts/dev/render-sample-pdf.tsx",
     "import:htsus": "tsx scripts/import-htsus.ts",
     "eval": "tsx scripts/eval.ts",
+    "eval:check": "tsx scripts/eval-check.ts",
     "try": "tsx scripts/dev/try-classify.ts"
   },
   "dependencies": {
