@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { BottomNav } from "@/components/BottomNav";
 import { RefineSavedAnalysis } from "@/components/RefineSavedAnalysis";
 import { ResumeAnalysis } from "@/components/ResumeAnalysis";
+import { StrengthenSavedAnalysis } from "@/components/StrengthenSavedAnalysis";
 import { RunningWatcher } from "@/components/RunningWatcher";
 import { Masthead } from "@/components/Masthead";
 import { RunResult } from "@/components/RunResult";
@@ -184,6 +185,16 @@ export default async function SavedAnalysisPage({
             // lets this page's own watcher pick it up. Suppressed while a run
             // is already in flight: the questions on screen belong to the round
             // that has just been superseded.
+            strengthenSlot={
+              analysis.status === "RUNNING" || resumeReason !== null ? undefined : (
+                <StrengthenSavedAnalysis
+                  analysisId={analysis.id}
+                  mode={analysis.mode === "PART_NUMBER" ? "PART_NUMBER" : "DESCRIPTION"}
+                  input={analysis.input}
+                  items={run.result.info_that_would_raise_confidence}
+                />
+              )
+            }
             questionsSlot={
               analysis.status === "RUNNING" || resumeReason !== null ? undefined : (
                 <RefineSavedAnalysis

@@ -32,6 +32,7 @@ export function RunResult({
   busy = false,
   onRefine,
   questionsSlot,
+  strengthenSlot,
 }: {
   run: ClassificationRun;
   analysisId: string | null;
@@ -53,6 +54,12 @@ export function RunResult({
    * boundary, and the page 500s. An element crosses it fine.
    */
   questionsSlot?: React.ReactNode;
+  /**
+   * Replace the optional strengthening round, for the same reason
+   * `questionsSlot` exists: the saved view starts a run rather than streaming
+   * one, and a server component cannot hand a client component a function.
+   */
+  strengthenSlot?: React.ReactNode;
 }) {
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
 
@@ -85,7 +92,18 @@ export function RunResult({
           <ReadOnlyQuestions run={run} />
         ))}
 
-      <ResultSummary run={run} />
+      {/*
+        The same refinement path the clarifying questions use. These items are
+        not decisive — nothing is blocked on them — so the round is offered
+        rather than required, and declining costs the analyst nothing but a
+        line on the determination saying the gap is open.
+      */}
+      <ResultSummary
+        run={run}
+        onStrengthen={onRefine}
+        busy={busy}
+        strengthenSlot={strengthenSlot}
+      />
 
       {run.result.candidates.length > 0 && (
         <section>

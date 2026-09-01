@@ -1,8 +1,28 @@
 "use client";
 
 import type { ClassificationRun } from "@/lib/agent/classify";
+import type { Refinement } from "@/lib/agent/schema";
+import { StrengthenAnalysis } from "./StrengthenAnalysis";
 
-export function ResultSummary({ run }: { run: ClassificationRun }) {
+export function ResultSummary({
+  run,
+  onStrengthen,
+  busy = false,
+  strengthenSlot,
+}: {
+  run: ClassificationRun;
+  /**
+   * Supply the facts the analysis said would firm it up, and re-run.
+   *
+   * Absent on a view that cannot start a run, in which case the gaps stay
+   * visible and stay read-only — which is what every view did before this,
+   * including the ones that could perfectly well have offered the round.
+   */
+  onStrengthen?: (refinements: Refinement[]) => void;
+  busy?: boolean;
+  /** Pre-rendered equivalent, for a server-component caller. */
+  strengthenSlot?: React.ReactNode;
+}) {
   const { result, verification } = run;
 
   // A correction is only worth an advisory when it changes what the analyst
@@ -120,6 +140,20 @@ export function ResultSummary({ run }: { run: ClassificationRun }) {
               <li key={index}>{item}</li>
             ))}
           </ul>
+          {/*
+            The list used to end here. An analyst could be told exactly what
+            would have strengthened the classification and had no way to supply
+            any of it short of retyping the description as a new analysis —
+            and the determination said nothing about the gaps at all.
+          */}
+          {strengthenSlot ??
+            (onStrengthen && (
+              <StrengthenAnalysis
+                items={result.info_that_would_raise_confidence}
+                busy={busy}
+                onSubmit={onStrengthen}
+              />
+            ))}
         </Advisory>
       )}
     </section>
@@ -239,13 +273,21 @@ function Advisory({
     danger: "border-[var(--danger)] bg-[var(--danger-subtle)] text-[var(--danger)]",
   }[tone];
 
+  // A named region rather than an anonymous div. These carry the disclosures —
+  // corrections, assumptions, the gaps the analysis wants closed — and a screen
+  // reader had no way to jump to them or to tell one from the next. Named the
+  // same way the rest of the app names its regions, so they land in the same
+  // landmark list.
   return (
-    <div className={`rounded-lg border px-4 py-3 ${styles}`}>
+    <section
+      aria-label={title}
+      className={`rounded-lg border px-4 py-3 ${styles}`}
+    >
       <h3 className="text-xs font-semibold uppercase tracking-wider">{title}</h3>
       <div className="mt-1.5 text-sm text-[var(--text-secondary)]">
         {children}
       </div>
-    </div>
+    </section>
   );
 }
 

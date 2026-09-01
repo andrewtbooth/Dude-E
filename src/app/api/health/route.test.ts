@@ -41,4 +41,17 @@ describe("GET /api/health", () => {
       expect(body.reason).toMatch(/days old/);
     }
   });
+
+  it("names every reason it is degraded, not just the first one", async () => {
+    // The two conditions are independent and after a deploy both routinely
+    // hold. Reporting only the derivation mismatch sent an operator to wait for
+    // a re-sync that, once it landed, left the endpoint degraded for a staleness
+    // it had never been told about.
+    setupFixtureIndex();
+    const body = await (await GET()).json();
+    if (body.snapshot.ageDays >= 21 && !body.snapshot.derivationCurrent) {
+      expect(body.reason).toMatch(/derivation/);
+      expect(body.reason).toMatch(/days old/);
+    }
+  });
 });
