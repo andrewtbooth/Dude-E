@@ -19,6 +19,16 @@ DB="dev-ux.db"
 
 if [ ! -f "$CASSETTE" ]; then
   echo "Missing cassette: $CASSETTE" >&2
+  echo "Build one from the fixture with \`npm run dev:cassettes\`, or record a real run (see README)." >&2
+  exit 1
+fi
+
+# The form is disabled when no tariff snapshot is loaded, and the first sign of
+# that from inside a browser check is a thirty-second timeout on a textarea.
+# Say so up front instead.
+if ! ls "${HTSUS_DATA_DIR:-data/htsus}"/*/manifest.json >/dev/null 2>&1; then
+  echo "No HTSUS snapshot under ${HTSUS_DATA_DIR:-data/htsus}." >&2
+  echo "Seed the offline fixture with \`npm run dev:seed\`, or sync a real edition with \`npm run sync:htsus\`." >&2
   exit 1
 fi
 

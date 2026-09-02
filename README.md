@@ -618,9 +618,14 @@ npx tsx scripts/dev/try-classify.ts --record data/cassettes/bottle.json "steel w
 npx tsx scripts/dev/try-classify.ts --replay data/cassettes/bottle.json    # free, ~2s
 CLASSIFIER_REPLAY=data/cassettes/bottle.json npm run dev                   # whole UI, free
 npx tsx scripts/dev/verify-e2e.tsx --replay data/cassettes/bottle.json     # PDF path
-./scripts/dev/browser-e2e.sh                                              # 17 checks, a real browser
+npm run dev:cassettes                        # or: build both suite cassettes from the fixture, no API call
+./scripts/dev/browser-e2e.sh                                              # 22 checks, a real browser
 ./scripts/dev/browser-ux.sh                                               # touch audit + 29 checks, phone viewport
 ```
+
+Both browser scripts need a tariff snapshot loaded (`npm run dev:seed` builds
+the offline fixture) and refuse to start without one, because the first sign of
+its absence from inside a browser is a thirty-second timeout on a disabled form.
 
 `browser-ux.sh` opens with `audit-touch-targets.mjs`, which walks every
 interactive element at phone width and exits non-zero on anything under 44px or
@@ -642,7 +647,10 @@ Replay is refused in production builds, and every run it produces is stamped
 `replay:<model>` — that string reaches the PDF provenance block, so a document
 built from a recorded run says so permanently. A cassette proves the plumbing
 carries a result; only a live run proves the result is any good. Cassettes are
-gitignored: they contain whatever was classified.
+gitignored: they contain whatever was classified. `npm run dev:cassettes` writes
+the two the browser scripts expect from the committed determination fixture —
+public tariff text about a water bottle — so a fresh clone can run them without
+recording anything.
 
 **3. Model and effort last.** `CLASSIFIER_MODEL` takes `claude-opus-5`,
 `claude-sonnet-5` or `claude-haiku-4-5`. Prefer Sonnet 5 for trials: it keeps
@@ -699,6 +707,7 @@ field, not just the HTTP code.
 | `npm run db:push` | Apply the Prisma schema |
 | `npm run import:htsus` | Build the index from a downloaded HTS export |
 | `npm run dev:seed` | Build the offline fixture tariff index |
+| `npm run dev:cassettes` | Build the browser suites' replay cassettes from the fixture |
 | `npm run dev:pdf` | Render the sample determination to `data/pdf/` |
 | `npm run eval` | Measure classification accuracy and calibration (costs API credits) |
 

@@ -42,11 +42,41 @@ try {
     (await page.locator('button:has-text("Record determination")').count()) === 0,
     "the record button is not offered at all",
   );
+  // `count() >= 0` is always true, so this used to pass with no questions on
+  // the page at all. The questions are the whole point of this state.
   check(
-    await page.getByText("This analysis is waiting on answers").isVisible().catch(() => false) ||
-      (await page.locator("text=What is the housing").count()) >= 0,
+    (await page.locator("text=What is the housing").count()) > 0,
     "the clarifying questions are shown",
   );
+
+  // --- the answer types the schema offers ------------------------------------
+  // Single choice is exclusive; multi choice is not. The second used to render
+  // as a text box with the options as a placeholder.
+  const pressed = async (label) =>
+    (await page.locator(`button:has-text("${label}")`).getAttribute("aria-pressed")) === "true";
+  const answered = () => page.locator("text=/\\d of 3 answered/").first().textContent();
+
+  await page.locator('button:has-text("Plastic")').click();
+  await page.locator('button:has-text("Steel")').click();
+  check(
+    !(await pressed("Plastic")) && (await pressed("Steel")),
+    "a single-choice question keeps only the last option picked",
+  );
+
+  await page.locator('button:has-text("Terminals")').click();
+  await page.locator('button:has-text("Gasket")').click();
+  check(
+    (await pressed("Terminals")) && (await pressed("Gasket")),
+    "a multi-choice question keeps every option picked",
+  );
+  check((await answered()).startsWith("2 of 3"), "and both count as answered", await answered());
+
+  await page.locator('button:has-text("Terminals")').click();
+  check(
+    !(await pressed("Terminals")) && (await pressed("Gasket")),
+    "picking an option again drops only that one",
+  );
+  check((await answered()).startsWith("2 of 3"), "and the question stays answered while any remain", await answered());
 } catch (e) {
   console.log("  FAIL  " + String(e.message || e).split("\n")[0]);
   failures++;
