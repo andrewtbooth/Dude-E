@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { UnauthenticatedError, requireSession } from "@/lib/auth/session";
-import { prisma } from "@/lib/db";
+import { sessionOrUnauthorized } from "@/lib/auth/session";
+import { type Analysis, type Determination, Prisma, prisma } from "@/lib/db";
 import {
   getChapter99ScreeningScope,
   lookupExact,
@@ -18,15 +18,8 @@ export const runtime = "nodejs";
 
 /** Record the analyst's final call on an analysis. */
 export async function POST(request: Request) {
-  let session;
-  try {
-    session = await requireSession();
-  } catch (error) {
-    if (error instanceof UnauthenticatedError) {
-      return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-    }
-    throw error;
-  }
+  const session = await sessionOrUnauthorized();
+  if (session instanceof NextResponse) return session;
 
   let body: {
     analysisId?: unknown;
@@ -138,24 +131,12 @@ export async function POST(request: Request) {
   // downstream can tell which one was the decision. The unique index on
   // `analysisId` is what actually prevents that; this check exists to answer
   // with something an analyst can act on rather than a constraint violation.
-  const existing = await prisma.determination.findUnique({
-    where: { analysisId: analysis.id },
-    select: { id: true, selectedHtsCode: true, decidedAt: true },
-  });
-  if (existing) {
-    return NextResponse.json(
-      {
-        error:
-          `A determination was already recorded for this analysis on ` +
-          `${existing.decidedAt.toISOString()} (${existing.selectedHtsCode}). ` +
-          `Re-issue that document rather than recording a second one.`,
-        determinationId: existing.id,
-      },
-      { status: 409 },
-    );
-  }
+  const existing = await findExisting(analysis.id);
+  if (existing) return alreadyRecorded(existing);
 
-  const determination = await prisma.determination.create({
+  let determination: Determination & { analysis: Analysis };
+  try {
+    determination = await prisma.determination.create({
     data: {
       analysisId: analysis.id,
       analystId: session.id,
@@ -194,7 +175,19 @@ export async function POST(request: Request) {
       pdfTemplateVersion: DETERMINATION_TEMPLATE_VERSION,
     },
     include: { analysis: true },
-  });
+    });
+  } catch (error) {
+    // The check above cannot close the race it describes: two POSTs can both
+    // read "nothing recorded yet" before either writes, and then the unique
+    // index decides. This is the loser's answer — the same 409 the check
+    // gives, naming the row that won — rather than the bare constraint
+    // violation it used to get, which read as the export being broken.
+    if (isUniqueViolation(error)) {
+      const winner = await findExisting(analysis.id);
+      if (winner) return alreadyRecorded(winner);
+    }
+    throw error;
+  }
 
   // Hash the document now, not on first export.
   //
@@ -225,4 +218,37 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ determinationId: determination.id });
+}
+
+interface ExistingDetermination {
+  id: string;
+  selectedHtsCode: string;
+  decidedAt: Date;
+}
+
+function findExisting(analysisId: string): Promise<ExistingDetermination | null> {
+  return prisma.determination.findUnique({
+    where: { analysisId },
+    select: { id: true, selectedHtsCode: true, decidedAt: true },
+  });
+}
+
+function alreadyRecorded(existing: ExistingDetermination) {
+  return NextResponse.json(
+    {
+      error:
+        `A determination was already recorded for this analysis on ` +
+        `${existing.decidedAt.toISOString()} (${existing.selectedHtsCode}). ` +
+        `Re-issue that document rather than recording a second one.`,
+      determinationId: existing.id,
+    },
+    { status: 409 },
+  );
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  );
 }

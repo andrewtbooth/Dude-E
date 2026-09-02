@@ -21,41 +21,40 @@ export default async function HistoryPage({
   const mineOnly = scope !== "all";
   const query = (q ?? "").trim();
 
-  const determinations = await prisma.determination.findMany({
-    where: {
-      ...(mineOnly ? { analystId: session.id } : {}),
-      ...(query
-        ? {
-            OR: [
-              { selectedHtsCode: { contains: query.replace(/\s/g, "") } },
-              { analysis: { input: { contains: query } } },
-            ],
-          }
-        : {}),
-    },
-    include: { analyst: true, analysis: true },
-    orderBy: { decidedAt: "desc" },
-    take: PAGE_SIZE,
-  });
-
-  const unresolved = await prisma.analysis.findMany({
-    where: {
-      ...(mineOnly ? { analystId: session.id } : {}),
-      determinations: { none: {} },
-      // Every state that is loose work, which is every state but a recorded
-      // decision. RUNNING because a run whose stream was dropped stays that way
-      // until it lands; CANCELLED because a run the analyst stopped is
-      // resumable from its own page, and those are the ones they most mean to
-      // come back to. This list is the only place an analyst goes to find work
-      // they left behind, so anything it omits is work that disappears.
-      status: {
-        in: ["RUNNING", "COMPLETE", "NEEDS_MORE_INFO", "FAILED", "CANCELLED"],
+  // Two independent reads, issued together rather than one after the other.
+  const [determinations, unresolved] = await Promise.all([
+    prisma.determination.findMany({
+      where: {
+        ...(mineOnly ? { analystId: session.id } : {}),
+        ...(query
+          ? {
+              OR: [
+                { selectedHtsCode: { contains: query.replace(/\s/g, "") } },
+                { analysis: { input: { contains: query } } },
+              ],
+            }
+          : {}),
       },
-    },
-    include: { analyst: true },
-    orderBy: { createdAt: "desc" },
-    take: 15,
-  });
+      include: { analyst: true, analysis: true },
+      orderBy: { decidedAt: "desc" },
+      take: PAGE_SIZE,
+    }),
+    prisma.analysis.findMany({
+      where: {
+        ...(mineOnly ? { analystId: session.id } : {}),
+        // Every status is loose work until a decision is recorded — RUNNING
+        // included, because a run whose stream was dropped stays that way
+        // until it lands, and CANCELLED, because a run the analyst stopped is
+        // resumable from its own page. This list is the only place an analyst
+        // goes to find work they left behind, so nothing is filtered out on
+        // status here.
+        determinations: { none: {} },
+      },
+      include: { analyst: true },
+      orderBy: { createdAt: "desc" },
+      take: 15,
+    }),
+  ]);
 
   return (
     <div className="min-h-dvh">
@@ -255,12 +254,16 @@ function StatusTag({ status }: { status: string }) {
     COMPLETE: "bg-[var(--ok-subtle)] text-[var(--ok)]",
     NEEDS_MORE_INFO: "bg-[var(--info-subtle)] text-[var(--info)]",
     FAILED: "bg-[var(--danger-subtle)] text-[var(--danger)]",
+    // Stopped on purpose, so not a failure and not a warning either — the
+    // neutral tone RUNNING has, since the analyst chose this and can resume.
+    CANCELLED: "bg-[var(--surface-3)] text-[var(--text-muted)]",
     RUNNING: "bg-[var(--surface-3)] text-[var(--text-muted)]",
   };
   const labels: Record<string, string> = {
     COMPLETE: "Complete",
     NEEDS_MORE_INFO: "Needs info",
     FAILED: "Failed",
+    CANCELLED: "Stopped",
     RUNNING: "Running",
   };
   return (

@@ -6,10 +6,10 @@ import { ResumeAnalysis } from "@/components/ResumeAnalysis";
 import { RunningWatcher } from "@/components/RunningWatcher";
 import { Masthead } from "@/components/Masthead";
 import { RunResult } from "@/components/RunResult";
-import type { ClassificationRun } from "@/lib/agent/classify";
 import { getSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { tryGetActiveRevision } from "@/lib/hts/store";
+import { parseStoredRun } from "@/lib/pdf/buildView";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +68,7 @@ export default async function SavedAnalysisPage({
         : null;
 
   const revision = tryGetActiveRevision();
-  const run = parseRun(analysis.resultJson);
+  const run = parseStoredRun(analysis.resultJson);
 
   return (
     <div className="min-h-dvh">
@@ -208,21 +208,4 @@ export default async function SavedAnalysisPage({
       <BottomNav active="analyze" />
     </div>
   );
-}
-
-/**
- * The run as it was stored.
- *
- * Written by this app one schema version ago at the earliest, but a row that
- * cannot be parsed must not take the page down with it — the surrounding
- * provenance is still worth showing, and "no result was stored" is a more
- * useful answer than a 500.
- */
-function parseRun(raw: string | null): ClassificationRun | null {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as ClassificationRun;
-  } catch {
-    return null;
-  }
 }

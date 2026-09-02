@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { UnauthenticatedError, requireSession } from "@/lib/auth/session";
+import { sessionOrUnauthorized } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
+import { toDigits } from "@/lib/hts/parse";
 import { DETERMINATION_TEMPLATE_VERSION } from "@/lib/pdf/DeterminationDoc";
 import { driftVerdict } from "@/lib/pdf/driftVerdict";
 import { renderDetermination } from "@/lib/pdf/renderDetermination";
@@ -33,15 +34,8 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
-  let session;
-  try {
-    session = await requireSession();
-  } catch (error) {
-    if (error instanceof UnauthenticatedError) {
-      return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-    }
-    throw error;
-  }
+  const session = await sessionOrUnauthorized();
+  if (session instanceof NextResponse) return session;
 
   const { id } = await context.params;
 
@@ -151,7 +145,7 @@ export async function GET(
     );
   }
 
-  const filename = `determination-${determination.selectedHtsCode.replace(/\D/g, "")}-${determination.id}.pdf`;
+  const filename = `determination-${toDigits(determination.selectedHtsCode)}-${determination.id}.pdf`;
 
   return new Response(new Uint8Array(buffer), {
     headers: {

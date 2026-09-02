@@ -13,6 +13,8 @@ import {
 } from "../config";
 import {
   reportingNumberSource,
+  sameHtsCode,
+  toDigits,
   type ReportingNumberSource,
 } from "../hts/parse";
 import {
@@ -153,24 +155,6 @@ export interface ClassificationRun {
 }
 
 /**
- * Fill in fields a run predates.
- *
- * Runs are stored and recorded verbatim — a determination row keeps the JSON
- * exactly as the classifier returned it, and a cassette keeps a whole replayed
- * run. Both are read back through a cast, so a field added after the row was
- * written is missing at runtime while the type insists it is present. Anything
- * that then branches on it silently takes the wrong branch.
- *
- * `severity` is the first of these, and it does not have to be guessed. A
- * correction preserves both the value the model gave and the value the index
- * holds, so the same comparison that classifies a new correction classifies an
- * old one — from the record itself rather than from an assumption about it.
- * Only a field whose values cannot be compared that way falls back to
- * `material`, which is the reading that keeps showing it to the analyst.
- *
- * Mutates and returns the same object; callers own freshly-parsed JSON.
- */
-/**
  * Rebuild `reportingNumberNotes` for a run stored before the field existed.
  *
  * Reconstruction is not verification, and the difference is the whole design
@@ -211,7 +195,7 @@ function reconstructReportingNumberNotes(
     return [
       {
         code,
-        digits: code.replace(/\D/g, "").length,
+        digits: toDigits(code).length,
         source,
         footnote:
           line.footnotes.find((footnote) =>
@@ -222,6 +206,24 @@ function reconstructReportingNumberNotes(
   });
 }
 
+/**
+ * Fill in fields a run predates.
+ *
+ * Runs are stored and recorded verbatim — a determination row keeps the JSON
+ * exactly as the classifier returned it, and a cassette keeps a whole replayed
+ * run. Both are read back through a cast, so a field added after the row was
+ * written is missing at runtime while the type insists it is present. Anything
+ * that then branches on it silently takes the wrong branch.
+ *
+ * `severity` is the first of these, and it does not have to be guessed. A
+ * correction preserves both the value the model gave and the value the index
+ * holds, so the same comparison that classifies a new correction classifies an
+ * old one — from the record itself rather than from an assumption about it.
+ * Only a field whose values cannot be compared that way falls back to
+ * `material`, which is the reading that keeps showing it to the analyst.
+ *
+ * Mutates and returns the same object; callers own freshly-parsed JSON.
+ */
 export function backfillRunFields(run: ClassificationRun): ClassificationRun {
   if (run.verification && run.verification.substitutedRecommendation === undefined) {
     // Unknowable after the fact: whether the model's original recommendation
@@ -818,29 +820,6 @@ function parseResult(
 // ---------------------------------------------------------------------------
 
 /**
- * Check every code the model returned against the tariff, and replace the
- * purely factual fields with the index's values.
- *
- * A fabricated but well-formed 10-digit number is the highest-consequence
- * failure mode in this domain, and it is exactly the kind of thing a language
- * model produces fluently. Duty rates and description paths are lookups, not
- * judgements, so where the model's transcription disagrees with the tariff the
- * tariff wins and the disagreement is recorded.
- */
-/**
- * The export-side half of the anti-fabrication check.
- *
- * A wrong Schedule B number is filed on the EEI and carries its own penalty
- * exposure, so it gets the same treatment as the HTS code: confirm the code
- * exists in the snapshot, and let the schedule — not the model's transcription
- * — supply the description and units.
- *
- * A code from a different HS subheading than the HTS number is *not* rejected.
- * Roughly 0.6% of tariff subheadings have no export counterpart, and for those
- * the only route is `schedule_b_search`, which legitimately crosses
- * subheadings. It is recorded instead, so a reviewer sees the divergence.
- */
-/**
  * Chapter 99 provisions get the same treatment as the base code.
  *
  * An invented "+25% Section 301" line is a larger duty-exposure error than most
@@ -987,6 +966,19 @@ function verifyCrossRulings(
   return kept;
 }
 
+/**
+ * The export-side half of the anti-fabrication check.
+ *
+ * A wrong Schedule B number is filed on the EEI and carries its own penalty
+ * exposure, so it gets the same treatment as the HTS code: confirm the code
+ * exists in the snapshot, and let the schedule — not the model's transcription
+ * — supply the description and units.
+ *
+ * A code from a different HS subheading than the HTS number is *not* rejected.
+ * Roughly 0.6% of tariff subheadings have no export counterpart, and for those
+ * the only route is `schedule_b_search`, which legitimately crosses
+ * subheadings. It is recorded instead, so a reviewer sees the divergence.
+ */
 function verifyScheduleB(
   candidate: Candidate,
   htsNo: string,
@@ -1017,7 +1009,7 @@ function verifyScheduleB(
     });
   }
 
-  const htsHs6 = htsNo.replace(/\D/g, "").slice(0, 6);
+  const htsHs6 = toDigits(htsNo).slice(0, 6);
   if (htsHs6.length === 6 && entry.hs6 !== htsHs6) {
     sink.corrections.push({
       htsCode: htsNo,
@@ -1036,6 +1028,16 @@ function verifyScheduleB(
   };
 }
 
+/**
+ * Check every code the model returned against the tariff, and replace the
+ * purely factual fields with the index's values.
+ *
+ * A fabricated but well-formed 10-digit number is the highest-consequence
+ * failure mode in this domain, and it is exactly the kind of thing a language
+ * model produces fluently. Duty rates and description paths are lookups, not
+ * judgements, so where the model's transcription disagrees with the tariff the
+ * tariff wins and the disagreement is recorded.
+ */
 export function verifyAgainstTariff(result: ClassificationResult): {
   result: ClassificationResult;
   verification: ClassificationRun["verification"];
@@ -1100,7 +1102,7 @@ export function verifyAgainstTariff(result: ClassificationResult): {
     if (source !== "on_the_line") {
       reportingNumberNotes.push({
         code: line.htsNo,
-        digits: line.htsNo.replace(/\D/g, "").length,
+        digits: toDigits(line.htsNo).length,
         source,
         footnote:
           line.footnotes.find((footnote) =>
@@ -1186,19 +1188,15 @@ export function verifyAgainstTariff(result: ClassificationResult): {
   const modelDeclinedToRecommend = result.recommended_hts_code === null;
   const recommendedStillValid =
     !modelDeclinedToRecommend &&
-    verifiedCodes.some(
-      (code) =>
-        code.replace(/\D/g, "") ===
-        (result.recommended_hts_code ?? "").replace(/\D/g, ""),
+    verifiedCodes.some((code) =>
+      sameHtsCode(code, result.recommended_hts_code ?? ""),
     );
 
   const recommended = modelDeclinedToRecommend
     ? null
     : recommendedStillValid
-      ? (reRanked.find(
-          (candidate) =>
-            candidate.hts_code.replace(/\D/g, "") ===
-            (result.recommended_hts_code ?? "").replace(/\D/g, ""),
+      ? (reRanked.find((candidate) =>
+          sameHtsCode(candidate.hts_code, result.recommended_hts_code ?? ""),
         )?.hts_code ?? null)
       : // The recommendation itself failed verification. Falling back to the
         // best surviving candidate is right here — the model did commit to
@@ -1219,8 +1217,7 @@ export function verifyAgainstTariff(result: ClassificationResult): {
     reasoning: {
       ...candidate.reasoning,
       why_not_selected:
-        recommended !== null &&
-        candidate.hts_code.replace(/\D/g, "") === recommended.replace(/\D/g, "")
+        recommended !== null && sameHtsCode(candidate.hts_code, recommended)
           ? null
           : candidate.reasoning.why_not_selected,
     },
