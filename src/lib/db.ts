@@ -1,6 +1,11 @@
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "../../prisma/generated/client";
 
+// The error class and row types, so a route can name a constraint violation
+// or a row without importing from the generated directory itself.
+export { Prisma } from "../../prisma/generated/client";
+export type { Analysis, Determination } from "../../prisma/generated/client";
+
 /**
  * Prisma client singleton.
  *

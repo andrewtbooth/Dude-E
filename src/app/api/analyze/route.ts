@@ -3,7 +3,7 @@ import { APP_VERSION, config } from "@/lib/config";
 import { classify } from "@/lib/agent/classify";
 import { registerRun, releaseRun } from "@/lib/agent/runRegistry";
 import type { AnalysisMode } from "@/lib/agent/schema";
-import { UnauthenticatedError, requireSession } from "@/lib/auth/session";
+import { sessionOrUnauthorized } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { tryGetActiveRevision } from "@/lib/hts/store";
 import { clientKey, rateLimit } from "@/lib/rateLimit";
@@ -25,15 +25,8 @@ interface AnalyzeRequest {
 }
 
 export async function POST(request: Request) {
-  let session;
-  try {
-    session = await requireSession();
-  } catch (error) {
-    if (error instanceof UnauthenticatedError) {
-      return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-    }
-    throw error;
-  }
+  const session = await sessionOrUnauthorized();
+  if (session instanceof NextResponse) return session;
 
   // Sign-in records who decided; it does not gate anything, and on a publicly
   // reachable deployment that leaves the API budget as the exposed surface.

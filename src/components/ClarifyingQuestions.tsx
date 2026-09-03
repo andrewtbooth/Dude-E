@@ -19,11 +19,18 @@ export function ClarifyingQuestions({
   onSubmit: (refinements: Refinement[]) => void;
   busy: boolean;
 }) {
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  /**
+   * A multi-choice answer is held as the options picked, and joined only on
+   * submit. A refinement carries one string, and joining on every toggle would
+   * mean splitting it again to know what is selected — on a separator that
+   * an option's own text could contain.
+   */
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
 
-  const answeredCount = questions.filter((q) =>
-    (answers[q.id] ?? "").trim(),
-  ).length;
+  const asText = (value: string | string[] | undefined): string =>
+    (Array.isArray(value) ? value.join(", ") : (value ?? "")).trim();
+
+  const answeredCount = questions.filter((q) => asText(answers[q.id])).length;
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -33,7 +40,7 @@ export function ClarifyingQuestions({
     // determination as a stated assumption. Dropping blanks here is where that
     // promise used to be broken, one line into its own implementation.
     const refinements: Refinement[] = questions.map((question) => {
-      const answer = (answers[question.id] ?? "").trim();
+      const answer = asText(answers[question.id]);
       return answer
         ? { questionId: question.id, question: question.question, answer }
         : {
@@ -66,19 +73,27 @@ export function ClarifyingQuestions({
               </p>
 
               <div className="mt-2">
-                {question.answer_type === "single_choice" &&
+                {(question.answer_type === "single_choice" ||
+                  question.answer_type === "multi_choice") &&
                 question.options.length > 0 ? (
                   <ChoiceGroup
                     question={question}
-                    value={answers[question.id] ?? ""}
-                    onChange={(value) =>
-                      setAnswers((prev) => ({ ...prev, [question.id]: value }))
+                    multiple={question.answer_type === "multi_choice"}
+                    chosen={toArray(answers[question.id])}
+                    onChange={(chosen) =>
+                      setAnswers((prev) => ({
+                        ...prev,
+                        [question.id]:
+                          question.answer_type === "multi_choice"
+                            ? chosen
+                            : (chosen[0] ?? ""),
+                      }))
                     }
                   />
                 ) : (
                   <input
                     type={question.answer_type === "number" ? "number" : "text"}
-                    value={answers[question.id] ?? ""}
+                    value={asText(answers[question.id])}
                     onChange={(event) =>
                       setAnswers((prev) => ({
                         ...prev,
@@ -133,25 +148,50 @@ export function ClarifyingQuestions({
   );
 }
 
+function toArray(value: string | string[] | undefined): string[] {
+  if (Array.isArray(value)) return value;
+  return value ? [value] : [];
+}
+
+/**
+ * The options as toggles. Single choice is exclusive; multi choice is not —
+ * the schema offers both and the form used to render the second as a text
+ * box with the options as a placeholder, which asked the analyst to retype
+ * what they had just been shown.
+ */
 function ChoiceGroup({
   question,
-  value,
+  multiple,
+  chosen,
   onChange,
 }: {
   question: ClarifyingQuestion;
-  value: string;
-  onChange: (value: string) => void;
+  multiple: boolean;
+  chosen: string[];
+  onChange: (chosen: string[]) => void;
 }) {
+  function toggle(option: string) {
+    const active = chosen.includes(option);
+    if (!multiple) return onChange(active ? [] : [option]);
+    onChange(
+      active ? chosen.filter((entry) => entry !== option) : [...chosen, option],
+    );
+  }
+
   return (
-    <div className="flex flex-wrap gap-2">
+    <div
+      role="group"
+      aria-label={multiple ? "Choose all that apply" : "Choose one"}
+      className="flex flex-wrap gap-2"
+    >
       {question.options.map((option) => {
-        const active = value === option;
+        const active = chosen.includes(option);
         return (
           <button
             key={option}
             type="button"
             aria-pressed={active}
-            onClick={() => onChange(active ? "" : option)}
+            onClick={() => toggle(option)}
             className={
               active
                 ? "rounded-md border border-[var(--accent)] bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-[var(--accent-text)]"
