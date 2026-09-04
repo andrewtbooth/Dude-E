@@ -767,7 +767,16 @@ src/
 scripts/
   sync-htsus.ts   the tariff sync
   dev/            offline seed, sample PDF render, browser checks, screenshots
+docs/
+  SETUP.md        first deploy, for a non-developer
+  DEPLOY.md       the deploy and ops workflows
+  DECISIONS.md    why the application is shaped the way it is
 ```
+
+`docs/DECISIONS.md` is the record of what was wrong before it was right — one
+entry per pull request, oldest first. It lives in the repository rather than in
+pull request descriptions because those are GitHub metadata and do not survive a
+clone.
 
 ---
 
