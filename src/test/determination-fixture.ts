@@ -193,6 +193,7 @@ export function sampleDeterminationView(
       "The space between the walls is evacuated rather than merely filled with foam insulation. A foam-insulated bottle would not be a vacuum vessel and would fall to heading 7323.",
       "Country of origin was not stated, so Section 301 exposure is presented conditionally.",
     ],
+    unresolvedGaps: [],
     analystNote: null,
     overrodeRecommendation: false,
     modelRecommendation: "9617.00.10.00",

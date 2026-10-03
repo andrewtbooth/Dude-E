@@ -131,6 +131,20 @@ export interface DeterminationView {
   alternatesConsidered: number;
 
   assumptions: string[];
+  /**
+   * What the analysis said would have firmed the call up, and was not supplied.
+   *
+   * The model keeps two lists of gaps. The decisive ones stop the run and are
+   * answered before a determination can exist at all, so they never reach this
+   * document. These are the other kind — real, named, not blocking — and they
+   * appeared nowhere on the artifact. A reader asking "was this as firm as it
+   * could have been?" had no way to tell that the analysis had itself
+   * identified three specific things that would have settled it.
+   *
+   * Whatever the analyst did supply is on the record already, under the
+   * information they gave; what remains here is what is still open.
+   */
+  unresolvedGaps: string[];
   analystNote: string | null;
 
   /** True when the analyst chose something other than the model's rank 1. */
