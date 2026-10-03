@@ -14,6 +14,12 @@ answer to "what is this product" (see `SECONDARY_CHAPTERS` in
 The README is the reference; this file is the part you need *before* touching
 anything.
 
+**Standing this up in a new environment?** `docs/GCC-HIGH.md` is the ordered
+list of what has to be decided or reconfigured first — how Claude Code and the
+app reach a model, the egress proxy, package and engine downloads, storage,
+authentication. Work through it before feature work, and tick items off in the
+file as they are settled.
+
 ---
 
 ## Before you run anything
@@ -138,7 +144,7 @@ drifted. See `src/lib/pdf/driftVerdict.ts`.
 | `src/lib/eval/` | Case-file parser, preflight, scoring — the cases themselves are in `eval/` |
 | `src/app/api/` | Routes; `analyze` streams SSE and takes minutes |
 | `scripts/dev/` | Replay, browser suites, fixtures — none of it ships |
-| `docs/` | `SETUP.md`, `DEPLOY.md`, `DECISIONS.md`, `TRANSFER.md` |
+| `docs/` | `GCC-HIGH.md` (start here in a new environment), `TRANSFER.md`, `DECISIONS.md`, `SETUP.md`, `DEPLOY.md` |
 
 ## The gate before committing
 

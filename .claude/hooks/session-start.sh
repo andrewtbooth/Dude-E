@@ -39,6 +39,10 @@ fi
 
 cd "${CLAUDE_PROJECT_DIR:-.}"
 
+# For the Prisma calls below, which would otherwise report usage to
+# checkpoint.prisma.io. Written to the session env as well, further down.
+export NEXT_TELEMETRY_DISABLED=1 CHECKPOINT_DISABLE=1
+
 echo "==> installing dependencies"
 # `install` rather than `ci`: the container image is cached after this hook
 # completes, so a warm node_modules is worth more than a clean one.
@@ -85,6 +89,10 @@ fi
 if [ -n "${CLAUDE_ENV_FILE:-}" ] &&
    ! grep -q "^export SESSION_SECRET=" "$CLAUDE_ENV_FILE" 2>/dev/null; then
   echo 'export SESSION_SECRET="ephemeral-web-session-not-a-real-secret-000000"' >> "$CLAUDE_ENV_FILE"
+fi
+if [ -n "${CLAUDE_ENV_FILE:-}" ] &&
+   ! grep -q "^export NEXT_TELEMETRY_DISABLED=" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+  echo 'export NEXT_TELEMETRY_DISABLED=1 CHECKPOINT_DISABLE=1' >> "$CLAUDE_ENV_FILE"
 fi
 
 # ANTHROPIC_API_KEY is deliberately not set. Nothing here needs it: the tests

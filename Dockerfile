@@ -11,8 +11,18 @@
 
 FROM node:22-bookworm-slim AS base
 ENV NODE_ENV=production
-# python3/make/g++ build better-sqlite3; ca-certificates is needed to reach
-# USITC, Census and the Anthropic API over TLS.
+# Next.js and the Prisma CLI both send anonymous usage telemetry by default —
+# Next during `next build`, Prisma on `generate` and `db push`, which the
+# entrypoint runs on every boot. Nothing depends on it, and inside a monitored
+# boundary each call is an unapproved egress attempt that either times out or
+# raises an alert. Off at the base so both the build and runtime stages inherit.
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    CHECKPOINT_DISABLE=1
+# python3/make/g++ are a fallback: better-sqlite3 13.x ships prebuilt binaries
+# for glibc and musl Linux (x64 and arm64), Windows and macOS, and only compiles
+# from source on a platform those do not cover. ca-certificates is needed to
+# reach USITC, Census and the model endpoint over TLS — and is where an
+# inspecting proxy's root CA would go.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
  && rm -rf /var/lib/apt/lists/*
