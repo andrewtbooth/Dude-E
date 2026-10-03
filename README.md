@@ -780,6 +780,7 @@ docs/
   SETUP.md        first deploy, for a non-developer
   DEPLOY.md       the deploy and ops workflows
   DECISIONS.md    why the application is shaped the way it is
+  TRANSFER.md     moving the application to another environment
 ```
 
 `docs/DECISIONS.md` is the record of what was wrong before it was right — one
