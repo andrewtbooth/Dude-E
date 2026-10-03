@@ -29,7 +29,7 @@ export function SignInForm() {
         inputMode="email"
         enterKeyHint="go"
         type="email"
-        placeholder="dana.okafor@company.com"
+        placeholder="dana.okafor@example.com"
       />
 
       {state.formError && (

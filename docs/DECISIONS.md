@@ -37,9 +37,12 @@ something unverifiable.
 Data-layer facts worth keeping:
 
 - **Section Notes are published nowhere directly by USITC.** All 22 are
-  recovered from the head of each section's first chapter. That recovery is what
-  makes Section XVI Note 2 reachable when classifying in Chapter 85 — without it
-  the binding material for machinery is simply absent.
+  accounted for: the notes are recovered from the head of each section's first
+  chapter, and the five sections that carry only a title page (V, XIII, XIX, XX,
+  XXI) are recorded as saying so rather than storing a page that would read as
+  authority consulted and found silent. That recovery is what makes Section XVI
+  Note 2 reachable when classifying in Chapter 85 — without it the binding
+  material for machinery is simply absent.
 - **Chapter 99 coverage is defined from the Chapter 99 side.** Footnote-based
   detection alone missed staple exposed goods entirely, which is why the
   subchapter U.S. Notes are parsed into a coverage table.

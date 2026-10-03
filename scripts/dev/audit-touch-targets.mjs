@@ -9,14 +9,13 @@
  *
  *   BASE=http://127.0.0.1:3113 node scripts/dev/audit-touch-targets.mjs
  */
-import { chromium, devices } from "playwright";
+import { devices } from "playwright";
+import { launchChromium } from "./chromium.mjs";
 
 const BASE = process.env.BASE ?? "http://127.0.0.1:3113";
 const MIN = 44;
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium",
-});
+const browser = await launchChromium();
 const context = await browser.newContext(devices["iPhone 13"]);
 const page = await context.newPage();
 

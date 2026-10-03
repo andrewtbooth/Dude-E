@@ -34,7 +34,17 @@ fi
 
 if ! node -e "require.resolve('playwright')" 2>/dev/null; then
   echo "==> installing playwright (not saved to package.json)"
-  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i --no-save playwright >/dev/null
+  # Skip the browser download only when a browser is already on the box.
+  # This used to skip it unconditionally, which was right for the one container
+  # that ships a Chromium at /opt/pw-browsers and wrong everywhere else: the
+  # install succeeded, no browser existed, and the checks failed at launch.
+  if [ -n "${PLAYWRIGHT_CHROMIUM_PATH:-}" ] || [ -e /opt/pw-browsers/chromium ]; then
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm i --no-save playwright >/dev/null
+  else
+    npm i --no-save playwright >/dev/null
+    echo "==> no local Chromium found; letting Playwright fetch its own"
+    npx playwright install chromium >/dev/null
+  fi
 fi
 
 stop_servers() {
