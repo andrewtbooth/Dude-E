@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import type { ClassificationRun } from "@/lib/agent/classify";
 import type { Candidate } from "@/lib/agent/schema";
+import { sameHtsCode } from "@/lib/hts/parse";
 import { HtsCode } from "./HtsCode";
 
 export function CandidateCard({
@@ -76,8 +77,7 @@ export function CandidateCard({
             />
             <ConfidenceBadge value={candidate.confidence} />
             {recommendedCode !== null &&
-              candidate.hts_code.replace(/\D/g, "") ===
-                recommendedCode.replace(/\D/g, "") && (
+              sameHtsCode(candidate.hts_code, recommendedCode) && (
                 <span className="stamp text-[var(--accent)]">
                   Model&rsquo;s pick
                 </span>

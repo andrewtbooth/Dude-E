@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ClassificationRun } from "@/lib/agent/classify";
 import type { Refinement } from "@/lib/agent/schema";
+import { sameHtsCode } from "@/lib/hts/parse";
 import { CandidateCard } from "./CandidateCard";
 import { ClarifyingQuestions } from "./ClarifyingQuestions";
 import { ResultSummary } from "./ResultSummary";
@@ -66,8 +67,7 @@ export function RunResult({
         selected={
           selectedCode !== null &&
           run.result.recommended_hts_code !== null &&
-          selectedCode.replace(/\D/g, "") ===
-            run.result.recommended_hts_code.replace(/\D/g, "")
+          sameHtsCode(selectedCode, run.result.recommended_hts_code)
         }
         onSelect={setSelectedCode}
       />
@@ -109,10 +109,8 @@ export function RunResult({
                 tariffRetrievedAt={tariffRetrievedAt}
                 recommendedCode={run.result.recommended_hts_code}
                 reportingNumberNote={
-                  run.verification.reportingNumberNotes?.find(
-                    (note) =>
-                      note.code.replace(/\D/g, "") ===
-                      candidate.hts_code.replace(/\D/g, ""),
+                  run.verification.reportingNumberNotes?.find((note) =>
+                    sameHtsCode(note.code, candidate.hts_code),
                   ) ?? null
                 }
               />

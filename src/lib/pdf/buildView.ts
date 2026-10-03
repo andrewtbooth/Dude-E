@@ -1,5 +1,6 @@
 import { backfillRunFields, type ClassificationRun } from "../agent/classify";
 import type { Candidate, Refinement } from "../agent/schema";
+import { sameHtsCode } from "../hts/parse";
 import type { Chapter99ScreeningScope } from "../hts/store";
 import type { DeterminationView } from "./types";
 
@@ -18,6 +19,29 @@ export function parseRun(resultJson: string): ClassificationRun {
   return backfillRunFields(JSON.parse(resultJson) as ClassificationRun);
 }
 
+/**
+ * The same, for a row that may not have a readable result.
+ *
+ * A saved analysis is shown around its result, not because of it: the
+ * provenance and the offer to run again are worth rendering when the JSON is
+ * unreadable, and "no result was stored" is a more useful answer than a 500.
+ *
+ * Backfilled like every other read. The saved page had its own parse that was
+ * not, so it was the one view in the app reading a run raw — every field added
+ * since a row was written was present on the live page and the document and
+ * missing there, held up only by defensive checks downstream.
+ */
+export function parseStoredRun(
+  resultJson: string | null,
+): ClassificationRun | null {
+  if (!resultJson) return null;
+  try {
+    return parseRun(resultJson);
+  } catch {
+    return null;
+  }
+}
+
 export function parseRefinements(json: string): Refinement[] {
   try {
     const parsed: unknown = JSON.parse(json);
@@ -31,11 +55,9 @@ export function findCandidate(
   candidates: Candidate[],
   htsCode: string,
 ): Candidate | null {
-  const target = htsCode.replace(/\D/g, "");
   return (
-    candidates.find(
-      (candidate) => candidate.hts_code.replace(/\D/g, "") === target,
-    ) ?? null
+    candidates.find((candidate) => sameHtsCode(candidate.hts_code, htsCode)) ??
+    null
   );
 }
 
@@ -51,9 +73,8 @@ export function selectAlternates(
   candidates: Candidate[],
   selectedHtsCode: string,
 ): Candidate[] {
-  const target = selectedHtsCode.replace(/\D/g, "");
   return candidates
-    .filter((candidate) => candidate.hts_code.replace(/\D/g, "") !== target)
+    .filter((candidate) => !sameHtsCode(candidate.hts_code, selectedHtsCode))
     .sort((a, b) => a.rank - b.rank)
     .slice(0, MAX_ALTERNATES);
 }
@@ -86,8 +107,7 @@ export function buildDeterminationView(
   const modelRecommendation = input.run.result.recommended_hts_code;
   const overrode =
     modelRecommendation !== null &&
-    modelRecommendation.replace(/\D/g, "") !==
-      input.selected.hts_code.replace(/\D/g, "");
+    !sameHtsCode(modelRecommendation, input.selected.hts_code);
 
   return {
     id: input.determinationId,
@@ -121,9 +141,7 @@ export function buildDeterminationView(
     selected: input.selected,
     alternates: input.alternates,
     alternatesConsidered: input.run.result.candidates.filter(
-      (candidate) =>
-        candidate.hts_code.replace(/\D/g, "") !==
-        input.selected.hts_code.replace(/\D/g, ""),
+      (candidate) => !sameHtsCode(candidate.hts_code, input.selected.hts_code),
     ).length,
     assumptions: input.run.result.assumptions,
     analystNote: input.analystNote,

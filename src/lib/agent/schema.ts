@@ -15,15 +15,6 @@ import * as z from "zod/v4";
  *   on, and the duty rates that were read off the tariff.
  */
 
-export const GRI_STEPS = [
-  "gri_1",
-  "gri_2",
-  "gri_3",
-  "gri_4",
-  "gri_5",
-  "gri_6",
-] as const;
-
 export const griAnalysisSchema = z.object({
   gri_1: z
     .string()

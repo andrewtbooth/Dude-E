@@ -4,6 +4,7 @@ import {
   reportingNumberSource,
   levelOf,
   parseUsitcRows,
+  sameHtsCode,
   toDigits,
 } from "./parse";
 import type { UsitcRawRow } from "./types";
@@ -455,5 +456,17 @@ describe("reportingNumberSource", () => {
     expect(reportingNumberSource("9101 11 40", ["See statistical note 1."])).toBe(
       "chapter_statistical_note",
     );
+  });
+});
+
+describe("sameHtsCode", () => {
+  it("compares on digits, whatever the punctuation", () => {
+    expect(sameHtsCode("8507.60.00.20", "8507600020")).toBe(true);
+    expect(sameHtsCode("8507.60.00.20", " 8507 60 00 20 ")).toBe(true);
+    expect(sameHtsCode("8507.60.00.20", "8507.60.00.10")).toBe(false);
+  });
+
+  it("does not treat a prefix as a match", () => {
+    expect(sameHtsCode("8507.60", "8507.60.00.20")).toBe(false);
   });
 });

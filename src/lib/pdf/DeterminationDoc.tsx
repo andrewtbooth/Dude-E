@@ -7,6 +7,7 @@ import {
 } from "@react-pdf/renderer";
 import type { Candidate } from "../agent/schema";
 import { BRAND } from "../brand";
+import { sameHtsCode } from "../hts/parse";
 import type { DeterminationView } from "./types";
 
 /**
@@ -399,9 +400,8 @@ function Subject({ view }: { view: DeterminationView }) {
 function FinalDetermination({ view }: { view: DeterminationView }) {
   const candidate = view.selected;
   const reportingNumberNote =
-    view.verification.reportingNumberNotes?.find(
-      (note) =>
-        note.code.replace(/\D/g, "") === candidate.hts_code.replace(/\D/g, ""),
+    view.verification.reportingNumberNotes?.find((note) =>
+      sameHtsCode(note.code, candidate.hts_code),
     ) ?? null;
   return (
     /**
@@ -903,7 +903,7 @@ function VerificationSection({ view }: { view: DeterminationView }) {
 function AlternatesSection({ view }: { view: DeterminationView }) {
   if (view.alternates.length === 0) return null;
 
-  const modelPick = view.modelRecommendation?.replace(/\D/g, "") ?? null;
+  const modelPick = view.modelRecommendation;
 
   return (
     <View style={styles.section}>
@@ -934,8 +934,7 @@ function AlternatesSection({ view }: { view: DeterminationView }) {
               the analyst's judgement, which is stated above.
             */}
             {candidate.reasoning.why_not_selected ??
-              (modelPick !== null &&
-              candidate.hts_code.replace(/\D/g, "") === modelPick
+              (modelPick !== null && sameHtsCode(candidate.hts_code, modelPick)
                 ? "Ranked first by the analysis and passed over by the analyst — " +
                   "see the determination above."
                 : "Ranked lower; no specific rejection rationale was recorded.")}

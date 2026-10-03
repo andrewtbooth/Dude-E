@@ -1,7 +1,7 @@
 "use client";
 
 import type { ClassificationRun } from "@/lib/agent/classify";
-import type { Candidate } from "@/lib/agent/schema";
+import { sameHtsCode } from "@/lib/hts/parse";
 import { HtsCode } from "./HtsCode";
 
 /**
@@ -45,10 +45,8 @@ export function VerdictCard({
     return <NoVerdict run={run} />;
   }
 
-  const recommended = result.candidates.find(
-    (candidate) =>
-      candidate.hts_code.replace(/\D/g, "") ===
-      result.recommended_hts_code!.replace(/\D/g, ""),
+  const recommended = result.candidates.find((candidate) =>
+    sameHtsCode(candidate.hts_code, result.recommended_hts_code!),
   );
   if (!recommended) return <NoVerdict run={run} />;
 
@@ -58,10 +56,8 @@ export function VerdictCard({
   // number is published is a fact about the line's footnotes, which the screen
   // does not have and the digit count cannot stand in for.
   const reportingNumberNote =
-    verification.reportingNumberNotes?.find(
-      (note) =>
-        note.code.replace(/\D/g, "") ===
-        recommended.hts_code.replace(/\D/g, ""),
+    verification.reportingNumberNotes?.find((note) =>
+      sameHtsCode(note.code, recommended.hts_code),
     ) ?? null;
 
   return (
@@ -281,15 +277,4 @@ function confidenceTone(value: number): string {
   const pct = Math.round(Math.min(Math.max(value, 0), 1) * 100);
   if (pct >= 80) return "text-[var(--ok)]";
   return pct >= 55 ? "text-[var(--warn)]" : "text-[var(--danger)]";
-}
-
-/** Exported for the candidate list, which needs the same notion of "the pick". */
-export function isRecommended(
-  candidate: Candidate,
-  recommendedCode: string | null,
-): boolean {
-  if (!recommendedCode) return false;
-  return (
-    candidate.hts_code.replace(/\D/g, "") === recommendedCode.replace(/\D/g, "")
-  );
 }

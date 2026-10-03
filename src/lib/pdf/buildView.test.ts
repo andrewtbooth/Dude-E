@@ -7,6 +7,7 @@ import {
   buildDeterminationView,
   findCandidate,
   parseRefinements,
+  parseStoredRun,
   selectAlternates,
 } from "./buildView";
 
@@ -230,5 +231,59 @@ describe("provenance is frozen, not joined", () => {
     // it simply omits the date rather than inventing one.
     const view = sampleDeterminationView({ tariffRetrievedAt: null });
     expect(view.tariffRetrievedAt).toBeNull();
+  });
+});
+
+describe("parseStoredRun", () => {
+  // A row written before these fields existed: the shape a determination or a
+  // saved analysis from an earlier build actually holds.
+  const olderRow = JSON.stringify({
+    result: {
+      status: "complete",
+      htsus_revision: "2026 HTS Revision 13",
+      summary: "",
+      researched_product: null,
+      clarifying_questions: [],
+      candidates: [],
+      recommended_hts_code: null,
+      assumptions: [],
+      info_that_would_raise_confidence: [],
+    },
+    verification: {
+      verifiedCodes: [],
+      rejectedCodes: [],
+      corrections: [
+        {
+          htsCode: "9617.00.10.00",
+          field: "description_path",
+          modelValue: "9617.00 Vacuum flasks > Having a capacity not exceeding 1 liter",
+          indexValue: "Vacuum flasks: > Having a capacity not exceeding 1 liter",
+        },
+      ],
+    },
+    usage: { inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0 },
+    model: "claude-opus-5",
+    effort: "max",
+    htsusRevision: "2026 HTS Revision 13",
+    durationMs: 1,
+  });
+
+  it("backfills the fields an older row predates, like every other read", () => {
+    // The saved-analysis page used to parse raw. That made it the one view
+    // reading a run without these, so anything branching on them there took
+    // the wrong branch while the live page and the document took the right one.
+    const run = parseStoredRun(olderRow);
+    expect(run).not.toBeNull();
+    expect(run!.verification.substitutedRecommendation).toBeNull();
+    expect(run!.verification.reportingNumberNotes).toEqual([]);
+    expect(run!.verification.corrections[0].severity).toBe("transcription");
+  });
+
+  it("returns null rather than throwing for a row that cannot be read", () => {
+    expect(parseStoredRun(null)).toBeNull();
+    expect(parseStoredRun("")).toBeNull();
+    expect(parseStoredRun("{not json")).toBeNull();
+    // Valid JSON that is not a run: the backfill has nothing to hang off.
+    expect(parseStoredRun("null")).toBeNull();
   });
 });
