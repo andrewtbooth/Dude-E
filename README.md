@@ -767,6 +767,10 @@ src/
 scripts/
   sync-htsus.ts   the tariff sync
   dev/            offline seed, sample PDF render, browser checks, screenshots
+docs/
+  SETUP.md        first deploy, for a non-developer
+  DEPLOY.md       the deploy and ops workflows
+  TRANSFER.md     moving the application to another environment
 ```
 
 ---
