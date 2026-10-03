@@ -9,15 +9,14 @@
  *   BASE=http://127.0.0.1:3113 node scripts/dev/shoot.mjs /tmp/shots
  */
 import fs from "node:fs";
-import { chromium, devices } from "playwright";
+import { devices } from "playwright";
+import { launchChromium } from "./chromium.mjs";
 
 const BASE = process.env.BASE ?? "http://127.0.0.1:3113";
 const OUT = process.argv[2] ?? "/tmp/shots";
 fs.mkdirSync(OUT, { recursive: true });
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium",
-});
+const browser = await launchChromium();
 
 for (const theme of ["light", "dark"]) {
   const context = await browser.newContext({

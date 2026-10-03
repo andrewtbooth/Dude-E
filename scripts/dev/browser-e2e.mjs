@@ -1,8 +1,8 @@
-import { chromium } from "playwright";
+import { launchChromium } from "./chromium.mjs";
 import Database from "better-sqlite3";
 
 const BASE = "http://127.0.0.1:3111";
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const browser = await launchChromium();
 const page = await browser.newPage();
 let failures = 0;
 const check = (ok, label, extra = "") => {

@@ -1,7 +1,7 @@
-import { chromium } from "playwright";
+import { launchChromium } from "./chromium.mjs";
 
 const BASE = process.env.BASE ?? "http://127.0.0.1:3112";
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+const browser = await launchChromium();
 const page = await browser.newPage();
 let failures = 0;
 const check = (ok, label, extra = "") => {

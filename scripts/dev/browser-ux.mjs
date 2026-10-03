@@ -1,10 +1,9 @@
 import Database from "better-sqlite3";
-import { chromium, devices } from "playwright";
+import { devices } from "playwright";
+import { launchChromium } from "./chromium.mjs";
 
 const BASE = process.env.BASE ?? "http://127.0.0.1:3112";
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium",
-});
+const browser = await launchChromium();
 // A real phone profile, not a narrow desktop window. The defects being checked
 // here only appear when the page is taller than the viewport and the log sits
 // below the fold, which is the mobile case and not the desktop one.

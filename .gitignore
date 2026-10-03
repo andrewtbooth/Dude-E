@@ -13,23 +13,22 @@ prisma/*.db-shm
 *.sqlite
 *.sqlite3
 
-# Synced HTSUS snapshots and the derived FTS index (hundreds of MB, and
-# regenerable via `npm run sync:htsus` — see README).
-/data/htsus/
-
-# Tariff exports you downloaded by hand for `npm run import:htsus`.
-# A full-schedule export is tens of MB and is public data — no reason to
-# carry it in git.
-/data/raw/
-
-# Generated determination PDFs
-/data/pdf/
-
-# Recorded classification runs, replayed to exercise the app without API spend.
-# A cassette contains whatever was classified — a part-number recording carries
-# the part number and everything the web research turned up about it — so it
-# inherits the sensitivity of its input and cannot go in a public repository.
-/data/cassettes/
+# Everything under data/, wholesale.
+#
+# Four subdirectories used to be listed individually — htsus/ (snapshots and
+# the derived FTS index, hundreds of MB, regenerable via `npm run sync:htsus`),
+# raw/ (hand-downloaded tariff exports), pdf/ (generated determinations) and
+# cassettes/ (recorded runs). Everything the project has ever put here is
+# either large and regenerable or carries the sensitivity of whatever was
+# classified: a part-number cassette holds the part number and everything the
+# web research turned up about it.
+#
+# But naming four subdirectories meant `data/notes.txt`, or any new
+# subdirectory, was committable — while CLAUDE.md and the README both said
+# "data/ is gitignored". In a public repository whose first rule is "never
+# commit a customer part number", the protection has to be at least as wide as
+# the sentence describing it. Ignore the directory, not a list of its children.
+/data/
 verify-e2e.pdf
 
 # === BUILD ===================================================================

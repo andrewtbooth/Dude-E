@@ -31,6 +31,9 @@ npm run dev:cassettes                      # build cassettes from the fixture
 CLASSIFIER_REPLAY=data/cassettes/water-bottle.json npm run dev
 ```
 
+Replay needs no API key, but `npm run dev` still needs `SESSION_SECRET` — copy
+`.env.example` to `.env.local` first, or sign-in throws on a required variable.
+
 **These kill every `next dev` process on the machine**, including one you have
 open in another terminal: `scripts/dev/browser-e2e.sh`, `scripts/dev/browser-ux.sh`,
 `scripts/dev/shoot.mjs`.
@@ -55,6 +58,12 @@ npx prisma db push
 npm run dev:seed         # 4-chapter fixture index; or `npm run sync:htsus` for real data
 npm run dev:cassettes    # cassettes the browser suites replay
 ```
+
+`npm run eval:check` validates an eval case file for free and should be run
+before `npm run eval` ever is. It deliberately **refuses** against the
+four-chapter fixture — a partial snapshot would report perfectly good cases as
+nonexistent — so on a fixture-only checkout its non-zero exit is correct
+behaviour, not a broken install.
 
 `npm run dev:seed` writes a fixture labelled as one, so it cannot be mistaken
 for a real revision on a determination. It is enough for every test and both
@@ -126,10 +135,10 @@ drifted. See `src/lib/pdf/driftVerdict.ts`.
 | `src/lib/hts/` | Snapshot parser, SQLite/FTS5 index, all tariff queries |
 | `src/lib/agent/` | Prompt, tools, the classify loop, verification |
 | `src/lib/pdf/` | The determination document and its one render path |
-| `src/lib/eval/` | Case files, scoring, calibration |
+| `src/lib/eval/` | Case-file parser, preflight, scoring — the cases themselves are in `eval/` |
 | `src/app/api/` | Routes; `analyze` streams SSE and takes minutes |
 | `scripts/dev/` | Replay, browser suites, fixtures — none of it ships |
-| `docs/` | `SETUP.md`, `DEPLOY.md` |
+| `docs/` | `SETUP.md`, `DEPLOY.md`, `DECISIONS.md`, `TRANSFER.md` |
 
 ## The gate before committing
 
@@ -143,3 +152,9 @@ The browser suites are not optional for UI work. Two defects that no unit test
 could see were caught only there: a function prop crossing the server/client
 boundary (a 500), and the progress log dragging the page under the reader's
 thumb, which is invisible unless the replay runs at a realistic pace.
+
+They drive Playwright against a real Chromium, which the scripts locate in
+three steps: `PLAYWRIGHT_CHROMIUM_PATH` if set, then `/opt/pw-browsers/chromium`
+if it exists, then whatever Playwright manages itself
+(`npx playwright install chromium`). See `scripts/dev/chromium.mjs`. Nothing
+else in the gate needs a browser.

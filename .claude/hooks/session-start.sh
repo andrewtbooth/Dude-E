@@ -3,11 +3,15 @@
 # Bring a fresh checkout up to where tests, linters and the browser suites can
 # actually run.
 #
-# Four of the five steps below produce something gitignored, which is why a
-# clean clone cannot run its own test suite until they have happened:
-# prisma/generated (the client tsc needs), the SQLite audit database, the
-# tariff snapshot the app refuses to classify without, and the replay cassettes
-# the browser suites drive from.
+# Four of the five steps below produce something gitignored: prisma/generated,
+# the SQLite audit database, the tariff snapshot the app refuses to classify
+# without, and the replay cassettes the browser suites drive from.
+#
+# Precisely which checks need them is worth stating, because an earlier version
+# of this comment overstated it. `vitest` passes on a bare clone — it runs
+# against fixtures. What fails without `prisma generate` is `tsc --noEmit` and
+# `next build`, both of which cannot resolve the generated client; what fails
+# without a snapshot and cassettes are the browser suites.
 #
 # Two guards matter more than they look:
 #

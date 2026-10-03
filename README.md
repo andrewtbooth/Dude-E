@@ -46,6 +46,7 @@ Requires Node 22+.
 ```bash
 npm install
 cp .env.example .env.local          # then fill in the two required values
+npm run db:generate                 # the Prisma client; tsc and build fail without it
 npm run db:push                     # create the SQLite audit database
 npm run sync:htsus                  # download the active HTSUS revision
 npm run dev
@@ -93,7 +94,8 @@ parts rule that decides most machinery classifications — retrievable when
 classifying in Chapter 85, whose own document does not contain it. The split is
 case-sensitive on purpose: headings are capitalised while the notes refer to
 other chapters in lower case, and matching case-insensitively truncated Section
-XVI to its 331-character title. Twelve sections genuinely have no notes; those
+XVI to its 331-character title. Five sections genuinely have no notes — V,
+XIII, XIX, XX and XXI carry only a title page; those
 are recorded as saying so rather than storing a title page that would read as
 authority.
 
@@ -565,7 +567,7 @@ It reports more than one number, deliberately:
   a case where the analyst was told not to check and should have.
 
 **The seed set proves less than a green number suggests, and the harness says
-so.** All five cases are constructed from the tariff's own eo nomine wording,
+so.** All nine cases are constructed from the tariff's own eo nomine wording,
 so they measure retrieval and GRI mechanics rather than judgement on
 contestable goods. Every run prints that caveat until the case file contains
 work grounded in CBP rulings or your own analysts' determinations. Cases
@@ -620,7 +622,7 @@ CLASSIFIER_REPLAY=data/cassettes/bottle.json npm run dev                   # who
 npx tsx scripts/dev/verify-e2e.tsx --replay data/cassettes/bottle.json     # PDF path
 npm run dev:cassettes                        # or: build both suite cassettes from the fixture, no API call
 ./scripts/dev/browser-e2e.sh                                              # 22 checks, a real browser
-./scripts/dev/browser-ux.sh                                               # touch audit + 29 checks, phone viewport
+./scripts/dev/browser-ux.sh                                               # touch audit + 43 checks, phone viewport
 ```
 
 Both browser scripts need a tariff snapshot loaded (`npm run dev:seed` builds
@@ -709,6 +711,7 @@ field, not just the HTTP code.
 | `npm run dev:seed` | Build the offline fixture tariff index |
 | `npm run dev:cassettes` | Build the browser suites' replay cassettes from the fixture |
 | `npm run dev:pdf` | Render the sample determination to `data/pdf/` |
+| `npm run eval:check` | Validate a case file against the snapshot — free, and run it first |
 | `npm run eval` | Measure classification accuracy and calibration (costs API credits) |
 
 Deployment env vars beyond the two required secrets: `HTSUS_DATA_DIR` and
@@ -732,7 +735,7 @@ inventing another card layout.
   everything numeric — its figures are tabular by construction, so a column of
   ten-digit codes aligns digit under digit, which is how codes get compared.
   Checked in rather than fetched by `next/font/google`, so the build needs no
-  network. 84 KB, both OFL-1.1, licenses included.
+  network. 88 KB, both OFL-1.1, licenses included.
 - **Ruled field blocks** (`.field`, `.field-grid`, `.field-block`, `.caption`)
   for anything transcribed onto an entry — duty rates, units, the tariff
   edition. Loose label/value pairs let the eye pair a value with the wrong

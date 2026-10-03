@@ -11,12 +11,11 @@
  * request when a socket closes, which only happens to a real browser talking to
  * a real server.
  */
-import { chromium, devices } from "playwright";
+import { devices } from "playwright";
+import { launchChromium } from "./chromium.mjs";
 
 const BASE = process.env.BASE ?? "http://127.0.0.1:3112";
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium",
-});
+const browser = await launchChromium();
 const context = await browser.newContext(devices["iPhone 13"]);
 
 let failures = 0;
