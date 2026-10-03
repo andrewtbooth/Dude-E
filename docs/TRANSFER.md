@@ -5,15 +5,18 @@ deployment platform, the git host and the model endpoint all change at once.
 
 The application code is portable. What is not portable is everything *around*
 it, and this file is the inventory: what travels with a clone, what has to be
-carried deliberately, what has to be replaced, and what is still unfinished so
-it does not get lost in the move.
+replaced, and what is still unfinished so it does not get lost in the move.
 
-**Before you start**, four companion pieces are worth knowing about. Each was
-written for this move, and the steps below assume all four are present:
+**For the ordered list of what to do on arrival, read `docs/GCC-HIGH.md`.** This
+file explains why each item on that list exists; that one is the checklist.
+
+**Before you start**, these companion pieces are worth knowing about. Each was
+written for this move, and the steps below assume all of them are present:
 
 | | What it does for the move |
 |---|---|
-| `docs/DECISIONS.md` | The reasoning from thirteen pull requests, extracted before the descriptions became unreachable |
+| `docs/GCC-HIGH.md` | The working checklist: every question to settle and setting to change, in the order you hit them |
+| `docs/DECISIONS.md` | The reasoning from every pull request, extracted before the descriptions became unreachable |
 | `CLAUDE.md` | Orientation for an agent picking the repository up cold — what costs money, what fails silently, what is deliberate |
 | `.claude/hooks/session-start.sh` | Brings a fresh clone to where its own tests run, with no manual setup |
 | `npm run dev:cassettes` | Builds the replay cassettes the browser suites need, so a clean checkout can verify itself without a paid model run |
@@ -30,28 +33,27 @@ changelog, so the *why* survives a clone even where nothing else does.
 history are GitHub metadata, not git objects. They survive a repo transfer
 *within* github.com and are lost by any clone, mirror, or push to a different
 host. That is why `docs/DECISIONS.md` exists — it is the record extracted from
-thirteen pull requests before they became unreachable. Add to it rather than
+every pull request before they became unreachable. Add to it rather than
 relying on a PR description again.
 
 Also does not travel: GitHub Actions run history, GitHub secrets, and anything
 on the Fly volume.
 
-## 2. The one thing that cannot be regenerated
+## 2. What is carried, and what is deliberately left behind
 
-**The audit database.** `/data/dude-e.db` on the deployment volume, or
-`prisma/dude-e.db` locally.
+**Nothing from prior analyses is carried over.** Owner's decision, 2026-10-03.
+The audit database on the old deployment volume — every analysis and
+determination recorded there — stays behind, and the new environment starts
+with an empty one. `npm run db:push` creates it, and the entrypoint does the
+same on first boot.
 
-It holds the determinations: who classified what, when, against which tariff
-edition, on what reasoning, with the hash of the document they signed. Customs
-recordkeeping is the reason this application exists. Copy it deliberately,
-before tearing anything down, and confirm afterwards that the row count matches.
+That makes this a clean start rather than a migration: no row counts to
+reconcile, no older-build rows to backfill, and no duplicate-determination
+history for the boot gate to object to. It also means the old deployment can be
+taken down outright rather than drained — see `docs/GCC-HIGH.md` §8.
 
-In a controlled environment it is also the artifact that carries the most
-obligation: the inputs are part numbers and product descriptions, so if those
-are controlled then so is this file — encryption at rest, retention, and access
-logging all attach to it. A single SQLite file on a volume is unlikely to
-satisfy that. The schema is deliberately Postgres-portable for exactly this
-moment; see "Known-unfinished work" below.
+From here on the audit database is the one artifact in the new environment that
+cannot be regenerated. Back it up from the first determination recorded there.
 
 **Everything else regenerates** and should be left behind rather than copied:
 
@@ -133,11 +135,20 @@ output of that file:
   rather than configuring it.
 - **No idle suspension.** A machine that stops mid-analysis loses the run.
 - **Exactly one instance.** Not merely "do not scale to zero" — do not scale
-  *up* either. The audit database is `better-sqlite3` over a mounted file in WAL
-  mode, which is single-writer; two instances behind a load balancer is a
-  correctness violation, not a performance note. The run registry
-  (`runRegistry.ts`) and the rate limiter are both per-process for the same
-  reason. Moving to Postgres is what lifts this — see §7.
+  *up* either. Two instances on separate disks keep two audit databases that
+  cannot see each other, so the one-determination-per-analysis guard stops
+  holding across them; two on a shared network disk run into SQLite's file
+  locking, which is not reliable over a network filesystem. The run registry
+  (`runRegistry.ts`) and the rate limiter are per-process as well. Moving the
+  audit database to Postgres is what lifts this — see §7.
+- **Local disk, not a network filesystem.** Two SQLite files live on the volume.
+  The tariff index runs in WAL mode (`store.ts:37`), which SQLite documents as
+  not working over a network filesystem at all; the audit database runs in
+  rollback-journal mode and depends on file locks that network filesystems do
+  not reliably honour. (An earlier draft of this section said the audit database
+  was the WAL one. It is the tariff index.) Persistent storage offered as a
+  network share — Azure Files, which App Service mounts, is one — does not
+  qualify.
 - **At least 2 vCPU and 2 GB.** PDF rendering and the SQLite FTS queries are both
   synchronous and would block the event loop during a stream on a single shared
   core.
@@ -222,13 +233,18 @@ does not survive the move.
 - **Sign-in is attribution, not access control.** It is a name and an email with
   no password, by design — the point was to stamp an analyst on an artifact. No
   restricted environment will accept it. Needs real SSO.
-- **The audit database wants to be Postgres**, for encryption at rest, retention
-  and access logging. The schema avoids anything SQLite-specific for this reason;
-  `src/lib/db.ts` is where the adapter is chosen.
-- **`web_search` publishes its input.** Part-number mode searches the web for the
-  part number. If part numbers are controlled technical data, that tool is an
-  export, and no network configuration fixes it — the tool has to go or the mode
-  has to.
+- **The audit database may need to be Postgres.** Three things decide it: whether
+  the only persistent storage on offer is a network filesystem (§4), whether
+  more than one instance is wanted, and the environment's own rules on
+  encryption at rest, backup and access logging. The schema avoids anything
+  SQLite-specific; `src/lib/db.ts` is where the adapter is chosen.
+
+**Decided, recorded so it is not reopened:** part numbers on their own are not
+ITAR-controlled (owner's determination, 2026-10-03). Earlier drafts listed
+`web_search` here as a possible export, because part-number mode searches the
+web for the part number. With that settled, the web tools are a capability
+question only — and on Bedrock they are unavailable regardless; see §6 and
+`docs/GCC-HIGH.md` §4.
 
 **Two things that stop working the moment the pipeline is replaced:**
 

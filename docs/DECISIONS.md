@@ -5,7 +5,7 @@ Why the application is shaped the way it is, in the order it learned.
 **This file exists because pull request descriptions are not part of the
 repository.** They are GitHub metadata — they survive a repo transfer within
 github.com and are lost by any clone, mirror or push to a different host. The
-reasoning behind thirteen pull requests would have left the building with them.
+reasoning behind every pull request would have left the building with them.
 
 Entries are one per pull request, oldest first. Each states the defect, the
 decision, and — where one exists — the guard that stops it coming back. Nearly
@@ -360,7 +360,7 @@ the one driving the run. Terminal writes are scoped to a row still `RUNNING`, so
 a result already in flight cannot resurrect a cancelled analysis into
 `COMPLETE`. An abort is never recorded as a failure.
 
-## #10 — Make "would raise confidence" answerable (open)
+## #10 — Make "would raise confidence" answerable (2026-10-03)
 
 The model keeps **two** lists of gaps and the app treated only one as real.
 `clarifying_questions` block the run and are answered before a determination can
@@ -375,7 +375,7 @@ threshold would key off a confidence number that has never been calibrated.
 **Untouched items are not recorded as declinations** — unlike the decisive
 questions, the analyst never undertook to answer these.
 
-## #11 — Check an eval case file before paying to run it (open)
+## #11 — Check an eval case file before paying to run it (2026-10-03)
 
 `parseCases` verified that `expected` is ten digits, not that those ten digits
 are a *code*. A transposed pair loads cleanly, scores as a miss on every run,
@@ -395,13 +395,13 @@ expected answer for a good that turns on essential character is manufacturing
 ground truth, and inventing a CBP ruling number is worse, because the report
 would present it as the strongest evidence it has.
 
-## #12 — CLAUDE.md (open)
+## #12 — CLAUDE.md (2026-10-03)
 
 Orientation for a fresh agent: what costs money, what the public-repo rule
 forbids, the two version stamps with silent failure modes, and the things that
 look like bugs and are not.
 
-## #13 — Close the gaps a full read turned up (open)
+## #13 — Close the gaps a full read turned up (2026-10-03)
 
 Four places where the app disagreed with itself. The saved-analysis page parsed
 its run raw while every other read went through `backfillRunFields`. Recording a
@@ -418,3 +418,114 @@ had drifted to a shorter form — became `sessionOrUnauthorized`.
 And `npm run dev:cassettes`, because the browser suites replay gitignored
 cassettes and a fresh clone therefore could not run them at all without a live
 model run and an API key.
+
+## #14 — This file (2026-10-03)
+
+Written because the move in prospect would have stranded thirteen pull request
+descriptions on GitHub while the code they explain travelled without them.
+Distilled rather than dumped: point-in-time facts dropped, tariff figures kept.
+It cannot record its own reasoning — which is why the entries from here on are
+written in the same pull request as the change they describe.
+
+## #15 — A SessionStart hook (2026-10-03)
+
+A clean clone could not run its own type check or build: four things it needs
+are gitignored. The hook runs the setup sequence in a fresh Claude Code on the
+web session. Two guards matter more than they look: the tariff snapshot is only
+seeded when there is none, because `dev:seed` stamps the fixture with the
+current time and the store resolves the *newest* snapshot — seeding over a real
+sync would silently demote a full edition behind four chapters; and cassettes
+are only built when missing, because a recorded one is a paid run. Synchronous
+by choice, so a session never opens on a half-generated client.
+
+It runs only where `CLAUDE_CODE_REMOTE=true`. On a local CLI it does nothing —
+see `docs/GCC-HIGH.md` §0.
+
+## #16 — Sync the lockfile (2026-10-03)
+
+The lockfile marked `tsx`, `prisma` and `typescript` as dev dependencies while
+`package.json` lists them as runtime ones. I first reported this as a deployment
+defect — the runtime stage runs `npm ci --omit=dev` and the entrypoint calls
+`npx tsx` on every boot — and then tested it: both lockfiles install identical
+213-package trees, because `--omit=dev` takes its split from `package.json`.
+The production image was never missing anything. The sync was kept for the
+smaller real reason — every cold install rewrote 172 lines, and that spurious
+diff is what sent the investigation after a bug that did not exist.
+
+## #17 — The transfer runbook (2026-10-03)
+
+`docs/TRANSFER.md`: what travels with a clone, what has to be replaced, and
+everything known to be unfinished, which until then existed only in pull
+request discussion. Its first draft of §4 contained three false statements about
+platform coupling; #19 records how they were found.
+
+## #18 — `hasInstallScript` on better-sqlite3 (2026-10-03)
+
+A one-line lockfile flag that npm writes only after taking a package's install
+path, which is why it appeared on a cold rebuild and never on a warm install.
+Committed so that cold installs — which the hook now guarantees on every fresh
+session — stop producing a lockfile diff.
+
+## #19 — A four-way transfer-readiness review (2026-10-03)
+
+Four reviewers, each asked to break one claim: can a newcomer reach a green
+suite from the documents alone; are the documents true; is anything sensitive
+in the history; is the platform coupling really as narrow as stated.
+
+The history was clean — all 110 commits and the full object store, unreachable
+blobs included. Everything else found something:
+
+- **README's setup omitted `prisma generate`**, so the file CLAUDE.md calls the
+  reference produced nine type errors and a failed build.
+- **Every browser script hardcoded `/opt/pw-browsers/chromium`**, a path that
+  exists in one container image. `scripts/dev/chromium.mjs` now resolves an
+  override, then that path, then Playwright's own browser.
+- **`.gitignore` covered four subdirectories of `data/`** while two documents
+  said `data/` was ignored. It now ignores the directory.
+- **TRANSFER.md §4 was wrong** in three ways, found by the reviewer asked to
+  falsify it: `rateLimit.ts` reads Fly's `fly-client-ip` header on the live
+  request path; the app reads eleven environment variables, not three; and
+  `workflow.test.ts` reads two workflow files, not three.
+- **`HTTPS_PROXY` is honoured by the tariff sync and by nothing in the server.**
+  Behind a mandatory proxy the sync works and every model call fails without
+  naming the proxy. Recorded rather than fixed: it cannot be verified from an
+  environment without one.
+
+Plus a set of smaller corrections, each verified: nine eval cases not five, five
+sections without notes not twelve, 43 browser checks not 29.
+
+## #20 — Refuse to boot without the durable-state paths (2026-10-03)
+
+The image sets `HTSUS_DATA_DIR` and `DATABASE_URL`, but a platform that replaces
+the container environment rather than adding to it leaves them empty — and
+empty was worse than missing. The snapshot check read `ls -A ""` as "no
+snapshot" and synced 60 MB to ephemeral storage on every boot; the audit
+database landed there too. The entrypoint now refuses to start, before the first
+command that would act on either, with a test pinning the guard's position.
+
+## #21 — Settle the owner's decisions; write the GCC High checklist (2026-10-03)
+
+Two decisions by the owner, recorded so they are not reopened:
+
+- **Part numbers on their own are not ITAR-controlled.** Every earlier document
+  had carried `web_search` as a possible export, because part-number mode
+  searches the web for the part number. It is now a capability question only.
+- **No prior analyses or determinations are carried over.** The new environment
+  starts with an empty audit database, which turns the move from a migration
+  into a clean start and lets the old deployment be taken down outright.
+
+`docs/GCC-HIGH.md` is the ordered checklist for standing the application up in
+the new environment. It came out of a final review that looked further back
+than the earlier ones — at installing and building, not just running — and
+found that install, build and boot all reach the internet: every package from
+the public npm registry, a native Prisma engine from `binaries.prisma.sh`, the
+base image from Docker Hub, OS packages from Debian's mirrors, and usage
+telemetry from both Next.js and Prisma. Telemetry is now off in the image, the
+env template and the hook; the rest are questions only the new environment can
+answer.
+
+It also corrected a claim of mine. TRANSFER.md said the *audit* database ran in
+WAL mode; it runs in rollback-journal mode, and the WAL pragma belongs to the
+tariff index. The one-instance requirement stands, for a sharper reason: SQLite
+is not safe on a network filesystem in either mode, and network-backed storage
+is what some managed hosts offer as "persistent".
