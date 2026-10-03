@@ -17,6 +17,26 @@
 # which is the behaviour the app already had for a missing snapshot.
 set -e
 
+# Both of these are set by the image (see Dockerfile) and again by fly.toml, so
+# in the current deployment they arrive twice over. A platform that *replaces*
+# the container environment rather than adding to it — several do — leaves them
+# empty, and empty is worse than missing here:
+#
+#   HTSUS_DATA_DIR unset makes the snapshot check below read `ls -A ""`, which
+#   fails, which reads as "no snapshot found", which syncs 60 MB into the
+#   ./data/htsus default *inside the container* — lost on the next restart, and
+#   re-downloaded on every boot thereafter. Silently.
+#
+#   DATABASE_URL unset puts the audit database on that same ephemeral path.
+#   That one costs determinations: the record of who classified what, against
+#   which edition, is the reason this application exists.
+#
+# Refuse to start instead. A container that will not boot is a far cheaper
+# failure than one that serves while quietly discarding the two pieces of
+# durable state.
+: "${HTSUS_DATA_DIR:?is not set — the tariff snapshot would be written to ephemeral storage and lost on restart}"
+: "${DATABASE_URL:?is not set — the audit database would be written to ephemeral storage and determinations would be lost}"
+
 # Checked before the push, not after it fails. Adding a unique index over data
 # that already violates it is the one schema change here that can break an
 # existing volume, and `db push` reports it as an index error rather than as

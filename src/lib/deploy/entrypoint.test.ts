@@ -101,6 +101,22 @@ describe("docker-entrypoint.sh", () => {
     expect(script).toMatch(/\)\s*&/);
   });
 
+  it("refuses to start when the durable-state paths are unset", () => {
+    // Empty is worse than missing: an unset HTSUS_DATA_DIR made the snapshot
+    // check read `ls -A ""`, which reads as "no snapshot", which synced 60 MB
+    // onto ephemeral storage on every boot — and an unset DATABASE_URL put the
+    // audit database there too, which costs determinations. The image sets
+    // both, but a platform that replaces the container environment rather than
+    // adding to it does not.
+    expect(script).toMatch(/\$\{HTSUS_DATA_DIR:\?/);
+    expect(script).toMatch(/\$\{DATABASE_URL:\?/);
+    // Before the first command that would act on either.
+    const guard = script.search(/\$\{HTSUS_DATA_DIR:\?/);
+    const firstPrisma = script.search(/npx (tsx|prisma)/);
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(firstPrisma);
+  });
+
   it("re-syncs when the snapshot predates this build's derivation rules", () => {
     /**
      * The snapshot is not a copy of the USITC payload — it is that payload run
