@@ -38,10 +38,31 @@ try {
   await page.click('button:has-text("Classify")');
 
   // --- the button that used to lie ------------------------------------------
+  // It said "Cancel" and stopped the browser watching. The fix was not to
+  // delete the word but to make it true, so the contract this guards has
+  // inverted: there are now two buttons, and they must stay two. "Stop
+  // watching" costs the analyst the progress log; "Cancel run" costs them the
+  // run. Collapsing them back into one control is the regression.
+  //
+  // Deliberately only the labels. Actually pressing Cancel would end the
+  // replay run, and every check below this one needs it to finish; the cancel
+  // path's behaviour is covered where it can be asserted without spending the
+  // fixture — the API route's own tests and browser-ux-survive.mjs.
   await page.waitForSelector('button:has-text("Stop watching")', { timeout: 20000 });
+  // Waited for, not counted. Cancel needs an analysis id to cancel, and that
+  // arrives on the first server event — a beat after the button that only needs
+  // the run to have started locally. Counting here raced and read zero.
+  const cancellable = await page
+    .waitForSelector('button:has-text("Cancel run")', { timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
   check(
-    (await page.locator('button:has-text("Cancel")').count()) === 0,
-    'no button claims to "Cancel" a run the server keeps running',
+    cancellable,
+    'a run in flight can actually be cancelled, not just un-watched',
+  );
+  check(
+    (await page.locator('button:has-text("Stop watching")').count()) === 1,
+    'and stopping watching is still offered separately, as the cheaper option',
   );
 
   // --- the page must not move while the log streams -------------------------
@@ -170,6 +191,42 @@ try {
   await page.locator('button:has-text("Select this code")').click();
   const after = await page.locator('input[type="radio"]:checked').count();
   check(after === 1, "the card's select drives the candidate list", `saw ${after}`);
+
+  // --- the soft gaps have to be answerable ----------------------------------
+  // The analysis names things that would have firmed the call up. They were
+  // printed read-only, so the only way to supply one was to retype the whole
+  // description as a fresh analysis. This is also the seam where a function
+  // prop crossed the server/client boundary and 500'd the page — a unit test
+  // could not see it, and this suite could.
+  const gapItems = await page
+    .locator('section[aria-label="Would raise confidence"] li')
+    .count();
+  check(gapItems > 0, "the analysis's soft gaps are shown", `saw ${gapItems}`);
+
+  const offer = page.locator('button:has-text("and re-run")');
+  check(await offer.isVisible(), "and there is a way to supply them");
+
+  await offer.click();
+  const fields = await page
+    .locator('form:has(button:has-text("Re-run with what I supplied")) input')
+    .count();
+  check(
+    fields === gapItems,
+    "one field per gap, so a partial answer is possible",
+    `${fields} field(s) for ${gapItems} gap(s)`,
+  );
+
+  const submit = page.locator('button:has-text("Re-run with what I supplied")');
+  check(
+    await submit.isDisabled(),
+    "and it will not spend a run on an empty form",
+  );
+  await page.locator('form input').first().fill("Made in Vietnam");
+  check(
+    !(await submit.isDisabled()),
+    "supplying one is enough to re-run — the rest stay open on the record",
+  );
+  await page.locator('button:has-text("Never mind")').click();
 
   // --- a stranded run has to be findable ------------------------------------
   // A phone that locks mid-run leaves the row RUNNING forever: the server

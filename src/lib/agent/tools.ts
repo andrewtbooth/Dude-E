@@ -418,5 +418,3 @@ export const classificationTools = [
   scheduleBLookupTool,
   scheduleBSearchTool,
 ];
-
-export const LOCAL_TOOL_NAMES = classificationTools.map((tool) => tool.name);

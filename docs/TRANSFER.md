@@ -8,9 +8,8 @@ it, and this file is the inventory: what travels with a clone, what has to be
 carried deliberately, what has to be replaced, and what is still unfinished so
 it does not get lost in the move.
 
-**Before you start**, four companion pieces should be present. Each was written
-for this move and some may still be in review when you read this; check for them
-and merge first, because the steps below assume them:
+**Before you start**, four companion pieces are worth knowing about. Each was
+written for this move, and the steps below assume all four are present:
 
 | | What it does for the move |
 |---|---|

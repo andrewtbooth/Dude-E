@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { abortRun } from "@/lib/agent/runRegistry";
-import { getSession } from "@/lib/auth/session";
+import { sessionOrUnauthorized } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -28,10 +28,8 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-  }
+  const session = await sessionOrUnauthorized();
+  if (session instanceof NextResponse) return session;
 
   const { id } = await params;
   const analysis = await prisma.analysis.findUnique({

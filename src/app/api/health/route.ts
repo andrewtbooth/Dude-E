@@ -88,13 +88,26 @@ export async function GET() {
    */
   const derivationCurrent = revision.derivationVersion === DERIVATION_VERSION;
 
-  const reason = !derivationCurrent
-    ? `Snapshot was built by derivation ${revision.derivationVersion ?? "(unversioned)"}, ` +
-      `this build is ${DERIVATION_VERSION}. A re-sync is running or has failed; ` +
-      `until it lands, derived fields reflect the previous rules.`
-    : stale
-      ? `Snapshot is ${ageDays} days old. HTSUS revisions ship every few weeks; re-run the sync.`
-      : undefined;
+  // Both can be true at once, and for a while after a deploy they routinely
+  // are: a snapshot old enough to want a newer revision *and* derived by rules
+  // this build has moved past. Reporting only the first one sent an operator to
+  // fix half the problem and then watch the endpoint stay degraded for a reason
+  // it had never mentioned. The re-derive is listed first because it is the one
+  // a deploy is actively waiting on.
+  const reasons: string[] = [];
+  if (!derivationCurrent) {
+    reasons.push(
+      `Snapshot was built by derivation ${revision.derivationVersion ?? "(unversioned)"}, ` +
+        `this build is ${DERIVATION_VERSION}. A re-sync is running or has failed; ` +
+        `until it lands, derived fields reflect the previous rules.`,
+    );
+  }
+  if (stale) {
+    reasons.push(
+      `Snapshot is ${ageDays} days old. HTSUS revisions ship every few weeks; re-run the sync.`,
+    );
+  }
+  const reason = reasons.length > 0 ? reasons.join(" ") : undefined;
 
   return NextResponse.json(
     {

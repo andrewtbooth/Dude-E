@@ -563,6 +563,44 @@ describe("the model's pick when the analyst overrode it", () => {
   }, 30_000);
 });
 
+describe("gaps the analysis named and nobody closed", () => {
+  /**
+   * The model keeps two lists. The decisive one stops the run and is answered
+   * before a determination can exist, so it never reaches this document. The
+   * other — real, named, not blocking — appeared nowhere on the artifact at
+   * all, which meant a classification with three open questions read exactly
+   * like one with none.
+   */
+  const withGaps = () => ({
+    ...sampleDeterminationView(),
+    unresolvedGaps: [
+      "The country of origin, which decides whether Section 301 duties attach.",
+      "Whether the cavity is evacuated or foam-filled.",
+    ],
+  });
+
+  it("prints them, and says they were not decisive", async () => {
+    const text = squashed(await textOf(withGaps()));
+    expect(text).toContain(squashed("NOT ESTABLISHED"));
+    expect(text).toContain(squashed("which decides whether Section 301 duties attach"));
+    expect(text).toContain(squashed("They were not decisive"));
+  });
+
+  it("says what each one is: somewhere this could be challenged", async () => {
+    // The point of printing them is not completeness, it is that a reader
+    // weighing the determination can see where it is soft.
+    const text = squashed(await textOf(withGaps()));
+    expect(text).toContain(squashed("could be challenged"));
+  }, 30_000);
+
+  it("stays silent when the analysis asked for nothing further", async () => {
+    // Silence here is a finding rather than an absence of one, so it must not
+    // be manufactured by an empty heading.
+    const text = squashed(await textOf(sampleDeterminationView()));
+    expect(text).not.toContain(squashed("NOT ESTABLISHED"));
+  }, 30_000);
+});
+
 describe("what the document says about itself", () => {
   it("attributes the confidence figure to the analysis, not the signer", async () => {
     // Under a heading carrying the analyst's name and email, a bare "Stated

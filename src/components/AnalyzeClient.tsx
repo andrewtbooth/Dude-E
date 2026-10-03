@@ -67,6 +67,10 @@ export function AnalyzeClient({
   const abortRef = useRef<AbortController | null>(null);
   const activeMode = MODES.find((entry) => entry.value === mode)!;
 
+  const append = useCallback((kind: ProgressEntry["kind"], text: string) => {
+    setEntries((prev) => [...prev, { kind, text }]);
+  }, []);
+
   const startRun = useCallback(
     async (refinements: Refinement[], continuingAnalysisId: string | null) => {
       abortRef.current?.abort();
@@ -128,28 +132,16 @@ export function AnalyzeClient({
               window.history.replaceState(null, "", `/analyze/${event.analysisId}`);
               break;
             case "status":
-              setEntries((prev) => [
-                ...prev,
-                { kind: "status", text: event.message },
-              ]);
+              append("status", event.message);
               break;
             case "thinking":
-              setEntries((prev) => [
-                ...prev,
-                { kind: "thinking", text: event.text },
-              ]);
+              append("thinking", event.text);
               break;
             case "tool_use":
-              setEntries((prev) => [
-                ...prev,
-                { kind: "tool", text: event.summary },
-              ]);
+              append("tool", event.summary);
               break;
             case "warning":
-              setEntries((prev) => [
-                ...prev,
-                { kind: "warning", text: event.message },
-              ]);
+              append("warning", event.message);
               break;
             case "done":
               // Deliberately not pre-selecting the recommendation. The next
@@ -191,7 +183,7 @@ export function AnalyzeClient({
         setRunning(false);
       }
     },
-    [input, mode],
+    [append, input, mode],
   );
 
   function submit(event: React.FormEvent) {
@@ -230,16 +222,12 @@ export function AnalyzeClient({
 
       abortRef.current?.abort();
       setRunning(false);
-      setEntries((prev) => [
-        ...prev,
-        {
-          kind: "warning",
-          text:
-            payload?.cancelled === false
-              ? (payload.message ?? "Nothing to stop.")
-              : "Run stopped. You can start it again from this page.",
-        },
-      ]);
+      append(
+        "warning",
+        payload?.cancelled === false
+          ? (payload.message ?? "Nothing to stop.")
+          : "Run stopped. You can start it again from this page.",
+      );
       setDetached({ id: analysisId, reason: "cancelled" });
     } catch {
       setError("Could not reach the server to stop the run.");
@@ -279,13 +267,7 @@ export function AnalyzeClient({
   function stopWatching() {
     abortRef.current?.abort();
     setRunning(false);
-    setEntries((prev) => [
-      ...prev,
-      {
-        kind: "warning",
-        text: "Stopped watching. The run continues on the server.",
-      },
-    ]);
+    append("warning", "Stopped watching. The run continues on the server.");
     if (analysisId) setDetached({ id: analysisId, reason: "stopped" });
   }
 

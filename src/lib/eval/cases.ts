@@ -67,6 +67,9 @@ export function parseCases(text: string): LoadResult {
       source: row.source,
       citation: row.citation,
       note: row.note,
+      tags: Array.isArray(row.tags)
+        ? row.tags.map((tag) => String(tag).trim()).filter(Boolean)
+        : [],
       refinements: row.refinements ?? [],
     });
   });

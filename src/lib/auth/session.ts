@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { config } from "../config";
 
 export const SESSION_COOKIE = "dude_e_session";
@@ -51,20 +52,22 @@ export async function getSession(): Promise<AnalystSession | null> {
 }
 
 /**
- * Read the current analyst or throw. Used by routes that write provenance —
- * an unattributed determination is not something this app should ever produce.
+ * The signed-in analyst, or the response to send when there is none.
+ *
+ * For API routes, which all write or read provenance — an unattributed
+ * determination is not something this app should ever produce. Every route
+ * opened the same way, eight lines of try/catch apiece around a throwing
+ * variant of this, and two had drifted to a shorter form that skipped the
+ * exception. One shape, so the status and the message cannot diverge between
+ * routes.
  */
-export async function requireSession(): Promise<AnalystSession> {
-  const session = await getSession();
-  if (!session) throw new UnauthenticatedError();
-  return session;
-}
-
-export class UnauthenticatedError extends Error {
-  constructor() {
-    super("Not signed in.");
-    this.name = "UnauthenticatedError";
-  }
+export async function sessionOrUnauthorized(): Promise<
+  AnalystSession | NextResponse
+> {
+  return (
+    (await getSession()) ??
+    NextResponse.json({ error: "Not signed in." }, { status: 401 })
+  );
 }
 
 export const sessionCookieOptions = {

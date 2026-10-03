@@ -1,10 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import type { AnalysisMode, ClarifyingQuestion, Refinement } from "@/lib/agent/schema";
-import { startRunDetached } from "@/lib/startRun";
+import type { AnalysisMode, ClarifyingQuestion } from "@/lib/agent/schema";
 import { ClarifyingQuestions } from "./ClarifyingQuestions";
+import { useSavedAnalysisRun } from "./useSavedAnalysisRun";
 
 /**
  * Answer a saved run's clarifying questions, from the page you landed on.
@@ -45,38 +43,11 @@ export function RefineSavedAnalysis({
   input: string;
   questions: ClarifyingQuestion[];
 }) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(refinements: Refinement[]) {
-    setBusy(true);
-    setError(null);
-    try {
-      const started = await startRunDetached({
-        analysisId,
-        mode,
-        input,
-        refinements,
-      });
-      if (!started.ok) {
-        setError(started.error);
-        return;
-      }
-
-      // Re-render the server component: the analysis is RUNNING now, so the
-      // page picks up its own watcher and refreshes again when it finishes.
-      router.refresh();
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "The answers could not be submitted.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
+  const { busy, error, submit } = useSavedAnalysisRun({
+    analysisId,
+    mode,
+    input,
+  });
 
   return (
     <>

@@ -31,6 +31,18 @@ export function toDigits(htsNo: string): string {
 }
 
 /**
+ * Whether two HTS numbers name the same line, whatever their punctuation.
+ *
+ * Codes arrive dotted from the schedule, bare from a form field, and now and
+ * then with a stray space from the model, and every comparison the app makes
+ * is on the digits. It was written inline a dozen times; one place means no
+ * call site can get the normalisation half right.
+ */
+export function sameHtsCode(a: string, b: string): boolean {
+  return toDigits(a) === toDigits(b);
+}
+
+/**
  * Re-apply canonical HTSUS dotting to a bare digit string.
  * 4 -> 8507, 6 -> 8507.60, 8 -> 8507.60.00, 10 -> 8507.60.00.20
  */
@@ -351,7 +363,7 @@ export function reportingNumberSource(
   htsCode: string,
   footnotes: readonly string[] = [],
 ): ReportingNumberSource {
-  if (htsCode.replace(/\D/g, "").length >= 10) return "on_the_line";
+  if (toDigits(htsCode).length >= 10) return "on_the_line";
   return footnotes.some((footnote) => /statistical note/i.test(footnote))
     ? "chapter_statistical_note"
     : "unpublished";
